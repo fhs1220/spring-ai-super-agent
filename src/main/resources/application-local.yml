@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: fhs-ai-agent
+  ai:
+    dashscope:
+      api-key: sk-9be1415d68284ad589cc06c9dbb5b839
+      chat:
+        options:
+          model: qwen-turbo
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model:gemma3:1b
