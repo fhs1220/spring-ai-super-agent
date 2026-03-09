@@ -4,7 +4,8 @@ import com.fhs.aiagent.advisor.MyLoggerAdvisor;
 import com.fhs.aiagent.advisor.ReReadingAdvisor;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.Resource;
-import lombok.extern.slf4j.Slf4j;
+import com.fhs.aiagent.ChatMemory.FileBasedChatMemory;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
@@ -16,6 +17,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import java.util.List;
@@ -36,7 +38,7 @@ public class LoveApp {
      * @param dashscopeChatModel
      */
     public LoveApp(ChatModel dashscopeChatModel) {
-//        // 初始化基于文件的对话记忆
+        // 初始化基于文件的对话记忆
 //        String fileDir = System.getProperty("user.dir") + "/tmp/chat-memory";
 //        ChatMemory chatMemory = new FileBasedChatMemory(fileDir);
         // 初始化基于内存的对话记忆
@@ -78,7 +80,7 @@ public class LoveApp {
     }
 
     /**
-     * AI 恋爱报告功能（实战结构化输出）
+     * AI 报告功能（实战结构化输出）
      *
      * @param message
      * @param chatId
@@ -94,5 +96,31 @@ public class LoveApp {
                 .entity(LoveReport.class);
         log.info("loveReport: {}", loveReport);
         return loveReport;
+    }
+
+    // AI 知识库问答功能
+    @Resource
+    private VectorStore appVectorStore;
+
+    /**
+     * 和 RAG 知识库进行对话
+     *
+     * @param message
+     * @param chatId
+     * @return
+     */
+    public String doChatWithRag(String message, String chatId) {
+        ChatResponse chatResponse = chatClient
+                .prompt()
+                .user(message)
+                .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, chatId))
+                // 开启日志，便于观察效果
+                .advisors(new MyLoggerAdvisor())
+                .advisors(new QuestionAnswerAdvisor(appVectorStore))
+                .call()
+                .chatResponse();
+        String content = chatResponse.getResult().getOutput().getText();
+        log.info("content: {}", content);
+        return content;
     }
 }

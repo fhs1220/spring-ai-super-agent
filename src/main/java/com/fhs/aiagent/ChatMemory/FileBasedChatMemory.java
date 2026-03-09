@@ -57,6 +57,11 @@ public class FileBasedChatMemory implements ChatMemory {
         }
     }
 
+    /**
+     * 获取或创建会话消息的List
+     * @param conversationId
+     * @return
+     */
     private List<Message> getOrCreateConversation(String conversationId) {
         File file = getConversationFile(conversationId);
         List<Message> messages = new ArrayList<>();
@@ -70,6 +75,11 @@ public class FileBasedChatMemory implements ChatMemory {
         return messages;
     }
 
+    /**
+     * 保存会话消息
+     * @param conversationId
+     * @param messages
+     */
     private void saveConversation(String conversationId, List<Message> messages) {
         File file = getConversationFile(conversationId);
         try (Output output = new Output(new FileOutputStream(file))) {
