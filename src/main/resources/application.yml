@@ -3,11 +3,18 @@ spring:
     name: fhs-ai-agent
   profiles:
     active: local
+  ai:
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        max-document-batch-size: 10000 # Optional: Maximum number of documents per batch
 server:
     port: 8123
     servlet:
       context-path: /api
-# springdoc-openapi????
+
+# springdoc-openapi?
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
