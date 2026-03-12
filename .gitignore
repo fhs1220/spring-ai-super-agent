@@ -1,4 +1,5 @@
 application-local.yml
+.env
 tmp
 HELP.md
 target/

@@ -9,6 +9,10 @@ spring:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
         max-document-batch-size: 10000 # Optional: Maximum number of documents per batch
+    mcp:
+      client:
+        stdio:
+          servers-configuration: classpath:mcp-servers.json
 server:
     port: 8123
     servlet:
