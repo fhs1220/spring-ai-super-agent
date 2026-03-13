@@ -11,11 +11,11 @@ spring:
       base-url: http://localhost:11434
       chat:
         model: "gemma3:1b"
-  datasource:
-    url: jdbc:postgresql://rm-cn-0yc4ovsva0003aso.rwlb.rds.aliyuncs.com:5432/fhs_ai_agent
-    username: my_user
-    password: Fhs596702588!
-    driver-class-name: org.postgresql.Driver
+#  datasource:
+#    url: jdbc:postgresql://rm-cn-0yc4ovsva0003aso.rwlb.rds.aliyuncs.com:5432/fhs_ai_agent
+#    username: my_user
+#    password: Fhs596702588!
+#    driver-class-name: org.postgresql.Driver
 
 search-api:
   api-key: nKgFKfquV941xPySw6zGCa5g
