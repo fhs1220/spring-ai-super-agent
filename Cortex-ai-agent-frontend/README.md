@@ -1,11 +1,15 @@
 # Cortex AI Agent 前端
 
-Vue 3 + Vite 前端，包含主页与两个聊天应用（AI 恋爱大师、AI 超级智能体），通过 SSE 与后端实时对话。
+Vue 3 + Vite 前端，包含主页与两个聊天应用。AI 恋爱大师使用 Agentic RAG，
+支持自适应单/多 Agent 路由、并行专业 Agent Trace、协作奖励、用户评分、
+每阶段 Token/成本/超时遥测和 Agent RL 数据就绪面板；
+AI 超级智能体使用 SSE 实时对话。
 
 ## 环境
 
 - Node 18+
-- 后端接口前缀：`http://localhost:8123/api`
+- 开发服务器会把 `/api` 代理到 `http://localhost:8123`
+- 如需连接其他后端，可设置 `VITE_API_BASE_URL`
 
 ## 安装与运行
 
@@ -29,7 +33,7 @@ npm run build
 | 路径 | 说明 |
 |------|------|
 | `/` | 主页，切换应用 |
-| `/love` | AI 恋爱大师（SSE：`/api/ai/love_app/chat/sse`，自动生成 chatId） |
+| `/love` | AI 恋爱大师（Agentic RAG + Agent RL 反馈，自动生成 chatId） |
 | `/manus` | AI 超级智能体（SSE：`/api/ai/manus/chat`） |
 
 ## 技术栈

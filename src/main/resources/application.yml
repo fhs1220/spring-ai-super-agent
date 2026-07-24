@@ -4,6 +4,11 @@ spring:
   profiles:
     active: local
   ai:
+    dashscope:
+      # 单次模型调用最长等待时间，避免 Agent 多阶段调用无限挂起。
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT_SECONDS:30}
+    retry:
+      max-attempts: ${SPRING_AI_RETRY_MAX_ATTEMPTS:2}
 
 #    vectorstore:
 #      pgvector:
@@ -45,3 +50,38 @@ logging:
   level:
     org.springframework.ai: DEBUG
 
+agent:
+  rag:
+    vector-cache-enabled: ${AGENT_RAG_VECTOR_CACHE_ENABLED:true}
+    vector-cache-directory: ${AGENT_RAG_VECTOR_CACHE_DIRECTORY:tmp/rag/vector-store}
+    # 文档增强策略或 Embedding 模型变化时递增此版本，以强制重建索引。
+    vector-cache-version: ${AGENT_RAG_VECTOR_CACHE_VERSION:v1}
+    retrieval:
+      min-top-k: ${AGENT_RAG_MIN_TOP_K:3}
+      max-top-k: ${AGENT_RAG_MAX_TOP_K:6}
+      similarity-threshold: ${AGENT_RAG_SIMILARITY_THRESHOLD:0.2}
+    multi-agent:
+      enabled: ${AGENT_RAG_MULTI_AGENT_ENABLED:true}
+      # 检测到至少两个独立能力域时才启用并行 Agent，简单问题保留快速路径。
+      minimum-domains: ${AGENT_RAG_MULTI_AGENT_MINIMUM_DOMAINS:2}
+      max-agents: ${AGENT_RAG_MULTI_AGENT_MAX_AGENTS:3}
+    observability:
+      # Agent 阶段级硬超时，覆盖底层客户端重试/握手卡住的情况。
+      model-call-timeout-seconds: ${AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS:30}
+      # 默认按 qwen-turbo 中国内地公开价估算；可通过环境变量覆盖。
+      input-price-per-million-tokens-cny: ${AGENT_RAG_INPUT_PRICE_PER_MILLION_TOKENS_CNY:0.3}
+      output-price-per-million-tokens-cny: ${AGENT_RAG_OUTPUT_PRICE_PER_MILLION_TOKENS_CNY:0.6}
+  rl:
+    policy-version: ${AGENT_RL_POLICY_VERSION:agentic-rag-v4}
+    storage-directory: ${AGENT_RL_STORAGE_DIRECTORY:tmp/agent-rl/trajectories}
+    # 轨迹包含用户问题和答案；仅在受信任环境中显式开启管理 API。
+    api-enabled: ${AGENT_RL_API_ENABLED:false}
+    bailian:
+      export-directory: ${AGENT_RL_BAILIAN_EXPORT_DIRECTORY:tmp/agent-rl/bailian}
+      minimum-reward: ${AGENT_RL_BAILIAN_MINIMUM_REWARD:0.7}
+      validation-ratio: ${AGENT_RL_BAILIAN_VALIDATION_RATIO:0.2}
+      expected-batch-size: ${AGENT_RL_BAILIAN_EXPECTED_BATCH_SIZE:64}
+    environment:
+      # 供百炼云端 Rollout 调用；必须部署到云端可访问地址，并配置独立强令牌。
+      api-enabled: ${AGENT_RL_ENVIRONMENT_API_ENABLED:false}
+      token: ${AGENT_RL_ENVIRONMENT_TOKEN:}

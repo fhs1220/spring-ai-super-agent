@@ -2,8 +2,10 @@ package com.fhs.aiagent.app;
 
 import com.fhs.aiagent.advisor.MyLoggerAdvisor;
 import com.fhs.aiagent.advisor.ReReadingAdvisor;
+import com.fhs.aiagent.rag.AgenticRagService;
 import com.fhs.aiagent.rag.AppRagCustomAdvisorFactory;
 import com.fhs.aiagent.rag.QueryRewriter;
+import com.fhs.aiagent.rl.model.AgenticRagResult;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.Resource;
 import com.fhs.aiagent.ChatMemory.FileBasedChatMemory;
@@ -20,6 +22,7 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import java.util.List;
@@ -111,13 +114,20 @@ public class LoveApp {
     @Resource
     private QueryRewriter queryRewriter;
     /**
-     * 和 RAG 知识库进行对话
+     * 和 RAG 知识库进行对话（默认使用 Agentic RAG）。
      *
-     * @param message
-     * @param chatId
-     * @return
+     * @param message 用户消息
+     * @param chatId  会话 ID
+     * @return 最终答案
      */
     public String doChatWithRag(String message, String chatId) {
+        return doChatWithAgenticRag(message, chatId);
+    }
+
+    /**
+     * 传统单次检索 RAG，仅保留用于效果对比和回归。
+     */
+    public String doChatWithTraditionalRag(String message, String chatId) {
         //查询重写
         String rewrittenMessage = queryRewriter.doQueryRewrite(message);
         ChatResponse chatResponse = chatClient
@@ -144,6 +154,30 @@ public class LoveApp {
         String content = chatResponse.getResult().getOutput().getText();
         log.info("content: {}", content);
         return content;
+    }
+
+    // Agentic RAG：规划 -> 检索 -> 验证 -> 追问 -> 修正
+    @Resource
+    private AgenticRagService agenticRagService;
+
+    /**
+     * 和 RAG 知识库进行对话（Agentic RAG 版本）
+     * <p>
+     * 流程：规划(拆解子查询) -> 检索(向量检索去重合并) -> 验证(评估上下文充分性)
+     * -> 追问(不充分时补充检索，迭代) -> 修正(答案忠实性审查与重写)
+     *
+     * @param message 用户消息
+     * @param chatId  会话 ID
+     * @return 最终答案
+     */
+    public String doChatWithAgenticRag(String message, String chatId) {
+        return doChatWithAgenticRagTrace(message, chatId).answer();
+    }
+
+    public AgenticRagResult doChatWithAgenticRagTrace(String message, String chatId) {
+        AgenticRagResult result = agenticRagService.doAgenticRagWithTrace(message, chatId, SYSTEM_PROMPT);
+        log.info("agentic rag content: {}, trajectoryId: {}", result.answer(), result.trajectoryId());
+        return result;
     }
 
     // AI 调用工具能力
@@ -174,8 +208,8 @@ public class LoveApp {
 
     // AI 调用 MCP 服务
 
-    @Resource
-    private ToolCallbackProvider toolCallbackProvider;
+    @Autowired
+    private ObjectProvider<ToolCallbackProvider> toolCallbackProviderProvider;
 
     /**
      * AI 报告功能（调用 MCP 服务）
@@ -185,6 +219,10 @@ public class LoveApp {
      * @return
      */
     public String doChatWithMcp(String message, String chatId) {
+        ToolCallbackProvider toolCallbackProvider = toolCallbackProviderProvider.getIfAvailable();
+        if (toolCallbackProvider == null) {
+            throw new IllegalStateException("MCP client is disabled or unavailable");
+        }
         ChatResponse chatResponse = chatClient
                 .prompt()
                 .user(message)

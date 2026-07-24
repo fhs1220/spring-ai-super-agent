@@ -1,8 +1,10 @@
 application-local.yml
 .env
 tmp
+*.whl
 HELP.md
 target/
+tmp/rag/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

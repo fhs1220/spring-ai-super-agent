@@ -49,6 +49,15 @@ class LoveAppTest {
     }
 
     @Test
+    void doChatWithAgenticRag() {
+        String chatId = UUID.randomUUID().toString();
+        String message = "我已经结婚了，但是婚后关系不太亲密，而且经常因为家务分工吵架，怎么办？";
+        String answer = loveApp.doChatWithAgenticRag(message, chatId);
+        Assertions.assertNotNull(answer);
+        Assertions.assertFalse(answer.isBlank());
+    }
+
+    @Test
     void doChatWithTools() {
         // 测试联网搜索问题的答案
         testMessage("周末想带女朋友去上海约会，推荐几个适合情侣的小众打卡地？");

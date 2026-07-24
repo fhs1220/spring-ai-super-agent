@@ -54,10 +54,199 @@ RAG Pipeline 包括：
 - 文本切分（Text Splitter）
 - 文本向量化（Embedding）
 - 向量存储（PGVector Vector Store）
-- 语义检索（Retriever）
-- 检索结果增强生成（Answer Generation）
+- Agentic 检索规划（Plan）
+- 多查询语义检索与去重（Retrieve）
+- 上下文充分性验证（Verify）
+- 缺失信息补充检索，最多两轮（Follow-up）
+- 答案忠实性审查与修正（Revise）
+- 可展开的 Agent Trace（规划、检索、验证、补充检索、生成与修正耗时）
+- 请求级模型遥测（每阶段实际/估算 Token、模型调用耗时、超时和人民币成本估算）
+- 可配置的 30 秒模型阶段硬超时，避免底层重试或网络握手让请求长期挂起
+- `[来源 n]` 答案引用与知识片段溯源
+- 带知识库 SHA-256 指纹的本地向量索引缓存，避免每次启动重复生成 Embedding
+- 动态 Top-K、向量/关键词混合召回与 RRF 本地重排
 
 通过 RAG 能够在 AI 回复中引入外部知识，提高回答质量。
+
+### 自适应多 Agent
+
+`agentic-rag-v4` 会先通过确定性 Complexity Router 判断任务是否值得启动多 Agent：
+
+- 单一能力域的问题走 `SINGLE_AGENT` 快速路径，避免额外延迟和成本；
+- 同时涉及关系、育儿、家务、家庭财务或安全风险的复合问题走
+  `ADAPTIVE_MULTI_AGENT`；
+- 最多并行调用 3 个专业 Agent，把结构化判断、建议、来源、置信度和不确定性写入
+  Shared Evidence Blackboard；
+- Synthesis Agent 基于统一知识库证据合并贡献，Review Agent 再检查忠实度和任务完成度；
+- 单个专业 Agent 失败不会中断任务，全部失败或综合失败时自动降级到原单 Agent 生成路径。
+
+当前内置能力：
+
+- 关系沟通 Agent
+- 育儿协作 Agent
+- 家庭运营 Agent
+- 家庭财务 Agent
+- 关系安全 Agent
+
+`GET /api/ai/love_app/agents` 会返回不包含提示词和密钥的能力契约，可在未来映射为
+A2A Agent Card。相关开关：
+
+- `AGENT_RAG_MULTI_AGENT_ENABLED`
+- `AGENT_RAG_MULTI_AGENT_MINIMUM_DOMAINS`
+- `AGENT_RAG_MULTI_AGENT_MAX_AGENTS`
+
+### Agent RL（第一阶段）
+
+Agentic RAG 会把每次执行保存为可训练轨迹，包含规划、检索、验证、补充检索、生成和修正步骤，
+同时计算检索质量、答案忠实度、知识库证据充分度、任务完成度、多 Agent 协作质量、效率和
+用户反馈奖励。专业 Agent 还会记录独立过程奖励、置信度、Token、耗时和失败原因。轨迹默认保存在
+`tmp/agent-rl/trajectories`，该目录不会提交到 Git。
+
+调用带轨迹返回值的 Agentic RAG：
+
+```http
+POST /api/ai/love_app/chat/agentic-rag
+Content-Type: application/json
+
+{"message":"婚后经常因为家务吵架怎么办？","chatId":"demo-1"}
+```
+
+响应包含 `answer`、`trajectoryId`、`reward` 和 `trace.telemetry`。遥测优先使用模型返回的
+实际 Token 用量；供应商未返回用量时会标记 `usageEstimated=true` 并使用本地估算。
+默认成本单价和模型阶段硬超时都可通过环境变量调整：
+
+- `AGENT_RAG_INPUT_PRICE_PER_MILLION_TOKENS_CNY`
+- `AGENT_RAG_OUTPUT_PRICE_PER_MILLION_TOKENS_CNY`
+- `AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS`
+
+轨迹管理接口涉及用户问题和回答，默认关闭；
+仅在受信任环境设置 `AGENT_RL_API_ENABLED=true` 后启用：
+
+- `GET /api/agent-rl/trajectories/{trajectoryId}`：查看轨迹
+- `POST /api/agent-rl/feedback`：提交 1～5 分用户反馈并重算奖励
+- `GET /api/agent-rl/metrics`：查看平均奖励、忠实率、延迟和用户评分
+- `GET /api/agent-rl/export?minimumReward=0.7`：导出 JSONL 训练数据
+
+前端的评分闭环使用下列聚合/反馈接口，无需开放完整轨迹管理 API：
+
+- `POST /api/ai/love_app/agent-rl/feedback`：提交某条轨迹的 1～5 星反馈
+- `GET /api/ai/love_app/agent-rl/metrics`：读取不含用户内容的聚合指标
+- `GET /api/ai/love_app/agent-rl/readiness`：读取百炼数据集就绪状态
+
+### 阿里云百炼 Agentic RL（第二阶段）
+
+项目已提供一套不依赖本机 NVIDIA GPU 的百炼云端训练链路：
+
+1. Java 服务记录 Agentic RAG 轨迹与多维奖励；
+2. 只选择高奖励且获得 4～5 星人工反馈的轨迹，生成百炼
+   `messages + rollout_extra` 格式的训练集和验证集；
+3. 百炼 Rollout 中执行“规划 → 远程检索 → 验证 → 补充检索 → 回答”；
+4. Reward 函数综合参考答案质量、上下文忠实度、检索质量、证据充分度、任务完成度和效率；
+5. 使用 Qwen 9B 在百炼云端执行 GSPO，Mac 只负责数据准备与任务提交。
+
+云端训练代码位于 `bailian-agent-rl/`。提交脚本默认是 dry-run，只有同时传入
+`--execute` 并设置 `BAILIAN_RL_ALLOW_BILLING=true` 才会创建付费任务。
+
+#### 1. 收集人工反馈
+
+先调用 Agentic RAG 获得 `trajectoryId`，再提交用户评分：
+
+```http
+POST /api/agent-rl/feedback
+Content-Type: application/json
+
+{
+  "trajectoryId": "替换为实际 ID",
+  "rating": 5,
+  "comment": "回答准确且可执行"
+}
+```
+
+#### 2. 导出百炼数据集
+
+管理 API 默认关闭。仅在本地或受信任网络中设置
+`AGENT_RL_API_ENABLED=true`，然后调用：
+
+```http
+POST /api/agent-rl/bailian/datasets
+Content-Type: application/json
+
+{}
+```
+
+返回值包含 `rl-train.jsonl`、`rl-validation.jsonl` 和 `manifest.json` 的路径。
+`readyForCloudSubmission=false` 时不要提交训练；默认要求训练集数量严格大于
+`batch_size=64`，并且验证集非空。若只是检查格式，可显式设置
+`requireHumanApproval=false`，但这种自生成答案不应直接用于正式 RL。
+
+#### 3. 部署只读检索环境
+
+百炼 Rollout 在云端运行，无法访问 Mac 的 `localhost`。需要把当前 Spring Boot
+服务部署到一个百炼可访问的 HTTPS 地址，并设置：
+
+```bash
+export AGENT_RL_ENVIRONMENT_API_ENABLED=true
+export AGENT_RL_ENVIRONMENT_TOKEN='替换为独立的高强度随机令牌'
+```
+
+云端只调用：
+
+```http
+POST /api/agent-rl/environment/retrieve
+X-Agent-RL-Token: <token>
+```
+
+该接口只返回文档 ID、来源和截断后的正文，不返回完整 metadata。生产环境还应配置
+TLS、访问日志、限流和网络白名单。
+
+#### 4. 本地预检
+
+百炼 RL SDK 需要 Python 3.10 及以上。进入训练目录，创建独立环境：
+
+```bash
+cd bailian-agent-rl
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip download --no-deps dashscope==1.25.16 -d .
+```
+
+把数据集导出接口返回的实际路径替换到以下命令中：
+
+```bash
+python submit_job.py \
+  --train ../tmp/agent-rl/bailian/<数据包>/rl-train.jsonl \
+  --validation ../tmp/agent-rl/bailian/<数据包>/rl-validation.jsonl
+```
+
+预检只验证模型、配置、JSONL、样本数量和训练/验证集隔离，不会连接云端，也不会计费。
+
+#### 5. 创建云端训练任务
+
+先在百炼控制台完成 RL 服务授权，并准备 API Key。Rollout 需要访问已部署的检索服务：
+
+```bash
+export DASHSCOPE_API_KEY='替换为百炼 API Key'
+export FC_PYPI_LIB='dashscope-1.25.16-py3-none-any.whl'
+export AGENT_RL_RETRIEVAL_URL='https://你的服务域名'
+export AGENT_RL_RETRIEVAL_TOKEN='与服务端相同的令牌'
+export BAILIAN_RL_ALLOW_BILLING=true
+
+python submit_job.py \
+  --train ../tmp/agent-rl/bailian/<数据包>/rl-train.jsonl \
+  --validation ../tmp/agent-rl/bailian/<数据包>/rl-validation.jsonl \
+  --execute
+```
+
+训练任务会产生 MTU 和函数计算费用。默认配置使用 `qwen3.5-9b`、1 个 MTU4、
+1 个 epoch，配置文件为 `bailian-agent-rl/config.example.json`。
+
+查询任务状态或日志：
+
+```bash
+python job_status.py ft-xxxx
+python job_status.py ft-xxxx --logs 100
+```
 
 ---
 

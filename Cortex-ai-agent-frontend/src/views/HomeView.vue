@@ -16,10 +16,10 @@ import { RouterLink } from 'vue-router'
         <span class="app-name">AI 恋爱大师</span>
         <p class="app-desc">对话与陪伴</p>
         <ul class="app-bullets">
-          <li>情感陪伴与倾诉</li>
-          <li>恋爱建议与话题</li>
-          <li>多轮对话记忆</li>
-          <li>流式实时回复</li>
+          <li>Agentic RAG 检索闭环</li>
+          <li>规划、验证与答案修正</li>
+          <li>多轮对话与轨迹记录</li>
+          <li>评分反馈驱动 Agent RL</li>
         </ul>
       </RouterLink>
       <RouterLink to="/manus" class="app-card">
