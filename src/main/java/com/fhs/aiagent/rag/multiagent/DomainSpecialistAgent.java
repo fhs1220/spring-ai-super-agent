@@ -1,6 +1,7 @@
 package com.fhs.aiagent.rag.multiagent;
 
 import com.fhs.aiagent.rag.AgentTelemetryCollector;
+import com.fhs.aiagent.rag.AgentRunCancelledException;
 import org.springframework.ai.chat.client.ChatClient;
 
 import java.util.List;
@@ -99,6 +100,9 @@ final class DomainSpecialistAgent {
                     success ? "" : "专业 Agent 未返回有效内容"
             );
         } catch (RuntimeException exception) {
+            if (AgentRunCancelledException.isCancellation(exception)) {
+                throw exception;
+            }
             return new SpecialistContribution(
                     descriptor.id(),
                     descriptor.name(),

@@ -187,7 +187,7 @@ public class AgentTelemetryCollector {
         } catch (InterruptedException exception) {
             future.cancel(true);
             Thread.currentThread().interrupt();
-            throw new RuntimeException(stage + " model call interrupted", exception);
+            throw new AgentRunCancelledException(stage + " model call interrupted", exception);
         } catch (ExecutionException exception) {
             Throwable cause = exception.getCause();
             if (cause instanceof RuntimeException runtimeException) {

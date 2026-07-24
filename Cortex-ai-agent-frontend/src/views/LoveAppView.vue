@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import AiAvatar from '../components/AiAvatar.vue'
 import AgentRlPanel from '../components/AgentRlPanel.vue'
 import {
+  cancelAgenticRag,
   fetchAgentRlMetrics,
   fetchDatasetReadiness,
   generateChatId,
-  sendAgenticRag,
+  streamAgenticRag,
   submitAgentRlFeedback,
+  type AgentProgressEvent,
   type AgentTrace,
   type AgentRlMetrics,
   type DatasetReadiness,
@@ -25,7 +27,15 @@ interface Message {
   rating?: number
   feedbackComment?: string
   feedbackState?: 'idle' | 'submitting' | 'submitted' | 'error'
+  liveEvents?: AgentProgressEvent[]
+  cancelled?: boolean
   error?: boolean
+}
+
+interface ActiveRun {
+  runId: string
+  controller: AbortController
+  message: Message
 }
 
 const router = useRouter()
@@ -38,6 +48,7 @@ const metrics = ref<AgentRlMetrics | null>(null)
 const readiness = ref<DatasetReadiness | null>(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
+const activeRun = shallowRef<ActiveRun | null>(null)
 
 onMounted(() => {
   chatId.value = generateChatId()
@@ -50,29 +61,62 @@ async function send() {
 
   input.value = ''
   messages.value.push({ id: crypto.randomUUID(), role: 'user', content: text })
-  const assistant: Message = {
+  const assistant = reactive<Message>({
     id: crypto.randomUUID(),
     role: 'assistant',
     content: '',
     feedbackState: 'idle',
-  }
+  })
   messages.value.push(assistant)
   loading.value = true
+  const runId = crypto.randomUUID()
+  const controller = new AbortController()
+  assistant.liveEvents = []
+  activeRun.value = { runId, controller, message: assistant }
   await scrollToBottom()
 
   try {
-    const result = await sendAgenticRag(text, chatId.value)
+    const result = await streamAgenticRag(
+      text,
+      chatId.value,
+      runId,
+      (event) => {
+        assistant.liveEvents?.push(event)
+        void scrollToBottom()
+      },
+      controller.signal,
+    )
     assistant.content = result.answer
     assistant.trajectoryId = result.trajectoryId
     assistant.reward = result.reward
     assistant.trace = result.trace
     await loadDashboard()
   } catch (error) {
-    assistant.content = `请求失败：${errorMessage(error)}`
-    assistant.error = true
+    if (assistant.cancelled || isAbortError(error)) {
+      assistant.content = '本次 Agent 运行已取消，后续模型调用已停止。'
+      assistant.cancelled = true
+    } else {
+      assistant.content = `请求失败：${errorMessage(error)}`
+      assistant.error = true
+    }
   } finally {
+    if (activeRun.value?.runId === runId) {
+      activeRun.value = null
+    }
     loading.value = false
     await scrollToBottom()
+  }
+}
+
+async function cancelRun() {
+  const current = activeRun.value
+  if (!current || current.message.cancelled) return
+  current.message.cancelled = true
+  current.controller.abort()
+  try {
+    await cancelAgenticRag(current.runId)
+  } catch {
+    // 浏览器流已中止；后端还会通过 SSE 断连回调停止任务。
   }
 }
 
@@ -141,6 +185,15 @@ function executionModeLabel(mode: AgentTrace['executionMode']): string {
   return mode === 'ADAPTIVE_MULTI_AGENT' ? 'MULTI AGENT' : 'SINGLE AGENT'
 }
 
+function latestProgress(message: Message): string {
+  const latest = message.liveEvents?.at(-1)
+  return latest ? `${latest.title}：${latest.summary}` : '正在启动 Agentic RAG'
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
   return 'Agentic RAG 服务暂时不可用'
@@ -179,13 +232,42 @@ function back() {
           <div v-if="message.role === 'assistant'" class="row assistant-row">
             <AiAvatar type="love" />
             <div class="bubble assistant-bubble">
-              <div class="bubble-content" :class="{ error: message.error }">
+              <div
+                class="bubble-content"
+                :class="{ error: message.error, cancelled: message.cancelled }"
+              >
                 <template v-if="message.content">{{ message.content }}</template>
                 <span v-else class="thinking">
-                  正在规划、检索和验证
+                  {{ latestProgress(message) }}
                   <i></i><i></i><i></i>
                 </span>
               </div>
+
+              <section
+                v-if="message.liveEvents?.length && !message.trace"
+                class="live-trace"
+                aria-label="实时 Agent 执行轨迹"
+              >
+                <header>
+                  <span class="live-dot"></span>
+                  <strong>LIVE AGENT TRACE</strong>
+                  <span>{{ message.liveEvents.length }} EVENTS</span>
+                </header>
+                <ol>
+                  <li
+                    v-for="(event, index) in message.liveEvents"
+                    :key="`${event.phase}-${event.title}-${index}`"
+                    :class="event.status.toLowerCase()"
+                  >
+                    <span class="live-status"></span>
+                    <div>
+                      <strong>{{ event.phase }} · {{ event.title }}</strong>
+                      <p>{{ event.summary }}</p>
+                    </div>
+                    <time>{{ formatDuration(event.elapsedMs) }}</time>
+                  </li>
+                </ol>
+              </section>
 
               <div v-if="message.reward" class="reward-strip">
                 <span class="reward-total">奖励 {{ score(message.reward.total) }}</span>
@@ -366,8 +448,14 @@ function back() {
           :disabled="loading"
           @keydown.enter.prevent="send()"
         />
-        <button type="button" class="send-btn" :disabled="loading || !input.trim()" @click="send">
-          {{ loading ? '执行中' : '发送' }}
+        <button
+          type="button"
+          class="send-btn"
+          :class="{ cancel: loading }"
+          :disabled="!loading && !input.trim()"
+          @click="loading ? cancelRun() : send()"
+        >
+          {{ loading ? '停止运行' : '发送' }}
         </button>
       </div>
     </section>
@@ -525,6 +613,10 @@ function back() {
   border-color: rgba(248, 113, 113, 0.4);
   color: #fca5a5;
 }
+.assistant-bubble .bubble-content.cancelled {
+  border-color: rgba(245, 185, 66, 0.38);
+  color: #f5c96a;
+}
 .user-bubble .bubble-content {
   background: var(--accent);
   color: var(--bg);
@@ -550,6 +642,87 @@ function back() {
 @keyframes pulse {
   0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
   40% { opacity: 1; transform: translateY(-2px); }
+}
+.live-trace {
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 212, 170, 0.25);
+  border-radius: var(--radius);
+  background: rgba(0, 212, 170, 0.035);
+}
+.live-trace > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font: 0.625rem var(--mono);
+}
+.live-trace > header strong {
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+.live-trace > header span:last-child {
+  margin-left: auto;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: pulse 1.2s infinite ease-in-out;
+}
+.live-trace ol {
+  max-height: 250px;
+  margin: 0;
+  padding: 6px 10px;
+  overflow-y: auto;
+  list-style: none;
+}
+.live-trace li {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 7px 2px;
+  color: var(--text-muted);
+}
+.live-trace li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+.live-status {
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #64748b;
+}
+.live-trace li.started .live-status {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.live-trace li.completed .live-status {
+  background: #4ade80;
+}
+.live-trace li.failed .live-status,
+.live-trace li.cancelled .live-status {
+  background: #f5b942;
+}
+.live-trace li strong {
+  display: block;
+  color: var(--text-heading);
+  font: 0.625rem var(--mono);
+}
+.live-trace li p {
+  margin: 3px 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+.live-trace li time {
+  font: 0.5625rem var(--mono);
+  white-space: nowrap;
 }
 .reward-strip {
   display: flex;
@@ -937,6 +1110,14 @@ function back() {
 }
 .send-btn:hover:not(:disabled) {
   box-shadow: 0 0 16px var(--accent-glow);
+}
+.send-btn.cancel {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fee2e2;
+  background: rgba(185, 28, 28, 0.78);
+}
+.send-btn.cancel:hover {
+  box-shadow: 0 0 16px rgba(248, 113, 113, 0.22);
 }
 .send-btn:disabled {
   opacity: 0.5;

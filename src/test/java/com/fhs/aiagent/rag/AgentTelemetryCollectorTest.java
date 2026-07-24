@@ -95,4 +95,12 @@ class AgentTelemetryCollectorTest {
         assertThat(metrics.timeoutCount()).isEqualTo(1);
         assertThat(metrics.calls().getFirst().timedOut()).isTrue();
     }
+
+    @Test
+    void recognizesLibrariesThatDropInterruptedExceptionCause() {
+        RuntimeException interruptedWithoutCause =
+                new RuntimeException("Thread interrupted while sleeping");
+
+        assertThat(AgentRunCancelledException.isCancellation(interruptedWithoutCause)).isTrue();
+    }
 }

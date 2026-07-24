@@ -3,6 +3,7 @@ package com.fhs.aiagent.app;
 import com.fhs.aiagent.advisor.MyLoggerAdvisor;
 import com.fhs.aiagent.advisor.ReReadingAdvisor;
 import com.fhs.aiagent.rag.AgenticRagService;
+import com.fhs.aiagent.rag.AgentProgressListener;
 import com.fhs.aiagent.rag.AppRagCustomAdvisorFactory;
 import com.fhs.aiagent.rag.QueryRewriter;
 import com.fhs.aiagent.rl.model.AgenticRagResult;
@@ -177,6 +178,16 @@ public class LoveApp {
     public AgenticRagResult doChatWithAgenticRagTrace(String message, String chatId) {
         AgenticRagResult result = agenticRagService.doAgenticRagWithTrace(message, chatId, SYSTEM_PROMPT);
         log.info("agentic rag content: {}, trajectoryId: {}", result.answer(), result.trajectoryId());
+        return result;
+    }
+
+    public AgenticRagResult doChatWithAgenticRagTrace(String message,
+                                                      String chatId,
+                                                      AgentProgressListener progressListener) {
+        AgenticRagResult result = agenticRagService.doAgenticRagWithTrace(
+                message, chatId, SYSTEM_PROMPT, progressListener);
+        log.info("streaming agentic rag content: {}, trajectoryId: {}",
+                result.answer(), result.trajectoryId());
         return result;
     }
 

@@ -1,7 +1,7 @@
 # Cortex AI Agent 前端
 
 Vue 3 + Vite 前端，包含主页与两个聊天应用。AI 恋爱大师使用 Agentic RAG，
-支持自适应单/多 Agent 路由、并行专业 Agent Trace、协作奖励、用户评分、
+支持自适应单/多 Agent 路由、结构化 SSE 实时执行轨迹、并行专业 Agent Trace、运行取消、协作奖励、用户评分、
 每阶段 Token/成本/超时遥测和 Agent RL 数据就绪面板；
 AI 超级智能体使用 SSE 实时对话。
 

@@ -1,6 +1,7 @@
 package com.fhs.aiagent.rag.multiagent;
 
 import com.fhs.aiagent.rag.AgentTelemetryCollector;
+import com.fhs.aiagent.rag.AgentProgressEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -10,6 +11,7 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,6 +59,7 @@ class AdaptiveMultiAgentOrchestratorTest {
         MultiAgentDecision decision = orchestrator.route(
                 "我们有孩子，最近因为育儿、家务和经济压力争吵，请给改善计划。");
         AgentTelemetryCollector telemetry = new AgentTelemetryCollector("test-model", 0.3, 0.6);
+        List<AgentProgressEvent> progressEvents = new CopyOnWriteArrayList<>();
 
         MultiAgentAnswer result = orchestrator.execute(
                 decision,
@@ -66,7 +69,8 @@ class AdaptiveMultiAgentOrchestratorTest {
                         "[来源 1]\n夫妻应共同协商家庭分工。",
                         "你是恋爱心理顾问。"
                 ),
-                telemetry
+                telemetry,
+                progressEvents::add
         );
 
         assertThat(result.fallbackRequired()).isFalse();
@@ -76,6 +80,25 @@ class AdaptiveMultiAgentOrchestratorTest {
                 .extracting(SpecialistContribution::processReward)
                 .allMatch(reward -> reward > 0);
         assertThat(telemetry.snapshot().modelCallCount()).isEqualTo(4);
+        assertThat(progressEvents.stream()
+                .filter(event -> event.phase().equals("SPECIALIST"))
+                .filter(event -> event.status().equals("STARTED")))
+                .hasSize(3);
+        assertThat(progressEvents.stream()
+                .filter(event -> event.phase().equals("SPECIALIST"))
+                .filter(event -> event.status().equals("COMPLETED"))
+                .filter(event -> !event.title().equals("并行专家")))
+                .hasSize(3);
+        assertThat(progressEvents)
+                .anyMatch(event -> event.phase().equals("SPECIALIST")
+                        && event.status().equals("COMPLETED")
+                        && event.title().equals("并行专家"));
+        assertThat(progressEvents)
+                .extracting(AgentProgressEvent::phase, AgentProgressEvent::status)
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("SYNTHESIZE", "STARTED"),
+                        org.assertj.core.groups.Tuple.tuple("SYNTHESIZE", "COMPLETED")
+                );
     }
 
     private static String contribution(String recommendation) {

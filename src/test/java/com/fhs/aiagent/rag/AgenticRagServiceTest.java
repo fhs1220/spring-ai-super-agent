@@ -20,6 +20,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -59,9 +60,13 @@ class AgenticRagServiceTest {
         AgenticRagService service = new AgenticRagService(
                 ChatClient.builder(chatModel).build(), vectorStore, chatMemory,
                 trajectoryRepository, new AgentRewardCalculator());
+        List<AgentProgressEvent> progressEvents = new ArrayList<>();
 
         AgenticRagResult result = service.doAgenticRagWithTrace(
-                "婚后不亲密，还总因家务吵架怎么办？", "chat-1", "你是恋爱心理顾问。");
+                "婚后不亲密，还总因家务吵架怎么办？",
+                "chat-1",
+                "你是恋爱心理顾问。",
+                progressEvents::add);
 
         assertThat(result.answer()).isEqualTo("先协商家务分工[来源 2]，再定期安排二人相处时间[来源 1]。");
         assertThat(result.reward().total()).isEqualTo(0.93);
@@ -102,6 +107,15 @@ class AgenticRagServiceTest {
                         AgentStepType.GENERATE,
                         AgentStepType.REVIEW
                 );
+        assertThat(progressEvents)
+                .extracting(AgentProgressEvent::phase)
+                .containsSubsequence(
+                        "ROUTE", "PLAN", "PLAN", "RETRIEVE", "RETRIEVE",
+                        "VERIFY", "VERIFY", "FOLLOW_UP", "FOLLOW_UP",
+                        "VERIFY", "VERIFY", "GENERATE", "GENERATE", "REVIEW", "REVIEW"
+                );
+        assertThat(progressEvents.getFirst().status()).isEqualTo("COMPLETED");
+        assertThat(progressEvents.getLast().summary()).isEqualTo("答案已通过审查");
     }
 
     @Test

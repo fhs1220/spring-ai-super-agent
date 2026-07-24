@@ -1,6 +1,6 @@
 # Cortex AI Agent 智能体系统
 
-一个基于 **Spring Boot + Spring AI + RAG + MCP + React** 构建的全栈 AI Agent 系统，实现多轮对话、知识库问答、工具调用与实时流式响应。
+一个基于 **Spring Boot + Spring AI + RAG + MCP + Vue 3** 构建的全栈 AI Agent 系统，实现多轮对话、知识库问答、工具调用与实时流式响应。
 
 该项目展示了如何构建一个现代化 **LLM 驱动应用（AI Agent）**，支持知识检索增强（RAG）、工具调用（Tool Calling）以及实时 AI 对话。
 
@@ -9,7 +9,7 @@
 # 项目架构
 
 ```
-React Frontend
+Vue 3 Frontend
       │
       │ HTTP / SSE
       ▼
@@ -118,6 +118,26 @@ Content-Type: application/json
 - `AGENT_RAG_INPUT_PRICE_PER_MILLION_TOKENS_CNY`
 - `AGENT_RAG_OUTPUT_PRICE_PER_MILLION_TOKENS_CNY`
 - `AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS`
+
+前端默认使用结构化 SSE 接口实时展示路由、规划、检索、验证、每个专业 Agent、综合和审查：
+
+```http
+POST /api/ai/love_app/chat/agentic-rag/stream
+Accept: text/event-stream
+Content-Type: application/json
+
+{"message":"请制定一周家庭改善计划","chatId":"demo-1","runId":"client-run-001"}
+```
+
+事件类型包括 `accepted`、`progress`、`complete`、`cancelled` 和 `error`。运行中可用同一
+`runId` 主动取消：
+
+```http
+DELETE /api/ai/love_app/chat/agentic-rag/runs/client-run-001
+```
+
+取消会中断承载虚拟线程与当前模型调用，并把轨迹标记为 `CANCELLED`；取消轨迹不会进入指标
+聚合或 RL 数据集。原同步接口继续保留，便于服务端集成和回归测试。
 
 轨迹管理接口涉及用户问题和回答，默认关闭；
 仅在受信任环境设置 `AGENT_RL_API_ENABLED=true` 后启用：

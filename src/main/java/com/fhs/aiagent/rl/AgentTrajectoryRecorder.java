@@ -96,6 +96,11 @@ public class AgentTrajectoryRecorder {
         return snapshot("FAILED", null, telemetry, error);
     }
 
+    public AgentTrajectory cancel(Throwable throwable, AgentRunMetrics telemetry) {
+        String error = throwable.getClass().getSimpleName() + ": " + throwable.getMessage();
+        return snapshot("CANCELLED", null, telemetry, error);
+    }
+
     public String trajectoryId() {
         return trajectoryId;
     }

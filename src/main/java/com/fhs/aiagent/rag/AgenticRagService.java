@@ -199,10 +199,23 @@ public class AgenticRagService {
      * 执行 Agentic RAG，并返回可用于 Agent RL 的轨迹 ID 和奖励。
      */
     public AgenticRagResult doAgenticRagWithTrace(String question, String chatId, String systemPrompt) {
+        return doAgenticRagWithTrace(question, chatId, systemPrompt, AgentProgressListener.NONE);
+    }
+
+    /**
+     * 执行 Agentic RAG，并在每个阶段完成时推送结构化进度。
+     */
+    public AgenticRagResult doAgenticRagWithTrace(String question,
+                                                 String chatId,
+                                                 String systemPrompt,
+                                                 AgentProgressListener progressListener) {
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question must not be blank");
         }
 
+        AgentProgressListener listener = progressListener == null
+                ? AgentProgressListener.NONE
+                : progressListener;
         String conversationId = normalizeConversationId(chatId);
         AgentTrajectoryRecorder recorder = new AgentTrajectoryRecorder(
                 conversationId, policyVersion, model, question);
@@ -213,6 +226,7 @@ public class AgenticRagService {
                 Duration.ofSeconds(modelCallTimeoutSeconds)
         );
         try {
+            AgentRunCancelledException.throwIfCancelled();
             String conversationHistory = formatConversation(chatMemory.get(conversationId));
 
             Instant stepStartedAt = recorder.startStep();
@@ -232,10 +246,21 @@ public class AgenticRagService {
                                     .toList()
                     )
             );
+            emit(listener, "ROUTE", "COMPLETED", "自适应路由",
+                    multiAgentDecision.multiAgent()
+                            ? "已选择并行专业 Agent"
+                            : "已选择单 Agent 快速路径",
+                    List.of(
+                            "模式：" + multiAgentDecision.mode(),
+                            "原因：" + multiAgentDecision.reason()
+                    ),
+                    stepStartedAt);
             log.info("[AgenticRAG][路由] 模式: {}, 原因: {}",
                     multiAgentDecision.mode(), multiAgentDecision.reason());
 
+            AgentRunCancelledException.throwIfCancelled();
             stepStartedAt = recorder.startStep();
+            emit(listener, "PLAN", "STARTED", "检索规划", "正在拆解检索问题", List.of(), stepStartedAt);
             RetrievalPlan plan = plan(question, conversationHistory, telemetry);
             recorder.record(
                     AgentStepType.PLAN,
@@ -248,11 +273,18 @@ public class AgenticRagService {
                             "fallbackUsed", plan.fallbackUsed()
                     )
             );
+            emit(listener, "PLAN", plan.fallbackUsed() ? "FAILED" : "COMPLETED",
+                    "检索规划",
+                    plan.fallbackUsed() ? "规划失败，已使用原问题继续" : "检索问题已拆解",
+                    plan.subQueries(),
+                    stepStartedAt);
             log.info("[AgenticRAG][规划] 子查询: {}", plan.subQueries());
 
             Map<String, Document> contextDocs = new LinkedHashMap<>();
             Set<String> executedQueries = new LinkedHashSet<>();
+            AgentRunCancelledException.throwIfCancelled();
             stepStartedAt = recorder.startStep();
+            emit(listener, "RETRIEVE", "STARTED", "混合检索", "正在检索知识库", plan.subQueries(), stepStartedAt);
             RetrievalStats initialRetrieval = retrieve(plan.subQueries(), executedQueries, contextDocs);
             recorder.addRetrievedDocumentIds(initialRetrieval.newDocumentIds());
             recorder.record(
@@ -262,11 +294,21 @@ public class AgenticRagService {
                     Map.of("queries", plan.subQueries(), "topKPolicy", "dynamic"),
                     retrievalOutput(initialRetrieval, contextDocs.size())
             );
+            emit(listener, "RETRIEVE", "COMPLETED", "混合检索",
+                    "首轮获得 %d 条知识证据".formatted(contextDocs.size()),
+                    List.of(
+                            "策略：" + initialRetrieval.strategy(),
+                            "新增文档：" + initialRetrieval.newDocumentIds().size()
+                    ),
+                    stepStartedAt);
             log.info("[AgenticRAG][检索] 首轮命中文档数: {}", contextDocs.size());
 
             int followUpRound = 0;
             while (true) {
+                AgentRunCancelledException.throwIfCancelled();
                 stepStartedAt = recorder.startStep();
+                emit(listener, "VERIFY", "STARTED", "证据验证",
+                        "正在评估知识证据是否充分", List.of(), stepStartedAt);
                 VerificationResult verification = verify(question, contextDocs.values(), telemetry);
                 recorder.record(
                         AgentStepType.VERIFY,
@@ -280,6 +322,17 @@ public class AgenticRagService {
                                 "fallbackUsed", verification.fallbackUsed()
                         )
                 );
+                emit(listener, "VERIFY", verification.fallbackUsed() ? "FAILED" : "COMPLETED",
+                        "证据验证",
+                        verification.fallbackUsed()
+                                ? "验证不可用，使用现有证据继续"
+                                : verification.sufficient() ? "知识证据充分" : "需要补充检索",
+                        verification.missingInfo().isBlank()
+                                ? verification.followUpQueries()
+                                : concatProgressDetails(
+                                        List.of("缺失：" + verification.missingInfo()),
+                                        verification.followUpQueries()),
+                        stepStartedAt);
                 log.info("[AgenticRAG][验证] 补充检索 {} 轮后，充分: {}, 缺失: {}",
                         followUpRound, verification.sufficient(), verification.missingInfo());
                 if (verification.sufficient()) {
@@ -300,7 +353,12 @@ public class AgenticRagService {
                 log.info("[AgenticRAG][追问] 第 {} 轮补充查询: {}", followUpRound + 1, followUps);
                 int before = contextDocs.size();
                 int executedBefore = executedQueries.size();
+                AgentRunCancelledException.throwIfCancelled();
                 stepStartedAt = recorder.startStep();
+                emit(listener, "FOLLOW_UP", "STARTED", "补充检索",
+                        "正在执行第 %d 轮补充检索".formatted(followUpRound + 1),
+                        followUps,
+                        stepStartedAt);
                 RetrievalStats followUpRetrieval = retrieve(followUps, executedQueries, contextDocs);
                 recorder.addRetrievedDocumentIds(followUpRetrieval.newDocumentIds());
                 recorder.record(
@@ -310,6 +368,10 @@ public class AgenticRagService {
                         Map.of("round", followUpRound + 1, "queries", followUps),
                         retrievalOutput(followUpRetrieval, contextDocs.size())
                 );
+                emit(listener, "FOLLOW_UP", "COMPLETED", "补充检索",
+                        "新增 %d 条知识证据".formatted(followUpRetrieval.newDocumentIds().size()),
+                        followUps,
+                        stepStartedAt);
                 followUpRound++;
 
                 if (executedQueries.size() == executedBefore) {
@@ -325,10 +387,18 @@ public class AgenticRagService {
             String context = formatContext(contextDocs.values());
             String draftAnswer = null;
             if (multiAgentDecision.multiAgent()) {
+                AgentRunCancelledException.throwIfCancelled();
+                Instant specialistsStartedAt = recorder.startStep();
+                emit(listener, "SPECIALIST", "STARTED", "并行专家",
+                        "正在并行启动 %d 个专业 Agent".formatted(
+                                multiAgentDecision.selectedDomains().size()),
+                        multiAgentDecision.selectedDomains().stream().map(Enum::name).toList(),
+                        specialistsStartedAt);
                 MultiAgentAnswer multiAgentAnswer = multiAgentOrchestrator.execute(
                         multiAgentDecision,
                         new AgentRequest(question, conversationHistory, context, systemPrompt),
-                        telemetry
+                        telemetry,
+                        listener
                 );
                 List<SpecialistContribution> contributions = multiAgentAnswer.contributions();
                 long successfulAgents = contributions.stream()
@@ -370,7 +440,10 @@ public class AgenticRagService {
             }
 
             if (draftAnswer == null || draftAnswer.isBlank()) {
+                AgentRunCancelledException.throwIfCancelled();
                 stepStartedAt = recorder.startStep();
+                emit(listener, "GENERATE", "STARTED", "答案生成",
+                        "正在基于知识证据生成候选答案", List.of(), stepStartedAt);
                 draftAnswer = generate(question, conversationHistory, context, systemPrompt, telemetry);
                 recorder.record(
                         AgentStepType.GENERATE,
@@ -382,9 +455,14 @@ public class AgenticRagService {
                         ),
                         Map.of("answer", draftAnswer, "answerLength", draftAnswer.length())
                 );
+                emit(listener, "GENERATE", "COMPLETED", "答案生成",
+                        "候选答案已生成", List.of("答案长度：" + draftAnswer.length()), stepStartedAt);
             }
 
-            String finalAnswer = reviewAndRevise(question, context, draftAnswer, recorder, telemetry);
+            AgentRunCancelledException.throwIfCancelled();
+            String finalAnswer = reviewAndRevise(
+                    question, context, draftAnswer, recorder, telemetry, listener);
+            AgentRunCancelledException.throwIfCancelled();
             chatMemory.add(conversationId, List.of(
                     new UserMessage(question),
                     new AssistantMessage(finalAnswer)
@@ -401,7 +479,20 @@ public class AgenticRagService {
                     reward,
                     buildTrace(trajectory, contextDocs.values(), finalAnswer)
             );
+        } catch (AgentRunCancelledException exception) {
+            persistCancelledTrajectory(recorder, exception, telemetry.snapshot());
+            emit(listener, "RUN", "CANCELLED", "运行已取消",
+                    "已停止后续 Agent 和模型调用", List.of(), Instant.now());
+            throw exception;
         } catch (RuntimeException exception) {
+            if (AgentRunCancelledException.isCancellation(exception)) {
+                AgentRunCancelledException cancelled = new AgentRunCancelledException(
+                        "Agent run was cancelled", exception);
+                persistCancelledTrajectory(recorder, cancelled, telemetry.snapshot());
+                emit(listener, "RUN", "CANCELLED", "运行已取消",
+                        "已停止后续 Agent 和模型调用", List.of(), Instant.now());
+                throw cancelled;
+            }
             persistFailedTrajectory(recorder, exception, telemetry.snapshot());
             throw exception;
         }
@@ -428,6 +519,9 @@ public class AgenticRagService {
                             .responseEntity(RetrievalPlan.class)
             );
         } catch (RuntimeException exception) {
+            if (AgentRunCancelledException.isCancellation(exception)) {
+                throw exception;
+            }
             log.warn("[AgenticRAG][降级] 规划 Agent 失败，直接使用原问题检索: {}",
                     exception.getMessage());
             return new RetrievalPlan(List.of(question.trim()), true);
@@ -453,6 +547,7 @@ public class AgenticRagService {
         int lexicalCandidateCount = 0;
         int fusedCandidateCount = 0;
         for (String query : normalizeQueries(queries, queries.size())) {
+            AgentRunCancelledException.throwIfCancelled();
             if (!executedQueries.add(query)) {
                 continue;
             }
@@ -516,6 +611,9 @@ public class AgenticRagService {
                             .responseEntity(VerificationResult.class)
             );
         } catch (RuntimeException exception) {
+            if (AgentRunCancelledException.isCancellation(exception)) {
+                throw exception;
+            }
             log.warn("[AgenticRAG][降级] 验证 Agent 失败，使用现有证据继续生成: {}",
                     exception.getMessage());
             return new VerificationResult(
@@ -574,12 +672,18 @@ public class AgenticRagService {
                                    String context,
                                    String draftAnswer,
                                    AgentTrajectoryRecorder recorder,
-                                   AgentTelemetryCollector telemetry) {
+                                   AgentTelemetryCollector telemetry,
+                                   AgentProgressListener progressListener) {
         Instant reviewStartedAt = recorder.startStep();
+        emit(progressListener, "REVIEW", "STARTED", "答案审查",
+                "正在检查忠实性与任务完成度", List.of(), reviewStartedAt);
         GroundingReview review;
         try {
             review = review(question, context, draftAnswer, telemetry);
         } catch (RuntimeException exception) {
+            if (AgentRunCancelledException.isCancellation(exception)) {
+                throw exception;
+            }
             recorder.record(
                     AgentStepType.REVIEW,
                     reviewStartedAt,
@@ -592,6 +696,8 @@ public class AgenticRagService {
                             "fallbackUsed", true
                     )
             );
+            emit(progressListener, "REVIEW", "FAILED", "答案审查",
+                    "审查不可用，保留已有候选答案", List.of(), reviewStartedAt);
             log.warn("[AgenticRAG][降级] 审查 Agent 失败，保留已有候选答案: {}",
                     exception.getMessage());
             return draftAnswer;
@@ -604,6 +710,8 @@ public class AgenticRagService {
                     Map.of("answerLength", draftAnswer.length()),
                     Map.of("grounded", true, "taskCompleted", true, "revised", false)
             );
+            emit(progressListener, "REVIEW", "COMPLETED", "答案审查",
+                    "答案已通过审查", List.of("无需修正"), reviewStartedAt);
             log.info("[AgenticRAG][修正] 答案通过忠实性与任务完成度审查，无需修正");
             return draftAnswer;
         }
@@ -621,11 +729,23 @@ public class AgenticRagService {
                         "revised", reviewProvidedRevision
                 )
         );
+        emit(progressListener, "REVIEW", "COMPLETED", "答案审查",
+                reviewProvidedRevision ? "审查 Agent 已直接修正答案" : "答案需要进入修正阶段",
+                List.of(
+                        "忠实：" + (review != null && review.grounded()),
+                        "完成任务：" + (review != null && review.taskCompleted())
+                ),
+                reviewStartedAt);
         if (revised == null || revised.isBlank()) {
             Instant reviseStartedAt = recorder.startStep();
+            emit(progressListener, "REVISE", "STARTED", "答案修正",
+                    "正在重写未通过审查的内容", List.of(), reviseStartedAt);
             try {
                 revised = revise(question, context, draftAnswer, telemetry);
             } catch (RuntimeException exception) {
+                if (AgentRunCancelledException.isCancellation(exception)) {
+                    throw exception;
+                }
                 recorder.record(
                         AgentStepType.REVISE,
                         reviseStartedAt,
@@ -639,6 +759,8 @@ public class AgenticRagService {
                                 "fallbackUsed", true
                         )
                 );
+                emit(progressListener, "REVISE", "FAILED", "答案修正",
+                        "修正不可用，保留初稿", List.of(), reviseStartedAt);
                 log.warn("[AgenticRAG][降级] 修正 Agent 失败，保留初稿: {}",
                         exception.getMessage());
                 return draftAnswer;
@@ -656,6 +778,11 @@ public class AgenticRagService {
                             "answerLength", reviseSucceeded ? revised.length() : 0
                     )
             );
+            emit(progressListener, "REVISE", reviseSucceeded ? "COMPLETED" : "FAILED",
+                    "答案修正",
+                    reviseSucceeded ? "修正答案已生成" : "修正结果为空，保留初稿",
+                    List.of(),
+                    reviseStartedAt);
         }
         if (revised == null || revised.isBlank()) {
             log.warn("[AgenticRAG][修正] 修正模型未返回有效答案，保留初稿");
@@ -716,6 +843,46 @@ public class AgenticRagService {
         } catch (RuntimeException persistenceException) {
             log.error("[AgenticRAG][轨迹] 失败轨迹持久化失败: {}", recorder.trajectoryId(), persistenceException);
         }
+    }
+
+    private void persistCancelledTrajectory(AgentTrajectoryRecorder recorder,
+                                            AgentRunCancelledException exception,
+                                            AgentRunMetrics telemetry) {
+        try {
+            trajectoryRepository.save(recorder.cancel(exception, telemetry));
+        } catch (RuntimeException persistenceException) {
+            log.error("[AgenticRAG][轨迹] 取消轨迹持久化失败: {}",
+                    recorder.trajectoryId(), persistenceException);
+        }
+    }
+
+    private void emit(AgentProgressListener listener,
+                      String phase,
+                      String status,
+                      String title,
+                      String summary,
+                      List<String> details,
+                      Instant startedAt) {
+        long elapsedMs = startedAt == null
+                ? 0
+                : Math.max(0, Duration.between(startedAt, Instant.now()).toMillis());
+        (listener == null ? AgentProgressListener.NONE : listener).onProgress(
+                new AgentProgressEvent(
+                        phase,
+                        status,
+                        title,
+                        summary,
+                        details,
+                        elapsedMs,
+                        Instant.now()
+                )
+        );
+    }
+
+    private List<String> concatProgressDetails(List<String> first, List<String> second) {
+        List<String> result = new ArrayList<>(first);
+        result.addAll(second);
+        return List.copyOf(result);
     }
 
     private record RetrievalStats(

@@ -1,6 +1,9 @@
 package com.fhs.aiagent.rag.multiagent;
 
 import com.fhs.aiagent.rag.AgentTelemetryCollector;
+import com.fhs.aiagent.rag.AgentProgressEvent;
+import com.fhs.aiagent.rag.AgentProgressListener;
+import com.fhs.aiagent.rag.AgentRunCancelledException;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,8 +18,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.time.Instant;
 
 /**
  * 自适应层级式多 Agent 编排器。
@@ -105,17 +110,37 @@ public class AdaptiveMultiAgentOrchestrator {
     public MultiAgentAnswer execute(MultiAgentDecision decision,
                                     AgentRequest request,
                                     AgentTelemetryCollector telemetry) {
+        return execute(decision, request, telemetry, AgentProgressListener.NONE);
+    }
+
+    public MultiAgentAnswer execute(MultiAgentDecision decision,
+                                    AgentRequest request,
+                                    AgentTelemetryCollector telemetry,
+                                    AgentProgressListener progressListener) {
         if (!decision.multiAgent()) {
             return new MultiAgentAnswer(null, decision, List.of(), true, 0, 0);
         }
 
         long specialistStartedAt = System.nanoTime();
         List<SpecialistContribution> contributions = executeSpecialists(
-                decision.selectedDomains(), request, telemetry);
+                decision.selectedDomains(), request, telemetry, progressListener);
         long specialistDurationMs = elapsedMs(specialistStartedAt);
         List<SpecialistContribution> successful = contributions.stream()
                 .filter(SpecialistContribution::success)
                 .toList();
+        emit(progressListener, new AgentProgressEvent(
+                "SPECIALIST",
+                successful.isEmpty() ? "FAILED" : "COMPLETED",
+                "并行专家",
+                "%d/%d 个专业 Agent 完成".formatted(successful.size(), contributions.size()),
+                contributions.stream()
+                        .map(contribution -> "%s：%s".formatted(
+                                contribution.agentName(),
+                                contribution.success() ? "成功" : "失败"))
+                        .toList(),
+                specialistDurationMs,
+                Instant.now()
+        ));
         if (successful.isEmpty()) {
             return new MultiAgentAnswer(
                     null, decision, contributions, true, specialistDurationMs, 0);
@@ -125,13 +150,34 @@ public class AdaptiveMultiAgentOrchestrator {
                 request.question(), request.evidenceContext(), successful);
         String answer;
         long synthesisStartedAt = System.nanoTime();
+        emit(progressListener, new AgentProgressEvent(
+                "SYNTHESIZE",
+                "STARTED",
+                "综合 Agent",
+                "正在合并 %d 个专业 Agent 的贡献".formatted(successful.size()),
+                List.of(),
+                0,
+                Instant.now()
+        ));
         try {
             answer = synthesize(request, blackboard, telemetry);
         } catch (RuntimeException exception) {
+            if (AgentRunCancelledException.isCancellation(exception)) {
+                throw exception;
+            }
             answer = null;
         }
         long synthesisDurationMs = elapsedMs(synthesisStartedAt);
         boolean fallback = answer == null || answer.isBlank();
+        emit(progressListener, new AgentProgressEvent(
+                "SYNTHESIZE",
+                fallback ? "FAILED" : "COMPLETED",
+                "综合 Agent",
+                fallback ? "综合失败，将切换单 Agent 降级路径" : "专业意见已合并",
+                List.of(),
+                synthesisDurationMs,
+                Instant.now()
+        ));
         return new MultiAgentAnswer(
                 fallback ? null : answer,
                 decision,
@@ -150,19 +196,74 @@ public class AdaptiveMultiAgentOrchestrator {
 
     private List<SpecialistContribution> executeSpecialists(List<AgentDomain> domains,
                                                             AgentRequest request,
-                                                            AgentTelemetryCollector telemetry) {
+                                                            AgentTelemetryCollector telemetry,
+                                                            AgentProgressListener progressListener) {
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        List<CompletableFuture<SpecialistContribution>> futures = List.of();
         try {
-            List<CompletableFuture<SpecialistContribution>> futures = domains.stream()
+            futures = domains.stream()
                     .map(specialists::get)
                     .filter(java.util.Objects::nonNull)
                     .map(agent -> CompletableFuture.supplyAsync(
-                            () -> agent.execute(request, telemetry), executor))
+                            () -> executeSpecialist(
+                                    agent, request, telemetry, progressListener), executor))
                     .toList();
-            return futures.stream().map(CompletableFuture::join).toList();
+            List<SpecialistContribution> contributions = new ArrayList<>();
+            for (CompletableFuture<SpecialistContribution> future : futures) {
+                try {
+                    contributions.add(future.get());
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new AgentRunCancelledException(
+                            "Multi-agent specialist execution cancelled", exception);
+                } catch (ExecutionException exception) {
+                    Throwable cause = exception.getCause();
+                    if (cause instanceof RuntimeException runtimeException) {
+                        throw runtimeException;
+                    }
+                    throw new RuntimeException("Specialist execution failed", cause);
+                }
+            }
+            return List.copyOf(contributions);
         } finally {
+            futures.forEach(future -> future.cancel(true));
             executor.shutdownNow();
         }
+    }
+
+    private SpecialistContribution executeSpecialist(DomainSpecialistAgent agent,
+                                                     AgentRequest request,
+                                                     AgentTelemetryCollector telemetry,
+                                                     AgentProgressListener progressListener) {
+        AgentDescriptor descriptor = agent.descriptor();
+        emit(progressListener, new AgentProgressEvent(
+                "SPECIALIST",
+                "STARTED",
+                descriptor.name(),
+                "专业 Agent 已开始分析",
+                descriptor.skills(),
+                0,
+                Instant.now()
+        ));
+        SpecialistContribution contribution = agent.execute(request, telemetry);
+        emit(progressListener, new AgentProgressEvent(
+                "SPECIALIST",
+                contribution.success() ? "COMPLETED" : "FAILED",
+                contribution.agentName(),
+                contribution.success() ? "专业分析已完成" : "专业分析失败，其他 Agent 将继续",
+                List.of(
+                        "领域：" + contribution.domain().name(),
+                        "置信度：" + contribution.confidence(),
+                        "过程奖励：" + contribution.processReward()
+                ),
+                contribution.durationMs(),
+                Instant.now()
+        ));
+        return contribution;
+    }
+
+    private void emit(AgentProgressListener listener, AgentProgressEvent event) {
+        (listener == null ? AgentProgressListener.NONE : listener).onProgress(event);
     }
 
     private String synthesize(AgentRequest request,

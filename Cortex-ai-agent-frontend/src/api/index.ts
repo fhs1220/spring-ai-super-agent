@@ -84,6 +84,23 @@ export interface AgenticRagResult {
   trace: AgentTrace
 }
 
+export type AgentProgressStatus = 'STARTED' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+
+export interface AgentProgressEvent {
+  phase: string
+  status: AgentProgressStatus
+  title: string
+  summary: string
+  details: string[]
+  elapsedMs: number
+  timestamp: string
+}
+
+export interface CancelRunResponse {
+  runId: string
+  cancelled: boolean
+}
+
 export interface AgentTrajectory {
   trajectoryId: string
   reward: RewardBreakdown
@@ -140,6 +157,87 @@ export async function sendAgenticRag(message: string, chatId: string): Promise<A
     message,
     chatId,
   })
+  return response.data
+}
+
+export async function streamAgenticRag(
+  message: string,
+  chatId: string,
+  runId: string,
+  onProgress: (event: AgentProgressEvent) => void,
+  signal?: AbortSignal,
+): Promise<AgenticRagResult> {
+  const response = await fetch(`${API_BASE}/ai/love_app/chat/agentic-rag/stream`, {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message, chatId, runId }),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Agentic RAG 流式请求失败（HTTP ${response.status}）`)
+  }
+  if (!response.body) {
+    throw new Error('浏览器未提供可读取的流式响应')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let completedResult: AgenticRagResult | null = null
+
+  const consumeFrame = (frame: string) => {
+    const lines = frame.split('\n')
+    let eventName = 'message'
+    const dataLines: string[] = []
+    for (const rawLine of lines) {
+      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart())
+      }
+    }
+    if (!dataLines.length) return
+    const data = JSON.parse(dataLines.join('\n')) as unknown
+    if (eventName === 'progress') {
+      onProgress(data as AgentProgressEvent)
+    } else if (eventName === 'complete') {
+      completedResult = data as AgenticRagResult
+    } else if (eventName === 'cancelled') {
+      throw new DOMException('运行已取消', 'AbortError')
+    } else if (eventName === 'error') {
+      const error = data as { message?: string }
+      throw new Error(error.message || 'Agentic RAG 执行失败')
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done }).replaceAll('\r\n', '\n')
+    let frameEnd = buffer.indexOf('\n\n')
+    while (frameEnd >= 0) {
+      consumeFrame(buffer.slice(0, frameEnd))
+      buffer = buffer.slice(frameEnd + 2)
+      frameEnd = buffer.indexOf('\n\n')
+    }
+    if (done) break
+  }
+  if (buffer.trim()) {
+    consumeFrame(buffer)
+  }
+  if (!completedResult) {
+    throw new Error('Agentic RAG 流在返回最终结果前结束')
+  }
+  return completedResult
+}
+
+export async function cancelAgenticRag(runId: string): Promise<CancelRunResponse> {
+  const response = await http.delete<CancelRunResponse>(
+    `/ai/love_app/chat/agentic-rag/runs/${encodeURIComponent(runId)}`,
+  )
   return response.data
 }
 
