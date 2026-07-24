@@ -6,6 +6,7 @@ HELP.md
 target/
 tmp/rag/
 tmp/evaluation/
+tmp/agent-runs/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

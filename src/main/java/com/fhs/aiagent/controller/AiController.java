@@ -5,6 +5,9 @@ import com.fhs.aiagent.rag.AgentProgressEvent;
 import com.fhs.aiagent.rag.AgentRunCancelledException;
 import com.fhs.aiagent.rag.multiagent.AdaptiveMultiAgentOrchestrator;
 import com.fhs.aiagent.rag.multiagent.AgentDescriptor;
+import com.fhs.aiagent.rag.run.AgentRunStatus;
+import com.fhs.aiagent.rag.run.DurableAgentRun;
+import com.fhs.aiagent.rag.run.DurableAgentRunService;
 import com.fhs.aiagent.rl.AgentRlService;
 import com.fhs.aiagent.rl.bailian.BailianRlDatasetService;
 import com.fhs.aiagent.rl.model.AgentTrajectory;
@@ -25,6 +28,7 @@ import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -44,6 +48,8 @@ public class AiController {
 
     private final AdaptiveMultiAgentOrchestrator multiAgentOrchestrator;
 
+    private final DurableAgentRunService durableAgentRunService;
+
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     private final Map<String, ActiveRun> activeRuns = new ConcurrentHashMap<>();
@@ -51,11 +57,13 @@ public class AiController {
     public AiController(LoveApp loveApp,
                         AgentRlService agentRlService,
                         BailianRlDatasetService bailianRlDatasetService,
-                        AdaptiveMultiAgentOrchestrator multiAgentOrchestrator) {
+                        AdaptiveMultiAgentOrchestrator multiAgentOrchestrator,
+                        DurableAgentRunService durableAgentRunService) {
         this.loveApp = loveApp;
         this.agentRlService = agentRlService;
         this.bailianRlDatasetService = bailianRlDatasetService;
         this.multiAgentOrchestrator = multiAgentOrchestrator;
+        this.durableAgentRunService = durableAgentRunService;
     }
 
     @PostMapping("/chat/agentic-rag")
@@ -69,6 +77,58 @@ public class AiController {
     @PostMapping(value = "/chat/agentic-rag/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamAgenticRag(@RequestBody AgenticRagStreamRequest request) {
         String runId = normalizeRunId(request.runId());
+        DurableAgentRun durableRun;
+        try {
+            durableRun = durableAgentRunService.createOrReplay(
+                    runId, request.message(), request.chatId());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
+        if (durableRun.status() == AgentRunStatus.COMPLETED) {
+            return replayCompletedRun(durableRun);
+        }
+        return startStream(
+                new AgenticRagStreamRequest(
+                        durableRun.message(), durableRun.chatId(), durableRun.runId()));
+    }
+
+    /**
+     * 从持久化请求显式重试失败、取消或因服务重启而中断的运行。
+     */
+    @PostMapping(
+            value = "/chat/agentic-rag/runs/{runId}/resume",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter resumeAgenticRag(@PathVariable String runId) {
+        String normalizedRunId = normalizeRunId(runId);
+        if (activeRuns.containsKey(normalizedRunId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "runId is already active");
+        }
+        DurableAgentRun durableRun;
+        try {
+            durableRun = durableAgentRunService.resume(normalizedRunId);
+        } catch (NoSuchElementException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
+        return startStream(
+                new AgenticRagStreamRequest(
+                        durableRun.message(), durableRun.chatId(), durableRun.runId()));
+    }
+
+    @GetMapping("/chat/agentic-rag/runs/{runId}")
+    public DurableAgentRun getAgenticRagRun(@PathVariable String runId) {
+        try {
+            return durableAgentRunService.get(normalizeRunId(runId));
+        } catch (NoSuchElementException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        }
+    }
+
+    private SseEmitter startStream(AgenticRagStreamRequest request) {
+        String runId = request.runId();
         SseEmitter emitter = new SseEmitter(300_000L);
         ActiveRun activeRun = new ActiveRun(runId, emitter);
         if (activeRuns.putIfAbsent(runId, activeRun) != null) {
@@ -93,6 +153,9 @@ public class AiController {
     public CancelRunResponse cancelAgenticRag(@PathVariable String runId) {
         ActiveRun activeRun = activeRuns.get(runId);
         boolean cancelled = activeRun != null && activeRun.cancel();
+        if (cancelled) {
+            durableAgentRunService.cancel(runId);
+        }
         return new CancelRunResponse(runId, cancelled);
     }
 
@@ -128,17 +191,26 @@ public class AiController {
 
     private void executeStream(AgenticRagStreamRequest request, ActiveRun activeRun) {
         try {
+            DurableAgentRun running = durableAgentRunService.markRunning(activeRun.runId());
             send(activeRun.emitter(), "accepted",
-                    new StreamAccepted(activeRun.runId(), "RUNNING"));
+                    new StreamAccepted(activeRun.runId(), "RUNNING", running.attempt()));
             AgenticRagResult result = loveApp.doChatWithAgenticRagTrace(
                     request.message(),
                     request.chatId(),
-                    event -> send(activeRun.emitter(), "progress", event)
+                    event -> {
+                        durableAgentRunService.appendProgress(activeRun.runId(), event);
+                        send(activeRun.emitter(), "progress", event);
+                    }
             );
+            if (activeRun.cancellationRequested()) {
+                throw new AgentRunCancelledException("Agent run was cancelled");
+            }
+            durableAgentRunService.complete(activeRun.runId(), result);
             activeRun.markFinished();
             send(activeRun.emitter(), "complete", result);
             activeRun.emitter().complete();
         } catch (AgentRunCancelledException exception) {
+            durableAgentRunService.cancel(activeRun.runId());
             activeRun.markFinished();
             sendQuietly(activeRun.emitter(), "cancelled",
                     new StreamError(activeRun.runId(), "运行已取消"));
@@ -147,6 +219,11 @@ public class AiController {
             activeRun.markFinished();
             boolean cancelled = activeRun.cancellationRequested()
                     || AgentRunCancelledException.isCancellation(exception);
+            if (cancelled) {
+                durableAgentRunService.cancel(activeRun.runId());
+            } else {
+                durableAgentRunService.fail(activeRun.runId(), safeMessage(exception));
+            }
             sendQuietly(activeRun.emitter(), cancelled ? "cancelled" : "error",
                     new StreamError(
                             activeRun.runId(),
@@ -155,6 +232,24 @@ public class AiController {
         } finally {
             activeRuns.remove(activeRun.runId(), activeRun);
         }
+    }
+
+    private SseEmitter replayCompletedRun(DurableAgentRun run) {
+        SseEmitter emitter = new SseEmitter(60_000L);
+        streamExecutor.submit(() -> {
+            try {
+                send(emitter, "accepted",
+                        new StreamAccepted(run.runId(), "COMPLETED_REPLAY", run.attempt()));
+                for (AgentProgressEvent event : run.events()) {
+                    send(emitter, "progress", event);
+                }
+                send(emitter, "complete", run.result());
+                emitter.complete();
+            } catch (AgentRunCancelledException exception) {
+                emitter.completeWithError(exception);
+            }
+        });
+        return emitter;
     }
 
     private void send(SseEmitter emitter, String eventName, Object data) {
@@ -203,7 +298,7 @@ public class AiController {
     public record AgentRlFeedbackRequest(String trajectoryId, int rating, String comment) {
     }
 
-    public record StreamAccepted(String runId, String status) {
+    public record StreamAccepted(String runId, String status, int attempt) {
     }
 
     public record StreamError(String runId, String message) {

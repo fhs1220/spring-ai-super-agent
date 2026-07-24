@@ -65,6 +65,10 @@ agent:
       # 检测到至少两个独立能力域时才启用并行 Agent，简单问题保留快速路径。
       minimum-domains: ${AGENT_RAG_MULTI_AGENT_MINIMUM_DOMAINS:2}
       max-agents: ${AGENT_RAG_MULTI_AGENT_MAX_AGENTS:3}
+    runtime:
+      # 保存运行请求、阶段事件和最终结果，支持重启后的状态查询与显式恢复。
+      storage-directory: ${AGENT_RAG_RUNTIME_STORAGE_DIRECTORY:tmp/agent-runs}
+      maximum-events: ${AGENT_RAG_RUNTIME_MAXIMUM_EVENTS:200}
     observability:
       # Agent 阶段级硬超时，覆盖底层客户端重试/握手卡住的情况。
       model-call-timeout-seconds: ${AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS:30}

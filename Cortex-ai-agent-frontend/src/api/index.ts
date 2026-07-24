@@ -84,7 +84,13 @@ export interface AgenticRagResult {
   trace: AgentTrace
 }
 
-export type AgentProgressStatus = 'STARTED' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+export type AgentProgressStatus =
+  | 'STARTED'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'RETRYING'
+  | 'RECOVERY_REQUIRED'
 
 export interface AgentProgressEvent {
   phase: string

@@ -185,6 +185,29 @@ DELETE /api/ai/love_app/chat/agentic-rag/runs/client-run-001
 取消会中断承载虚拟线程与当前模型调用，并把轨迹标记为 `CANCELLED`；取消轨迹不会进入指标
 聚合或 RL 数据集。原同步接口继续保留，便于服务端集成和回归测试。
 
+### Durable Agent Runtime
+
+SSE 多 Agent 运行会以原子 JSON 快照持久化到 `tmp/agent-runs`，保存请求、尝试次数、
+最近阶段事件、终态和最终结果：
+
+- 相同 `runId`、相同请求已经成功时，流接口直接回放进度和结果，不会重复调用模型；
+- 运行失败或取消后不会自动重试，避免无意产生额外费用；
+- 服务启动时会把上次遗留的 `QUEUED/RUNNING` 标记为 `RECOVERY_REQUIRED`；
+- 只有显式调用 `resume` 才会使用保存的请求开始新 attempt；
+- 单个快照默认最多保留 200 条进度事件，运行文件不会提交到 Git。
+
+查询运行状态或显式恢复：
+
+```http
+GET /api/ai/love_app/chat/agentic-rag/runs/{runId}
+POST /api/ai/love_app/chat/agentic-rag/runs/{runId}/resume
+Accept: text/event-stream
+```
+
+`resume` 只接受 `FAILED`、`CANCELLED` 或 `RECOVERY_REQUIRED` 状态。运行存储位置和事件上限
+可通过 `AGENT_RAG_RUNTIME_STORAGE_DIRECTORY`、`AGENT_RAG_RUNTIME_MAXIMUM_EVENTS` 调整。
+快照包含用户问题和回答，生产环境应把这些接口放在认证和访问控制之后。
+
 轨迹管理接口涉及用户问题和回答，默认关闭；
 仅在受信任环境设置 `AGENT_RL_API_ENABLED=true` 后启用：
 
