@@ -95,6 +95,52 @@ A2A Agent Card。相关开关：
 - `AGENT_RAG_MULTI_AGENT_MINIMUM_DOMAINS`
 - `AGENT_RAG_MULTI_AGENT_MAX_AGENTS`
 
+### RAG A/B 自动化评测与回归门禁
+
+项目内置版本化 JSONL 基准集
+`src/main/resources/evaluation/love-rag-ab.jsonl`，当前包含 12 类简单、复合、格式约束、
+拒绝无必要追问和关系安全样本。评测会比较：
+
+- A：`TRADITIONAL_RAG`，原查询重写 + 单次知识库问答；
+- B：`AGENTIC_RAG_V4`，当前自适应 Agentic RAG / 多 Agent 策略。
+
+每条样本使用隔离的 `chatId`，并按样本序号交替 A/B 执行顺序。确定性评分覆盖任务要点、
+直接回答、`[来源 n]` 引用、禁用表达、长度约束和 B 版本的路由准确率。报告包含胜/平/负、
+平均质量、通过率、延迟、Token、成本、失败数和关键回归，并写入 `tmp/evaluation/<runId>.json`。
+传统 RAG 尚无完整 Token 遥测，因此报告会以 `usageMeasuredCases=0` 明确标记，而不会把它
+误解释为零成本。
+
+评测会调用两套流程并产生模型费用，API 默认关闭。仅在本地受信任环境开启：
+
+```bash
+export AGENT_EVALUATION_API_ENABLED=true
+```
+
+建议先运行 2 条烟雾测试：
+
+```http
+POST /api/agent-evaluation/ab-runs
+Content-Type: application/json
+
+{"maximumCases":2}
+```
+
+接口立即返回异步 `runId`，随后查询或取消：
+
+```http
+GET /api/agent-evaluation/ab-runs/{runId}
+DELETE /api/agent-evaluation/ab-runs/{runId}
+GET /api/agent-evaluation/benchmark
+```
+
+默认回归门禁要求 B 平均质量至少 `0.72`、相对 A 回退不超过 `0.02`、路由准确率至少
+`0.80`、没有单条关键回归且 B 的执行失败数不高于 A。门槛可通过以下环境变量调整：
+
+- `AGENT_EVALUATION_CANDIDATE_MINIMUM_SCORE`
+- `AGENT_EVALUATION_MAXIMUM_QUALITY_REGRESSION`
+- `AGENT_EVALUATION_MINIMUM_ROUTE_ACCURACY`
+- `AGENT_EVALUATION_MAXIMUM_CASES`
+
 ### Agent RL（第一阶段）
 
 Agentic RAG 会把每次执行保存为可训练轨迹，包含规划、检索、验证、补充检索、生成和修正步骤，

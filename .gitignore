@@ -5,6 +5,7 @@ tmp
 HELP.md
 target/
 tmp/rag/
+tmp/evaluation/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

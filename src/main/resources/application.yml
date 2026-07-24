@@ -85,3 +85,12 @@ agent:
       # 供百炼云端 Rollout 调用；必须部署到云端可访问地址，并配置独立强令牌。
       api-enabled: ${AGENT_RL_ENVIRONMENT_API_ENABLED:false}
       token: ${AGENT_RL_ENVIRONMENT_TOKEN:}
+  evaluation:
+    # A/B 评测会调用两套 RAG 并产生模型费用，仅在本地受信任环境显式开启。
+    api-enabled: ${AGENT_EVALUATION_API_ENABLED:false}
+    benchmark: ${AGENT_EVALUATION_BENCHMARK:classpath:evaluation/love-rag-ab.jsonl}
+    report-directory: ${AGENT_EVALUATION_REPORT_DIRECTORY:tmp/evaluation}
+    maximum-cases: ${AGENT_EVALUATION_MAXIMUM_CASES:50}
+    candidate-minimum-score: ${AGENT_EVALUATION_CANDIDATE_MINIMUM_SCORE:0.72}
+    maximum-quality-regression: ${AGENT_EVALUATION_MAXIMUM_QUALITY_REGRESSION:0.02}
+    minimum-route-accuracy: ${AGENT_EVALUATION_MINIMUM_ROUTE_ACCURACY:0.8}
