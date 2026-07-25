@@ -6,6 +6,7 @@ import type {
   RoutingPolicyQualityGuard,
   RoutingPolicyRegistry,
   RoutingPolicyOffPolicyEvaluation,
+  RoutingPolicyDriftReport,
   RoutingPolicyStatus,
 } from '../api'
 
@@ -16,6 +17,7 @@ const props = defineProps<{
   routingPolicyQualityGuard: RoutingPolicyQualityGuard | null
   routingPolicyRegistry: RoutingPolicyRegistry | null
   routingPolicyOffPolicyEvaluation: RoutingPolicyOffPolicyEvaluation | null
+  routingPolicyDrift: RoutingPolicyDriftReport | null
   loading: boolean
   error: string
 }>()
@@ -91,6 +93,21 @@ const offPolicyLabel = computed(() => {
   }
   return props.routingPolicyOffPolicyEvaluation
     ? labels[props.routingPolicyOffPolicyEvaluation.state]
+    : '加载中'
+})
+
+const driftLabel = computed(() => {
+  const labels = {
+    DISABLED: '监控关闭',
+    INACTIVE: '仅 ACTIVE 启用',
+    COLLECTING: '积累监控窗口',
+    HEALTHY: '运行稳定',
+    DRIFTED: '检测到漂移',
+    ROLLED_BACK: '已自动回退',
+    ERROR: '监控异常',
+  }
+  return props.routingPolicyDrift
+    ? labels[props.routingPolicyDrift.state]
     : '加载中'
 })
 
@@ -227,6 +244,38 @@ function shortVersion(value: string | undefined): string {
           routingPolicyOffPolicyEvaluation.blockers[0]
           ?? routingPolicyOffPolicyEvaluation.reason
         }}
+      </p>
+      <div class="registry-line">
+        <span>ACTIVE 漂移监控</span>
+        <strong>{{ driftLabel }}</strong>
+      </div>
+      <div class="artifact-meta">
+        <span>
+          基线 {{ routingPolicyDrift?.reference.sampleCount ?? 0 }}
+          / {{ routingPolicyDrift?.minimumReferenceSamples ?? '—' }}
+        </span>
+        <span>
+          当前 {{ routingPolicyDrift?.active.sampleCount ?? 0 }}
+          / {{ routingPolicyDrift?.minimumActiveSamples ?? '—' }}
+        </span>
+        <span>
+          JS {{ score(routingPolicyDrift?.featureJsDivergence) }}
+          / {{ score(routingPolicyDrift?.maximumFeatureJsDivergence) }}
+        </span>
+        <span v-if="routingPolicyDrift?.state === 'DRIFTED'">
+          连续 {{ routingPolicyDrift.consecutiveViolationCount }}
+          / {{ routingPolicyDrift.consecutiveViolationsRequired }}
+        </span>
+      </div>
+      <p
+        v-if="
+          routingPolicyDrift?.state === 'DRIFTED'
+          || routingPolicyDrift?.state === 'ROLLED_BACK'
+          || routingPolicyDrift?.state === 'ERROR'
+        "
+        class="guard-reason"
+      >
+        {{ routingPolicyDrift.violations[0] ?? routingPolicyDrift.reason }}
       </p>
       <div class="registry-line">
         <span>策略资产</span>

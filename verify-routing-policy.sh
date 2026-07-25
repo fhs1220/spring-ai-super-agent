@@ -51,7 +51,7 @@ fi
 
 note "[1/3] 运行专项测试..."
 sh mvnw "${MVN_ARGS[@]}" \
-  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,RoutingPolicyRegistryServiceTest,RoutingPolicyOffPolicyEvaluatorTest,FileRoutingPolicyRegistryRepositoryTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
+  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,RoutingPolicyRegistryServiceTest,RoutingPolicyOffPolicyEvaluatorTest,RoutingPolicyDriftMonitorTest,FileRoutingPolicyRegistryRepositoryTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
   test >> "$LOG" 2>&1
 TEST_EXIT=$?
 note "[1/3] 测试退出码: $TEST_EXIT"
@@ -103,6 +103,8 @@ echo "registry-body: $REGISTRY_BODY" >> "$LOG"
 OPE_BODY=$(curl -sf \
   "$BASE_URL/ai/love_app/agents/routing-policy/off-policy-evaluation")
 echo "off-policy-body: $OPE_BODY" >> "$LOG"
+DRIFT_BODY=$(curl -sf "$BASE_URL/ai/love_app/agents/routing-policy/drift")
+echo "drift-body: $DRIFT_BODY" >> "$LOG"
 MGMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   "$BASE_URL/agent-routing-policy/deployments")
 note "management-api http code (期望 404): $MGMT_CODE"
@@ -120,10 +122,13 @@ note "策略资产 schema v2: $([ $SCHEMA_OK -eq 1 ] && echo OK || echo FAIL)"
 echo "$OPE_BODY" | grep -q '"state":"NO_ARTIFACT"' \
   && OPE_OK=1 || OPE_OK=0
 note "离线策略评测冷启动: $([ $OPE_OK -eq 1 ] && echo OK || echo FAIL)"
+echo "$DRIFT_BODY" | grep -q '"state":"INACTIVE"' \
+  && DRIFT_OK=1 || DRIFT_OK=0
+note "ACTIVE 漂移监控待命: $([ $DRIFT_OK -eq 1 ] && echo OK || echo FAIL)"
 
 if [ $SHADOW_OK -eq 1 ] && [ $GUARD_OK -eq 1 ] \
   && [ $REGISTRY_OK -eq 1 ] && [ $SCHEMA_OK -eq 1 ] \
-  && [ $OPE_OK -eq 1 ] \
+  && [ $OPE_OK -eq 1 ] && [ $DRIFT_OK -eq 1 ] \
   && [ "$MGMT_CODE" = "404" ]; then
   note "RESULT: ALL_PASSED"
   exit 0

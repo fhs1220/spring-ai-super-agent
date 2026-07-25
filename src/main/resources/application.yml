@@ -113,6 +113,19 @@ agent:
         minimum-effective-sample-size: ${AGENT_RAG_ROUTING_OPE_MINIMUM_EFFECTIVE_SAMPLE_SIZE:20}
         maximum-importance-weight: ${AGENT_RAG_ROUTING_OPE_MAXIMUM_IMPORTANCE_WEIGHT:20}
         maximum-reward-regression: ${AGENT_RAG_ROUTING_OPE_MAXIMUM_REWARD_REGRESSION:0.03}
+      drift-monitor:
+        enabled: ${AGENT_RAG_ROUTING_DRIFT_ENABLED:true}
+        evaluation-interval-ms: ${AGENT_RAG_ROUTING_DRIFT_INTERVAL_MS:60000}
+        minimum-reference-samples: ${AGENT_RAG_ROUTING_DRIFT_MINIMUM_REFERENCE_SAMPLES:20}
+        minimum-active-samples: ${AGENT_RAG_ROUTING_DRIFT_MINIMUM_ACTIVE_SAMPLES:30}
+        maximum-samples-per-window: ${AGENT_RAG_ROUTING_DRIFT_MAXIMUM_SAMPLES_PER_WINDOW:500}
+        consecutive-violations: ${AGENT_RAG_ROUTING_DRIFT_CONSECUTIVE_VIOLATIONS:3}
+        maximum-feature-js-divergence: ${AGENT_RAG_ROUTING_DRIFT_MAXIMUM_FEATURE_JS_DIVERGENCE:0.20}
+        maximum-reward-regression: ${AGENT_RAG_ROUTING_DRIFT_MAXIMUM_REWARD_REGRESSION:0.05}
+        maximum-grounding-regression: ${AGENT_RAG_ROUTING_DRIFT_MAXIMUM_GROUNDING_REGRESSION:0.05}
+        maximum-completion-regression: ${AGENT_RAG_ROUTING_DRIFT_MAXIMUM_COMPLETION_REGRESSION:0.05}
+        maximum-latency-multiplier: ${AGENT_RAG_ROUTING_DRIFT_MAXIMUM_LATENCY_MULTIPLIER:1.5}
+        maximum-cost-multiplier: ${AGENT_RAG_ROUTING_DRIFT_MAXIMUM_COST_MULTIPLIER:1.5}
     observability:
       # Agent 阶段级硬超时，覆盖底层客户端重试/握手卡住的情况。
       model-call-timeout-seconds: ${AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS:30}

@@ -133,6 +133,11 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 端到端延迟和估算成本。两组都达到门槛后，如果任一指标超过允许回退阈值，会自动创建一条
 带指标原因的 `SHADOW` 发布记录；自动回滚因此可以跨重启审计，不会影响正在执行的回答请求。
 
+策略进入 `ACTIVE` 后，漂移监控以同一策略资产在 CANARY 阶段的实际命中组作为参考窗口，
+持续比较当前 ACTIVE 窗口。它使用 Jensen–Shannon 距离检测 `featureBucket` 分布变化，同时
+监控奖励、忠实度、完成率、延迟和成本。默认连续 3 次越界才自动创建可审计的 `SHADOW`
+发布记录，避免单次流量波动误触发回退。
+
 策略注册中心每 60 秒检查一次学习状态。单/多 Agent 证据平衡后，它会生成不含用户问题和
 答案的不可变策略资产，内容包括：
 
@@ -161,6 +166,7 @@ GET /api/ai/love_app/agents/routing-policy
 GET /api/ai/love_app/agents/routing-policy/quality-guard
 GET /api/ai/love_app/agents/routing-policy/registry
 GET /api/ai/love_app/agents/routing-policy/off-policy-evaluation
+GET /api/ai/love_app/agents/routing-policy/drift
 ```
 
 主要配置：
@@ -185,6 +191,12 @@ GET /api/ai/love_app/agents/routing-policy/off-policy-evaluation
 - `AGENT_RAG_ROUTING_OPE_MINIMUM_EFFECTIVE_SAMPLE_SIZE`（默认 `20`）
 - `AGENT_RAG_ROUTING_OPE_MAXIMUM_IMPORTANCE_WEIGHT`（默认 `20`）
 - `AGENT_RAG_ROUTING_OPE_MAXIMUM_REWARD_REGRESSION`（默认 `0.03`）
+- `AGENT_RAG_ROUTING_DRIFT_ENABLED`（默认 `true`）
+- `AGENT_RAG_ROUTING_DRIFT_INTERVAL_MS`（默认 `60000`）
+- `AGENT_RAG_ROUTING_DRIFT_MINIMUM_REFERENCE_SAMPLES`（默认 `20`）
+- `AGENT_RAG_ROUTING_DRIFT_MINIMUM_ACTIVE_SAMPLES`（默认 `30`）
+- `AGENT_RAG_ROUTING_DRIFT_CONSECUTIVE_VIOLATIONS`（默认 `3`）
+- `AGENT_RAG_ROUTING_DRIFT_MAXIMUM_FEATURE_JS_DIVERGENCE`（默认 `0.20`）
 - `AGENT_RAG_ROUTING_MINIMUM_SAMPLES_PER_MODE`
 - `AGENT_RAG_ROUTING_MINIMUM_UTILITY_LIFT`
 - `AGENT_RAG_ROUTING_COST_WEIGHT`

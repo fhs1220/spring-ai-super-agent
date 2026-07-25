@@ -246,6 +246,51 @@ export interface RoutingPolicyOffPolicyEvaluation {
   reason: string
 }
 
+export type RoutingPolicyDriftState =
+  | 'DISABLED'
+  | 'INACTIVE'
+  | 'COLLECTING'
+  | 'HEALTHY'
+  | 'DRIFTED'
+  | 'ROLLED_BACK'
+  | 'ERROR'
+
+export interface RoutingPolicyDriftWindow {
+  sampleCount: number
+  completedCount: number
+  usageMeasuredSamples: number
+  averageReward: number
+  groundingRate: number
+  completionRate: number
+  averageLatencyMs: number
+  averageCostCny: number
+  featureDistribution: Record<string, number>
+}
+
+export interface RoutingPolicyDriftReport {
+  enabled: boolean
+  state: RoutingPolicyDriftState
+  deploymentVersion: string
+  policyArtifactVersion: string
+  rolloutMode: RoutingPolicyMode
+  minimumReferenceSamples: number
+  minimumActiveSamples: number
+  reference: RoutingPolicyDriftWindow
+  active: RoutingPolicyDriftWindow
+  featureJsDivergence: number
+  maximumFeatureJsDivergence: number
+  consecutiveViolationCount: number
+  consecutiveViolationsRequired: number
+  maximumRewardRegression: number
+  maximumGroundingRegression: number
+  maximumCompletionRegression: number
+  maximumLatencyMultiplier: number
+  maximumCostMultiplier: number
+  violations: string[]
+  evaluatedAt: string
+  reason: string
+}
+
 export interface RoutingModeStats {
   sampleCount: number
   successfulCount: number
@@ -462,6 +507,14 @@ export async function fetchRoutingPolicyOffPolicyEvaluation():
   Promise<RoutingPolicyOffPolicyEvaluation> {
   const response = await http.get<RoutingPolicyOffPolicyEvaluation>(
     '/ai/love_app/agents/routing-policy/off-policy-evaluation',
+  )
+  return response.data
+}
+
+export async function fetchRoutingPolicyDrift():
+  Promise<RoutingPolicyDriftReport> {
+  const response = await http.get<RoutingPolicyDriftReport>(
+    '/ai/love_app/agents/routing-policy/drift',
   )
   return response.data
 }
