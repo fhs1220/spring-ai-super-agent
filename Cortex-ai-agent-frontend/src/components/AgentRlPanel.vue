@@ -80,6 +80,14 @@ const guardLabel = computed(() => {
 })
 
 const latestArtifact = computed(() => props.routingPolicyRegistry?.artifacts[0] ?? null)
+const contextualRuleCount = computed(
+  () => Object.keys(latestArtifact.value?.contextualRules ?? {}).length,
+)
+const contextualCoverage = computed(() => {
+  const bucketCount = props.routingPolicy?.contextualBucketCount ?? 0
+  if (bucketCount === 0) return '—'
+  return percent(contextualRuleCount.value / bucketCount)
+})
 
 function shortVersion(value: string | undefined): string {
   if (!value) return '—'
@@ -186,6 +194,19 @@ function shortVersion(value: string | undefined): string {
         <span>样本 {{ latestArtifact.trainingSampleCount }}</span>
         <span>指纹 {{ latestArtifact.trainingDataFingerprint.slice(0, 10) }}</span>
         <span>效用 Δ {{ latestArtifact.offlineEvaluation.multiAgentUtilityLift.toFixed(3) }}</span>
+        <span>
+          场景规则 {{ contextualRuleCount }} /
+          {{ routingPolicy?.contextualBucketCount ?? 0 }}
+          · 覆盖 {{ contextualCoverage }}
+        </span>
+        <span>
+          全局回退
+          {{
+            latestArtifact.globalRule?.deployable
+              ? latestArtifact.globalRule.recommendedMode
+              : '确定性'
+          }}
+        </span>
       </div>
     </section>
 

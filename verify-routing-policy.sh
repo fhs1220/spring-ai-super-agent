@@ -102,9 +102,13 @@ note "质量守卫待命: $([ $GUARD_OK -eq 1 ] && echo OK || echo FAIL)"
 echo "$REGISTRY_BODY" | grep -q '"version":"routing-policy-baseline-v1"' \
   && REGISTRY_OK=1 || REGISTRY_OK=0
 note "策略注册表基线: $([ $REGISTRY_OK -eq 1 ] && echo OK || echo FAIL)"
+echo "$REGISTRY_BODY" | grep -q '"schemaVersion":2' \
+  && SCHEMA_OK=1 || SCHEMA_OK=0
+note "策略资产 schema v2: $([ $SCHEMA_OK -eq 1 ] && echo OK || echo FAIL)"
 
 if [ $SHADOW_OK -eq 1 ] && [ $GUARD_OK -eq 1 ] \
-  && [ $REGISTRY_OK -eq 1 ] && [ "$MGMT_CODE" = "404" ]; then
+  && [ $REGISTRY_OK -eq 1 ] && [ $SCHEMA_OK -eq 1 ] \
+  && [ "$MGMT_CODE" = "404" ]; then
   note "RESULT: ALL_PASSED"
   exit 0
 fi

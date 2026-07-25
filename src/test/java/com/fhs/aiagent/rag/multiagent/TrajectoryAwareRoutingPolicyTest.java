@@ -165,7 +165,7 @@ class TrajectoryAwareRoutingPolicyTest {
         RoutingPolicyRegistryService registry = new RoutingPolicyRegistryService(
                 new MemoryRegistryRepository(),
                 repository,
-                "trajectory-utility-global-policy-v1",
+                "trajectory-utility-contextual-policy-v2",
                 "qwen-test",
                 Map.of("minimumUtilityLift", "0.03"),
                 0.03,
@@ -175,7 +175,7 @@ class TrajectoryAwareRoutingPolicyTest {
         registry.initialize();
         TrajectoryAwareRoutingPolicy policy = policy(
                 repository, 0.05, 0.05, deployments, registry);
-        registry.reconcileNow(policy.status());
+        registry.reconcileNow(policy.status(), policy.learnedPolicySnapshot());
         RoutingPolicyArtifact artifact = registry.latestValidatedCandidate();
         deployments.deploy(
                 RoutingPolicyMode.CANARY,
@@ -190,9 +190,21 @@ class TrajectoryAwareRoutingPolicyTest {
                         BUCKET, false, false, "artifact-canary-user"));
 
         assertThat(decision.multiAgent()).isTrue();
-        assertThat(decision.source()).isEqualTo("CANARY_LEARNED_ARTIFACT");
+        assertThat(decision.source())
+                .isEqualTo("CANARY_LEARNED_ARTIFACT_CONTEXTUAL");
         assertThat(decision.policyArtifactVersion()).isEqualTo(artifact.version());
         assertThat(decision.reason()).contains("冻结策略资产");
+
+        TrajectoryAwareRoutingPolicy.RoutingPolicyDecision unknownBucket =
+                policy.decide(new TrajectoryAwareRoutingPolicy.RoutingContext(
+                        "UNKNOWN|structured=false|long=false",
+                        false,
+                        false,
+                        "artifact-global-fallback-user"
+                ));
+        assertThat(unknownBucket.multiAgent()).isTrue();
+        assertThat(unknownBucket.source())
+                .isEqualTo("CANARY_LEARNED_ARTIFACT_GLOBAL");
     }
 
     @Test

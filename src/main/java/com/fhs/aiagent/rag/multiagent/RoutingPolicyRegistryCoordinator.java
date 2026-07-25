@@ -39,6 +39,9 @@ public class RoutingPolicyRegistryCoordinator {
     }
 
     public RoutingPolicyRegistryState reconcileNow() {
-        return registryService.reconcileNow(routingPolicy.status());
+        return registryService.reconcileNow(
+                routingPolicy.status(),
+                routingPolicy.learnedPolicySnapshot()
+        );
     }
 }

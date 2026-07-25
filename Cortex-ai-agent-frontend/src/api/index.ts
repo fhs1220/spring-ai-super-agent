@@ -181,7 +181,19 @@ export interface RoutingPolicyOfflineEvaluation {
   validationFailures: string[]
 }
 
+export interface RoutingPolicyDecisionRule {
+  deployable: boolean
+  recommendedMode: string
+  confidence: number
+  evidenceSamples: number
+  utilityLift: number
+  singleAgent: RoutingPolicyArtifactModeEvaluation
+  multiAgent: RoutingPolicyArtifactModeEvaluation
+  reason: string
+}
+
 export interface RoutingPolicyArtifact {
+  schemaVersion?: number
   version: string
   status: RoutingPolicyArtifactStatus
   algorithm: string
@@ -190,6 +202,8 @@ export interface RoutingPolicyArtifact {
   trainingDataFingerprint: string
   trainingSampleCount: number
   offlineEvaluation: RoutingPolicyOfflineEvaluation
+  globalRule?: RoutingPolicyDecisionRule
+  contextualRules?: Record<string, RoutingPolicyDecisionRule>
   parentVersion: string
   createdAt: string
   validationReason: string

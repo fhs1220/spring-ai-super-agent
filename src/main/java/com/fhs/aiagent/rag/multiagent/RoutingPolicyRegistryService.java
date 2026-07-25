@@ -59,7 +59,7 @@ public class RoutingPolicyRegistryService {
             RoutingPolicyRegistryRepository repository,
             AgentTrajectoryRepository trajectoryRepository,
             @Value("${agent.rag.routing-policy.registry.algorithm:"
-                    + "trajectory-utility-global-policy-v1}") String algorithm,
+                    + "trajectory-utility-contextual-policy-v2}") String algorithm,
             @Value("${spring.ai.dashscope.chat.options.model:qwen-plus}")
             String upstreamModel,
             @Value("${agent.rag.routing-policy.minimum-utility-lift:0.03}")
@@ -114,19 +114,66 @@ public class RoutingPolicyRegistryService {
         if (state.artifacts().isEmpty()) {
             state = initialState();
         }
+        state = migrateBuiltInBaseline(state);
         state = repository.save(state);
     }
 
     public synchronized RoutingPolicyRegistryState reconcileNow(
             TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status) {
+        double lift = round(
+                status.multiAgent().utility() - status.singleAgent().utility());
+        int evidenceSamples = Math.min(
+                status.singleAgent().sampleCount(),
+                status.multiAgent().sampleCount()
+        );
+        TrajectoryAwareRoutingPolicy.LearnedRule global =
+                new TrajectoryAwareRoutingPolicy.LearnedRule(
+                        status.ready(),
+                        status.ready() && Math.abs(lift) >= minimumUtilityLift,
+                        lift >= minimumUtilityLift,
+                        0,
+                        evidenceSamples,
+                        lift,
+                        status.singleAgent(),
+                        status.multiAgent(),
+                        "global rule derived from routing status"
+                );
+        return reconcileNow(
+                status,
+                new TrajectoryAwareRoutingPolicy.LearnedPolicySnapshot(
+                        global,
+                        Map.of(),
+                        status.observedTrajectoryCount(),
+                        status.minimumSamplesPerMode(),
+                        status.refreshedAt()
+                )
+        );
+    }
+
+    public synchronized RoutingPolicyRegistryState reconcileNow(
+            TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status,
+            TrajectoryAwareRoutingPolicy.LearnedPolicySnapshot learnedSnapshot) {
         RoutingPolicyRegistryState currentState = requireState();
         if (!status.ready()) {
             return currentState;
         }
         List<AgentTrajectory> trainingData = eligibleTrajectories();
         String fingerprint = fingerprint(trainingData);
-        RoutingPolicyArtifact.OfflineEvaluation evaluation = evaluation(status);
-        String version = artifactVersion(fingerprint, evaluation);
+        RoutingPolicyArtifact.DecisionRule globalRule =
+                freezeRule(learnedSnapshot.global());
+        Map<String, RoutingPolicyArtifact.DecisionRule> contextualRules =
+                freezeContextualRules(learnedSnapshot.contextual());
+        RoutingPolicyArtifact.OfflineEvaluation evaluation = evaluation(
+                status,
+                globalRule,
+                contextualRules
+        );
+        String version = artifactVersion(
+                fingerprint,
+                evaluation,
+                globalRule,
+                contextualRules
+        );
         boolean alreadyRegistered = currentState.artifacts().stream()
                 .anyMatch(artifact -> version.equals(artifact.version()));
         if (alreadyRegistered) {
@@ -137,9 +184,10 @@ public class RoutingPolicyRegistryService {
                 ? RoutingPolicyArtifactStatus.VALIDATED
                 : RoutingPolicyArtifactStatus.REJECTED;
         String validationReason = evaluation.validationPassed()
-                ? "balanced evidence and utility lift gate passed"
+                ? "balanced evidence and at least one frozen rule passed utility gate"
                 : String.join("; ", evaluation.validationFailures());
         RoutingPolicyArtifact artifact = new RoutingPolicyArtifact(
+                2,
                 version,
                 artifactStatus,
                 algorithm,
@@ -148,6 +196,8 @@ public class RoutingPolicyRegistryService {
                 fingerprint,
                 trainingData.size(),
                 evaluation,
+                globalRule,
+                contextualRules,
                 latestValidatedVersion(currentState),
                 clock.instant(),
                 validationReason
@@ -205,7 +255,32 @@ public class RoutingPolicyRegistryService {
     }
 
     private RoutingPolicyRegistryState initialState() {
-        RoutingPolicyArtifact baseline = new RoutingPolicyArtifact(
+        return new RoutingPolicyRegistryState(
+                List.of(baselineArtifact(clock.instant())),
+                clock.instant()
+        );
+    }
+
+    private RoutingPolicyRegistryState migrateBuiltInBaseline(
+            RoutingPolicyRegistryState currentState) {
+        boolean requiresMigration = currentState.artifacts().stream()
+                .anyMatch(artifact -> BASELINE_VERSION.equals(artifact.version())
+                        && artifact.schemaVersion() < 2);
+        if (!requiresMigration) {
+            return currentState;
+        }
+        List<RoutingPolicyArtifact> migrated = currentState.artifacts().stream()
+                .map(artifact -> BASELINE_VERSION.equals(artifact.version())
+                        && artifact.schemaVersion() < 2
+                        ? baselineArtifact(artifact.createdAt())
+                        : artifact)
+                .toList();
+        return new RoutingPolicyRegistryState(migrated, clock.instant());
+    }
+
+    private RoutingPolicyArtifact baselineArtifact(Instant createdAt) {
+        return new RoutingPolicyArtifact(
+                2,
                 BASELINE_VERSION,
                 RoutingPolicyArtifactStatus.BASELINE,
                 "deterministic-complexity-router-v1",
@@ -214,15 +289,18 @@ public class RoutingPolicyRegistryService {
                 "baseline",
                 0,
                 RoutingPolicyArtifact.OfflineEvaluation.empty(),
+                RoutingPolicyArtifact.DecisionRule.empty(),
+                Map.of(),
                 "",
-                clock.instant(),
+                createdAt,
                 "built-in deterministic baseline"
         );
-        return new RoutingPolicyRegistryState(List.of(baseline), clock.instant());
     }
 
     private RoutingPolicyArtifact.OfflineEvaluation evaluation(
-            TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status) {
+            TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status,
+            RoutingPolicyArtifact.DecisionRule globalRule,
+            Map<String, RoutingPolicyArtifact.DecisionRule> contextualRules) {
         RoutingPolicyArtifact.ModeEvaluation single = mode(status.singleAgent());
         RoutingPolicyArtifact.ModeEvaluation multi = mode(status.multiAgent());
         double lift = round(multi.utility() - single.utility());
@@ -230,9 +308,8 @@ public class RoutingPolicyRegistryService {
         if (!status.ready()) {
             failures.add("single/multi evidence is not balanced");
         }
-        if (Math.abs(lift) < minimumUtilityLift) {
-            failures.add("absolute utility lift %.4f is below %.4f"
-                    .formatted(Math.abs(lift), minimumUtilityLift));
+        if (!globalRule.deployable() && contextualRules.isEmpty()) {
+            failures.add("no global or contextual rule passed sample and utility lift gates");
         }
         return new RoutingPolicyArtifact.OfflineEvaluation(
                 status.ready(),
@@ -241,11 +318,41 @@ public class RoutingPolicyRegistryService {
                 single,
                 multi,
                 lift,
-                lift >= 0
-                        ? AdaptiveMultiAgentOrchestrator.MULTI_MODE
-                        : AdaptiveMultiAgentOrchestrator.SINGLE_MODE,
+                globalRule.deployable()
+                        ? globalRule.recommendedMode()
+                        : "DETERMINISTIC",
                 failures.isEmpty(),
                 failures
+        );
+    }
+
+    private Map<String, RoutingPolicyArtifact.DecisionRule> freezeContextualRules(
+            Map<String, TrajectoryAwareRoutingPolicy.LearnedRule> learnedRules) {
+        Map<String, RoutingPolicyArtifact.DecisionRule> frozen = new LinkedHashMap<>();
+        learnedRules.entrySet().stream()
+                .filter(entry -> entry.getValue() != null
+                        && entry.getValue().deployable())
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> frozen.put(entry.getKey(), freezeRule(entry.getValue())));
+        return Map.copyOf(frozen);
+    }
+
+    private RoutingPolicyArtifact.DecisionRule freezeRule(
+            TrajectoryAwareRoutingPolicy.LearnedRule learnedRule) {
+        if (learnedRule == null || !learnedRule.deployable()) {
+            return RoutingPolicyArtifact.DecisionRule.empty();
+        }
+        return new RoutingPolicyArtifact.DecisionRule(
+                true,
+                learnedRule.selectMultiAgent()
+                        ? AdaptiveMultiAgentOrchestrator.MULTI_MODE
+                        : AdaptiveMultiAgentOrchestrator.SINGLE_MODE,
+                learnedRule.confidence(),
+                learnedRule.evidenceSamples(),
+                learnedRule.utilityLift(),
+                mode(learnedRule.singleAgent()),
+                mode(learnedRule.multiAgent()),
+                learnedRule.reason()
         );
     }
 
@@ -295,8 +402,11 @@ public class RoutingPolicyRegistryService {
 
     private String artifactVersion(
             String trainingDataFingerprint,
-            RoutingPolicyArtifact.OfflineEvaluation evaluation) {
+            RoutingPolicyArtifact.OfflineEvaluation evaluation,
+            RoutingPolicyArtifact.DecisionRule globalRule,
+            Map<String, RoutingPolicyArtifact.DecisionRule> contextualRules) {
         MessageDigest digest = sha256Digest();
+        digest.update("schemaVersion=2\n".getBytes(StandardCharsets.UTF_8));
         digest.update(("algorithm=" + algorithm + "\n")
                 .getBytes(StandardCharsets.UTF_8));
         digest.update(("upstreamModel=" + upstreamModel + "\n")
@@ -310,16 +420,70 @@ public class RoutingPolicyRegistryService {
                 .getBytes(StandardCharsets.UTF_8));
         digest.update(("minimumSamplesPerMode=" + evaluation.minimumSamplesPerMode() + "\n")
                 .getBytes(StandardCharsets.UTF_8));
-        digest.update(("singleUtility=" + evaluation.singleAgent().utility() + "\n")
-                .getBytes(StandardCharsets.UTF_8));
-        digest.update(("multiUtility=" + evaluation.multiAgent().utility() + "\n")
+        updateModeDigest(digest, "evaluation.single", evaluation.singleAgent());
+        updateModeDigest(digest, "evaluation.multi", evaluation.multiAgent());
+        digest.update(("multiAgentUtilityLift="
+                + evaluation.multiAgentUtilityLift() + "\n")
                 .getBytes(StandardCharsets.UTF_8));
         digest.update(("recommendedMode=" + evaluation.recommendedMode() + "\n")
                 .getBytes(StandardCharsets.UTF_8));
         digest.update(("validationPassed=" + evaluation.validationPassed() + "\n")
                 .getBytes(StandardCharsets.UTF_8));
+        for (int index = 0; index < evaluation.validationFailures().size(); index++) {
+            digest.update(("validationFailure." + index + "="
+                    + evaluation.validationFailures().get(index) + "\n")
+                    .getBytes(StandardCharsets.UTF_8));
+        }
+        updateRuleDigest(digest, "global", globalRule);
+        contextualRules.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> updateRuleDigest(
+                        digest,
+                        "contextual." + entry.getKey(),
+                        entry.getValue()
+                ));
         return "routing-policy-"
                 + HexFormat.of().formatHex(digest.digest()).substring(0, 12);
+    }
+
+    private void updateRuleDigest(MessageDigest digest,
+                                  String scope,
+                                  RoutingPolicyArtifact.DecisionRule rule) {
+        digest.update((scope + ".deployable=" + rule.deployable() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".recommendedMode=" + rule.recommendedMode() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".confidence=" + rule.confidence() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".evidenceSamples=" + rule.evidenceSamples() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".utilityLift=" + rule.utilityLift() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        updateModeDigest(digest, scope + ".single", rule.singleAgent());
+        updateModeDigest(digest, scope + ".multi", rule.multiAgent());
+        digest.update((scope + ".reason=" + rule.reason() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void updateModeDigest(
+            MessageDigest digest,
+            String scope,
+            RoutingPolicyArtifact.ModeEvaluation mode) {
+        digest.update((scope + ".sampleCount=" + mode.sampleCount() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".successfulCount=" + mode.successfulCount() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".usageMeasuredSamples="
+                + mode.usageMeasuredSamples() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".averageReward=" + mode.averageReward() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".averageCostCny=" + mode.averageCostCny() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".averageLatencyMs=" + mode.averageLatencyMs() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update((scope + ".utility=" + mode.utility() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
     }
 
     private MessageDigest sha256Digest() {

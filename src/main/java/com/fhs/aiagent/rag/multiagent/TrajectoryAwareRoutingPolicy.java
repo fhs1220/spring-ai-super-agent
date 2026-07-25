@@ -265,21 +265,34 @@ public class TrajectoryAwareRoutingPolicy {
         }
         try {
             RoutingPolicyArtifact artifact = registryService.requireDeployable(policyVersion);
-            RoutingPolicyArtifact.OfflineEvaluation evaluation =
-                    artifact.offlineEvaluation();
+            RoutingPolicyArtifact.DecisionRule rule =
+                    artifact.contextualRules().get(context.featureBucket());
+            String scope = "CONTEXTUAL";
+            if (rule == null || !rule.deployable()) {
+                rule = artifact.globalRule();
+                scope = "GLOBAL";
+            }
+            if (rule == null || !rule.deployable()) {
+                return new CandidateDecision(
+                        context.deterministicMultiAgent(),
+                        "ARTIFACT_DETERMINISTIC_FALLBACK",
+                        0,
+                        0,
+                        "冻结策略资产没有匹配的上下文或全局规则，回退确定性路由"
+                );
+            }
             boolean multiAgent = AdaptiveMultiAgentOrchestrator.MULTI_MODE.equals(
-                    evaluation.recommendedMode());
-            int evidenceSamples = evaluation.singleAgent().sampleCount()
-                    + evaluation.multiAgent().sampleCount();
+                    rule.recommendedMode());
             return new CandidateDecision(
                     multiAgent,
-                    "LEARNED_ARTIFACT",
-                    confidence(evaluation.multiAgentUtilityLift(), evidenceSamples),
-                    evidenceSamples,
-                    "执行冻结策略资产 %s（训练指纹 %s）"
+                    "LEARNED_ARTIFACT_" + scope,
+                    rule.confidence(),
+                    rule.evidenceSamples(),
+                    "执行冻结策略资产 %s 的%s规则（训练指纹 %s）"
                             .formatted(
                                     artifact.version(),
-                                    artifact.trainingDataFingerprint().substring(0, 12)
+                                    "CONTEXTUAL".equals(scope) ? "上下文" : "全局",
+                                    shortFingerprint(artifact.trainingDataFingerprint())
                             )
             );
         } catch (RuntimeException exception) {
@@ -291,6 +304,11 @@ public class TrajectoryAwareRoutingPolicy {
                     "策略资产不可用，回退确定性路由"
             );
         }
+    }
+
+    private String shortFingerprint(String fingerprint) {
+        String value = Objects.toString(fingerprint, "");
+        return value.substring(0, Math.min(12, value.length()));
     }
 
     private CandidateDecision dynamicCandidate(RoutingContext context) {
@@ -400,6 +418,67 @@ public class TrajectoryAwareRoutingPolicy {
                 ready
                         ? "策略已有足够的单/多 Agent 对照轨迹"
                         : "冷启动：继续收集两种模式的完成或失败轨迹"
+        );
+    }
+
+    /**
+     * 导出可冻结的学习结果。注册表只消费这个不含用户问题/答案的统计快照。
+     */
+    public LearnedPolicySnapshot learnedPolicySnapshot() {
+        PolicySnapshot snapshot = snapshot();
+        Map<String, LearnedRule> contextual = new LinkedHashMap<>();
+        snapshot.contextual().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> contextual.put(
+                        entry.getKey(),
+                        learnedRule(entry.getValue(), "contextual:" + entry.getKey())
+                ));
+        return new LearnedPolicySnapshot(
+                learnedRule(snapshot.global(), "global"),
+                Map.copyOf(contextual),
+                snapshot.observedTrajectoryCount(),
+                minimumSamplesPerMode,
+                snapshot.refreshedAt()
+        );
+    }
+
+    private LearnedRule learnedRule(ModeComparison comparison, String scope) {
+        boolean ready = comparison.ready(minimumSamplesPerMode);
+        double lift = round(
+                comparison.multiAgent().utility() - comparison.singleAgent().utility());
+        int evidenceSamples = Math.min(
+                comparison.multiAgent().sampleCount(),
+                comparison.singleAgent().sampleCount()
+        );
+        boolean deployable = ready && Math.abs(lift) >= minimumUtilityLift;
+        boolean multiAgent = lift >= minimumUtilityLift;
+        String reason;
+        if (!ready) {
+            reason = "%s evidence below minimum %d per mode"
+                    .formatted(scope, minimumSamplesPerMode);
+        } else if (!deployable) {
+            reason = "%s absolute utility lift %.4f below %.4f"
+                    .formatted(scope, Math.abs(lift), minimumUtilityLift);
+        } else {
+            reason = "%s utility supports %s by %.4f"
+                    .formatted(
+                            scope,
+                            multiAgent
+                                    ? AdaptiveMultiAgentOrchestrator.MULTI_MODE
+                                    : AdaptiveMultiAgentOrchestrator.SINGLE_MODE,
+                            Math.abs(lift)
+                    );
+        }
+        return new LearnedRule(
+                ready,
+                deployable,
+                multiAgent,
+                ready ? confidence(lift, evidenceSamples) : 0,
+                evidenceSamples,
+                lift,
+                comparison.singleAgent(),
+                comparison.multiAgent(),
+                reason
         );
     }
 
@@ -715,6 +794,32 @@ public class TrajectoryAwareRoutingPolicy {
             int canarySelectedTrajectoryCount,
             int minimumCanarySamples,
             Instant refreshedAt,
+            String reason
+    ) {
+    }
+
+    public record LearnedPolicySnapshot(
+            LearnedRule global,
+            Map<String, LearnedRule> contextual,
+            int observedTrajectoryCount,
+            int minimumSamplesPerMode,
+            Instant refreshedAt
+    ) {
+
+        public LearnedPolicySnapshot {
+            contextual = contextual == null ? Map.of() : Map.copyOf(contextual);
+        }
+    }
+
+    public record LearnedRule(
+            boolean ready,
+            boolean deployable,
+            boolean selectMultiAgent,
+            double confidence,
+            int evidenceSamples,
+            double utilityLift,
+            ModeStats singleAgent,
+            ModeStats multiAgent,
             String reason
     ) {
     }

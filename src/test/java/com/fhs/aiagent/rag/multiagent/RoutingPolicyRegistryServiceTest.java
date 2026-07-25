@@ -39,6 +39,7 @@ class RoutingPolicyRegistryServiceTest {
         assertThat(duplicate.artifacts()).hasSize(2);
         RoutingPolicyArtifact artifact = first.artifacts().getFirst();
         assertThat(artifact.status()).isEqualTo(RoutingPolicyArtifactStatus.VALIDATED);
+        assertThat(artifact.schemaVersion()).isEqualTo(2);
         assertThat(artifact.version()).startsWith("routing-policy-");
         assertThat(artifact.trainingDataFingerprint()).hasSize(64);
         assertThat(artifact.trainingSampleCount()).isEqualTo(4);
@@ -46,7 +47,105 @@ class RoutingPolicyRegistryServiceTest {
                 .isEqualTo(RoutingPolicyRegistryService.BASELINE_VERSION);
         assertThat(artifact.offlineEvaluation().recommendedMode())
                 .isEqualTo(AdaptiveMultiAgentOrchestrator.MULTI_MODE);
+        assertThat(artifact.globalRule().deployable()).isTrue();
+        assertThat(artifact.globalRule().recommendedMode())
+                .isEqualTo(AdaptiveMultiAgentOrchestrator.MULTI_MODE);
+        assertThat(artifact.contextualRules()).isEmpty();
         assertThat(service.latestValidatedCandidate()).isEqualTo(artifact);
+    }
+
+    @Test
+    void freezesOnlyDeployableContextualRules() {
+        InMemoryAgentTrajectoryRepository trajectories = trajectories();
+        RoutingPolicyRegistryService service = service(
+                new MemoryRegistryRepository(), trajectories);
+        service.initialize();
+        TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status =
+                status(0.75, 0.76);
+        TrajectoryAwareRoutingPolicy.ModeStats single = status.singleAgent();
+        TrajectoryAwareRoutingPolicy.ModeStats multi =
+                new TrajectoryAwareRoutingPolicy.ModeStats(
+                        2, 2, 2, 0.90, 0.003, 800, 0.90);
+        TrajectoryAwareRoutingPolicy.LearnedRule contextual =
+                new TrajectoryAwareRoutingPolicy.LearnedRule(
+                        true,
+                        true,
+                        true,
+                        0.88,
+                        2,
+                        0.15,
+                        single,
+                        multi,
+                        "contextual evidence"
+                );
+        TrajectoryAwareRoutingPolicy.LearnedRule insufficient =
+                new TrajectoryAwareRoutingPolicy.LearnedRule(
+                        false,
+                        false,
+                        false,
+                        0,
+                        1,
+                        -0.20,
+                        single,
+                        multi,
+                        "insufficient evidence"
+                );
+        TrajectoryAwareRoutingPolicy.LearnedPolicySnapshot snapshot =
+                new TrajectoryAwareRoutingPolicy.LearnedPolicySnapshot(
+                        new TrajectoryAwareRoutingPolicy.LearnedRule(
+                                true,
+                                false,
+                                false,
+                                0.1,
+                                2,
+                                0.01,
+                                single,
+                                status.multiAgent(),
+                                "global tie"
+                        ),
+                        Map.of(
+                                "HOUSEHOLD", contextual,
+                                "LOW_EVIDENCE", insufficient
+                        ),
+                        4,
+                        2,
+                        NOW
+                );
+
+        RoutingPolicyArtifact artifact = service.reconcileNow(status, snapshot)
+                .artifacts().getFirst();
+
+        assertThat(artifact.status()).isEqualTo(RoutingPolicyArtifactStatus.VALIDATED);
+        assertThat(artifact.globalRule().deployable()).isFalse();
+        assertThat(artifact.contextualRules()).containsOnlyKeys("HOUSEHOLD");
+        assertThat(artifact.contextualRules().get("HOUSEHOLD").confidence())
+                .isEqualTo(0.88);
+        assertThat(artifact.offlineEvaluation().recommendedMode())
+                .isEqualTo("DETERMINISTIC");
+
+        TrajectoryAwareRoutingPolicy.LearnedRule changedRule =
+                new TrajectoryAwareRoutingPolicy.LearnedRule(
+                        true,
+                        true,
+                        true,
+                        0.89,
+                        2,
+                        0.15,
+                        single,
+                        multi,
+                        "contextual evidence"
+                );
+        RoutingPolicyArtifact changed = service.reconcileNow(
+                status,
+                new TrajectoryAwareRoutingPolicy.LearnedPolicySnapshot(
+                        snapshot.global(),
+                        Map.of("HOUSEHOLD", changedRule),
+                        4,
+                        2,
+                        NOW
+                )
+        ).artifacts().getFirst();
+        assertThat(changed.version()).isNotEqualTo(artifact.version());
     }
 
     @Test
@@ -66,13 +165,45 @@ class RoutingPolicyRegistryServiceTest {
                 .isInstanceOf(NoSuchElementException.class);
     }
 
+    @Test
+    void normalizesPersistedBuiltInBaselineToSchemaV2() {
+        MemoryRegistryRepository repository = new MemoryRegistryRepository();
+        repository.save(new RoutingPolicyRegistryState(
+                List.of(new RoutingPolicyArtifact(
+                        1,
+                        RoutingPolicyRegistryService.BASELINE_VERSION,
+                        RoutingPolicyArtifactStatus.BASELINE,
+                        "deterministic-complexity-router-v1",
+                        "qwen-test",
+                        Map.of(),
+                        "baseline",
+                        0,
+                        RoutingPolicyArtifact.OfflineEvaluation.empty(),
+                        null,
+                        Map.of(),
+                        "",
+                        NOW,
+                        "legacy baseline"
+                )),
+                NOW
+        ));
+        RoutingPolicyRegistryService service = service(
+                repository, new InMemoryAgentTrajectoryRepository());
+
+        service.initialize();
+
+        assertThat(service.state().artifacts().getFirst().schemaVersion()).isEqualTo(2);
+        assertThat(service.state().artifacts().getFirst().status())
+                .isEqualTo(RoutingPolicyArtifactStatus.BASELINE);
+    }
+
     private RoutingPolicyRegistryService service(
             RoutingPolicyRegistryRepository repository,
             InMemoryAgentTrajectoryRepository trajectories) {
         return new RoutingPolicyRegistryService(
                 repository,
                 trajectories,
-                "trajectory-utility-global-policy-v1",
+                "trajectory-utility-contextual-policy-v2",
                 "qwen-test",
                 Map.of("minimumUtilityLift", "0.03"),
                 0.03,
