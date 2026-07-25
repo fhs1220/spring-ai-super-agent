@@ -138,7 +138,7 @@ class TrajectoryAwareRoutingPolicyTest {
                 RoutingPolicyMode.CANARY,
                 1.0,
                 "test canary",
-                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0));
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0, false));
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision canary = policy.decide(context);
 
         assertThat(canary.multiAgent()).isTrue();

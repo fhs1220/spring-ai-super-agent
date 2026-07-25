@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { AgentRlMetrics, DatasetReadiness, RoutingPolicyStatus } from '../api'
+import type {
+  AgentRlMetrics,
+  DatasetReadiness,
+  RoutingPolicyQualityGuard,
+  RoutingPolicyStatus,
+} from '../api'
 
 const props = defineProps<{
   metrics: AgentRlMetrics | null
   readiness: DatasetReadiness | null
   routingPolicy: RoutingPolicyStatus | null
+  routingPolicyQualityGuard: RoutingPolicyQualityGuard | null
   loading: boolean
   error: string
 }>()
@@ -55,6 +61,20 @@ const rolloutDescription = computed(() => {
   if (mode === 'ACTIVE') return '学习策略已参与全部路由决策'
   if (mode === 'OFF') return '学习策略已关闭，使用确定性规则'
   return '正在读取策略发布状态'
+})
+
+const guardLabel = computed(() => {
+  const labels = {
+    DISABLED: '守卫关闭',
+    INACTIVE: '守卫待命',
+    COLLECTING: '采样中',
+    HEALTHY: '质量健康',
+    ROLLED_BACK: '已自动回滚',
+    ERROR: '守卫异常',
+  }
+  return props.routingPolicyQualityGuard
+    ? labels[props.routingPolicyQualityGuard.state]
+    : '加载中'
 })
 </script>
 
@@ -107,11 +127,40 @@ const rolloutDescription = computed(() => {
         <span>{{ routingPolicy?.ready ? '对照样本已平衡' : '正在收集平衡样本' }}</span>
         <span v-if="routingPolicy?.deployment.mode === 'CANARY'">
           灰度 {{ percent(routingPolicy.deployment.canaryRate) }} ·
-          {{ routingPolicy.canarySelectedTrajectoryCount }} /
+          {{
+            routingPolicyQualityGuard?.canary.sampleCount
+              ?? routingPolicy.canarySelectedTrajectoryCount
+          }}
+          /
           {{ routingPolicy.minimumCanarySamples }}
         </span>
         <span v-else>观察 {{ routingPolicy?.observedTrajectoryCount ?? 0 }}</span>
       </div>
+      <div
+        class="guard-line"
+        :class="`guard-${routingPolicyQualityGuard?.state.toLowerCase() ?? 'loading'}`"
+      >
+        <span>{{ guardLabel }}</span>
+        <span
+          v-if="
+            routingPolicyQualityGuard?.state === 'COLLECTING'
+            || routingPolicyQualityGuard?.state === 'HEALTHY'
+            || routingPolicyQualityGuard?.state === 'ROLLED_BACK'
+          "
+        >
+          灰度 {{ routingPolicyQualityGuard.canary.sampleCount }}
+          · 对照 {{ routingPolicyQualityGuard.control.sampleCount }}
+        </span>
+      </div>
+      <p
+        v-if="
+          routingPolicyQualityGuard?.state === 'ROLLED_BACK'
+          || routingPolicyQualityGuard?.state === 'ERROR'
+        "
+        class="guard-reason"
+      >
+        {{ routingPolicyQualityGuard.violations[0] ?? routingPolicyQualityGuard.reason }}
+      </p>
     </section>
 
     <div class="metric-grid">
@@ -320,6 +369,28 @@ h2 {
 }
 .policy-meta {
   color: var(--text-muted);
+  font-size: 0.62rem;
+}
+.guard-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font: 0.58rem/1.2 var(--mono);
+}
+.guard-line.guard-healthy {
+  color: var(--accent);
+}
+.guard-line.guard-rolled_back,
+.guard-line.guard-error {
+  color: #fca5a5;
+}
+.guard-reason {
+  margin: 7px 0 0;
+  color: #fca5a5;
   font-size: 0.62rem;
 }
 .metric-grid {

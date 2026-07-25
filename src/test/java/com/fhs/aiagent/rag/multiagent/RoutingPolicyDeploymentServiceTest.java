@@ -27,7 +27,7 @@ class RoutingPolicyDeploymentServiceTest {
                 RoutingPolicyMode.CANARY,
                 0.2,
                 "not ready",
-                new RoutingPolicyDeploymentService.PromotionEvidence(false, 0)))
+                new RoutingPolicyDeploymentService.PromotionEvidence(false, 0, false)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("enough balanced evidence");
 
@@ -35,7 +35,7 @@ class RoutingPolicyDeploymentServiceTest {
                 RoutingPolicyMode.CANARY,
                 0.2,
                 "balanced evidence ready",
-                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0));
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0, false));
         assertThat(canary.current().mode()).isEqualTo(RoutingPolicyMode.CANARY);
         assertThat(canary.current().canaryRate()).isEqualTo(0.2);
 
@@ -43,15 +43,23 @@ class RoutingPolicyDeploymentServiceTest {
                 RoutingPolicyMode.ACTIVE,
                 null,
                 "too early",
-                new RoutingPolicyDeploymentService.PromotionEvidence(true, 19)))
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 19, true)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("at least 20 canary samples");
+
+        assertThatThrownBy(() -> service.deploy(
+                RoutingPolicyMode.ACTIVE,
+                null,
+                "quality regression",
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 20, false)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("quality guard");
 
         RoutingPolicyDeploymentState active = service.deploy(
                 RoutingPolicyMode.ACTIVE,
                 null,
                 "canary passed",
-                new RoutingPolicyDeploymentService.PromotionEvidence(true, 20));
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 20, true));
         assertThat(active.current().mode()).isEqualTo(RoutingPolicyMode.ACTIVE);
 
         RoutingPolicyDeploymentState rolledBack = service.rollback("quality regression");
@@ -68,7 +76,7 @@ class RoutingPolicyDeploymentServiceTest {
                 RoutingPolicyMode.CANARY,
                 0.15,
                 "first process",
-                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0));
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0, false));
 
         RoutingPolicyDeploymentService restarted = service(repository());
         restarted.initialize();

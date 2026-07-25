@@ -93,6 +93,16 @@ agent:
       cost-budget-cny: ${AGENT_RAG_ROUTING_COST_BUDGET_CNY:0.02}
       latency-budget-ms: ${AGENT_RAG_ROUTING_LATENCY_BUDGET_MS:60000}
       refresh-seconds: ${AGENT_RAG_ROUTING_REFRESH_SECONDS:30}
+      quality-guard:
+        enabled: ${AGENT_RAG_ROUTING_QUALITY_GUARD_ENABLED:true}
+        evaluation-interval-ms: ${AGENT_RAG_ROUTING_GUARD_INTERVAL_MS:30000}
+        minimum-control-samples: ${AGENT_RAG_ROUTING_GUARD_MINIMUM_CONTROL_SAMPLES:20}
+        maximum-trajectories: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_TRAJECTORIES:1000}
+        maximum-reward-regression: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_REWARD_REGRESSION:0.05}
+        maximum-grounding-regression: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_GROUNDING_REGRESSION:0.05}
+        maximum-completion-regression: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_COMPLETION_REGRESSION:0.05}
+        maximum-latency-multiplier: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_LATENCY_MULTIPLIER:1.5}
+        maximum-cost-multiplier: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_COST_MULTIPLIER:1.5}
     observability:
       # Agent 阶段级硬超时，覆盖底层客户端重试/握手卡住的情况。
       model-call-timeout-seconds: ${AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS:30}

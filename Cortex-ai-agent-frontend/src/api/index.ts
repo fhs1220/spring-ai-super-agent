@@ -177,6 +177,44 @@ export interface RoutingPolicyStatus {
   reason: string
 }
 
+export type RoutingPolicyGuardState =
+  | 'DISABLED'
+  | 'INACTIVE'
+  | 'COLLECTING'
+  | 'HEALTHY'
+  | 'ROLLED_BACK'
+  | 'ERROR'
+
+export interface RoutingPolicyCohortStats {
+  sampleCount: number
+  completedCount: number
+  usageMeasuredSamples: number
+  averageReward: number
+  groundingRate: number
+  completionRate: number
+  averageLatencyMs: number
+  averageCostCny: number
+}
+
+export interface RoutingPolicyQualityGuard {
+  enabled: boolean
+  state: RoutingPolicyGuardState
+  deploymentVersion: string
+  rolloutMode: RoutingPolicyMode
+  minimumCanarySamples: number
+  minimumControlSamples: number
+  canary: RoutingPolicyCohortStats
+  control: RoutingPolicyCohortStats
+  maximumRewardRegression: number
+  maximumGroundingRegression: number
+  maximumCompletionRegression: number
+  maximumLatencyMultiplier: number
+  maximumCostMultiplier: number
+  violations: string[]
+  evaluatedAt: string
+  reason: string
+}
+
 export function loveAppSseUrl(message: string, chatId: string): string {
   const params = new URLSearchParams({ message, chatId })
   return `${API_BASE}/ai/love_app/chat/sse?${params.toString()}`
@@ -309,6 +347,13 @@ export async function fetchDatasetReadiness(): Promise<DatasetReadiness> {
 
 export async function fetchRoutingPolicyStatus(): Promise<RoutingPolicyStatus> {
   const response = await http.get<RoutingPolicyStatus>('/ai/love_app/agents/routing-policy')
+  return response.data
+}
+
+export async function fetchRoutingPolicyQualityGuard(): Promise<RoutingPolicyQualityGuard> {
+  const response = await http.get<RoutingPolicyQualityGuard>(
+    '/ai/love_app/agents/routing-policy/quality-guard',
+  )
   return response.data
 }
 

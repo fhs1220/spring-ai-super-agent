@@ -8,6 +8,7 @@ import {
   fetchAgentRlMetrics,
   fetchDatasetReadiness,
   fetchRoutingPolicyStatus,
+  fetchRoutingPolicyQualityGuard,
   generateChatId,
   streamAgenticRag,
   submitAgentRlFeedback,
@@ -17,6 +18,7 @@ import {
   type DatasetReadiness,
   type RewardBreakdown,
   type RoutingPolicyStatus,
+  type RoutingPolicyQualityGuard,
 } from '../api'
 
 interface Message {
@@ -49,6 +51,7 @@ const chatList = ref<HTMLElement | null>(null)
 const metrics = ref<AgentRlMetrics | null>(null)
 const readiness = ref<DatasetReadiness | null>(null)
 const routingPolicy = ref<RoutingPolicyStatus | null>(null)
+const routingPolicyQualityGuard = ref<RoutingPolicyQualityGuard | null>(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
 const activeRun = shallowRef<ActiveRun | null>(null)
@@ -143,10 +146,16 @@ async function submitFeedback(message: Message) {
 async function loadDashboard() {
   dashboardLoading.value = true
   dashboardError.value = ''
-  const [metricsResult, readinessResult, routingPolicyResult] = await Promise.allSettled([
+  const [
+    metricsResult,
+    readinessResult,
+    routingPolicyResult,
+    routingPolicyQualityGuardResult,
+  ] = await Promise.allSettled([
     fetchAgentRlMetrics(),
     fetchDatasetReadiness(),
     fetchRoutingPolicyStatus(),
+    fetchRoutingPolicyQualityGuard(),
   ])
 
   if (metricsResult.status === 'fulfilled') {
@@ -158,10 +167,14 @@ async function loadDashboard() {
   if (routingPolicyResult.status === 'fulfilled') {
     routingPolicy.value = routingPolicyResult.value
   }
+  if (routingPolicyQualityGuardResult.status === 'fulfilled') {
+    routingPolicyQualityGuard.value = routingPolicyQualityGuardResult.value
+  }
   if (
     metricsResult.status === 'rejected'
     || readinessResult.status === 'rejected'
     || routingPolicyResult.status === 'rejected'
+    || routingPolicyQualityGuardResult.status === 'rejected'
   ) {
     dashboardError.value = '指标暂时不可用，请确认后端服务已启动'
   }
@@ -475,6 +488,7 @@ function back() {
       :metrics="metrics"
       :readiness="readiness"
       :routing-policy="routingPolicy"
+      :routing-policy-quality-guard="routingPolicyQualityGuard"
       :loading="dashboardLoading"
       :error="dashboardError"
       @refresh="loadDashboard"

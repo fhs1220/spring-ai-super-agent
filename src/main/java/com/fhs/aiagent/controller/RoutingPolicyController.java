@@ -3,6 +3,7 @@ package com.fhs.aiagent.controller;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyDeploymentService;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyDeploymentState;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyMode;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyQualityGuard;
 import com.fhs.aiagent.rag.multiagent.TrajectoryAwareRoutingPolicy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -26,10 +27,14 @@ public class RoutingPolicyController {
 
     private final TrajectoryAwareRoutingPolicy routingPolicy;
 
+    private final RoutingPolicyQualityGuard qualityGuard;
+
     public RoutingPolicyController(RoutingPolicyDeploymentService deploymentService,
-                                   TrajectoryAwareRoutingPolicy routingPolicy) {
+                                   TrajectoryAwareRoutingPolicy routingPolicy,
+                                   RoutingPolicyQualityGuard qualityGuard) {
         this.deploymentService = deploymentService;
         this.routingPolicy = routingPolicy;
+        this.qualityGuard = qualityGuard;
     }
 
     @GetMapping("/deployments")
@@ -43,6 +48,8 @@ public class RoutingPolicyController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode is required");
         }
         TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status = routingPolicy.status();
+        RoutingPolicyQualityGuard.QualityGuardReport guardReport =
+                qualityGuard.evaluateAndMaybeRollback();
         try {
             return deploymentService.deploy(
                     request.mode(),
@@ -50,7 +57,8 @@ public class RoutingPolicyController {
                     request.reason(),
                     new RoutingPolicyDeploymentService.PromotionEvidence(
                             status.ready(),
-                            status.canarySelectedTrajectoryCount()
+                            guardReport.canary().sampleCount(),
+                            guardReport.healthyForPromotion()
                     )
             );
         } catch (IllegalArgumentException exception) {

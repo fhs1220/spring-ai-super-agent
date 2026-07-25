@@ -148,6 +148,10 @@ public class RoutingPolicyDeploymentService {
                         "ACTIVE promotion requires at least %d canary samples"
                                 .formatted(minimumCanarySamples));
             }
+            if (!evidence.canaryHealthy()) {
+                throw new IllegalStateException(
+                        "ACTIVE promotion requires the canary quality guard to be healthy");
+            }
         }
     }
 
@@ -207,7 +211,8 @@ public class RoutingPolicyDeploymentService {
 
     public record PromotionEvidence(
             boolean policyReady,
-            int canarySelectedSamples
+            int canarySelectedSamples,
+            boolean canaryHealthy
     ) {
     }
 }

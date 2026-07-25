@@ -45,7 +45,7 @@ fi
 
 note "[1/3] 运行专项测试..."
 sh mvnw "${MVN_ARGS[@]}" \
-  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
+  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
   test >> "$LOG" 2>&1
 TEST_EXIT=$?
 note "[1/3] 测试退出码: $TEST_EXIT"
@@ -87,14 +87,18 @@ fi
 note "[3/3] HTTP 验证..."
 STATUS_BODY=$(curl -sf "$BASE_URL/ai/love_app/agents/routing-policy")
 echo "status-body: $STATUS_BODY" >> "$LOG"
+GUARD_BODY=$(curl -sf "$BASE_URL/ai/love_app/agents/routing-policy/quality-guard")
+echo "guard-body: $GUARD_BODY" >> "$LOG"
 MGMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   "$BASE_URL/agent-routing-policy/deployments")
 note "management-api http code (期望 404): $MGMT_CODE"
 
 echo "$STATUS_BODY" | grep -q '"mode":"SHADOW"' && SHADOW_OK=1 || SHADOW_OK=0
 note "默认 SHADOW: $([ $SHADOW_OK -eq 1 ] && echo OK || echo FAIL)"
+echo "$GUARD_BODY" | grep -q '"state":"INACTIVE"' && GUARD_OK=1 || GUARD_OK=0
+note "质量守卫待命: $([ $GUARD_OK -eq 1 ] && echo OK || echo FAIL)"
 
-if [ $SHADOW_OK -eq 1 ] && [ "$MGMT_CODE" = "404" ]; then
+if [ $SHADOW_OK -eq 1 ] && [ $GUARD_OK -eq 1 ] && [ "$MGMT_CODE" = "404" ]; then
   note "RESULT: ALL_PASSED"
   exit 0
 fi

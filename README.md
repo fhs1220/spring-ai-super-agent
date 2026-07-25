@@ -126,13 +126,18 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 - `ACTIVE`：全部流量应用学习策略。
 
 从 `SHADOW` 晋升 `CANARY` 要求单/多 Agent 样本都达到学习门槛；从 `CANARY` 晋升
-`ACTIVE` 还要求至少 20 条实际灰度样本。每次发布都会原子保存到
+`ACTIVE` 还要求至少 20 条实际灰度样本，并且在线质量守卫必须为 `HEALTHY`。每次发布都会原子保存到
 `tmp/routing-policy/deployment.json`，并保留有界历史用于回滚。
+
+灰度质量守卫每 30 秒按同一个发布版本比较灰度组与对照组的平均奖励、忠实度、完成率、
+端到端延迟和估算成本。两组都达到门槛后，如果任一指标超过允许回退阈值，会自动创建一条
+带指标原因的 `SHADOW` 发布记录；自动回滚因此可以跨重启审计，不会影响正在执行的回答请求。
 
 查看不包含用户问题的策略状态：
 
 ```http
 GET /api/ai/love_app/agents/routing-policy
+GET /api/ai/love_app/agents/routing-policy/quality-guard
 ```
 
 主要配置：
@@ -141,6 +146,14 @@ GET /api/ai/love_app/agents/routing-policy
 - `AGENT_RAG_ROUTING_POLICY_MODE`（默认 `SHADOW`）
 - `AGENT_RAG_ROUTING_CANARY_RATE`（默认 `0.1`）
 - `AGENT_RAG_ROUTING_MINIMUM_CANARY_SAMPLES`（默认 `20`）
+- `AGENT_RAG_ROUTING_QUALITY_GUARD_ENABLED`（默认 `true`）
+- `AGENT_RAG_ROUTING_GUARD_INTERVAL_MS`（默认 `30000`）
+- `AGENT_RAG_ROUTING_GUARD_MINIMUM_CONTROL_SAMPLES`（默认 `20`）
+- `AGENT_RAG_ROUTING_GUARD_MAXIMUM_REWARD_REGRESSION`（默认 `0.05`）
+- `AGENT_RAG_ROUTING_GUARD_MAXIMUM_GROUNDING_REGRESSION`（默认 `0.05`）
+- `AGENT_RAG_ROUTING_GUARD_MAXIMUM_COMPLETION_REGRESSION`（默认 `0.05`）
+- `AGENT_RAG_ROUTING_GUARD_MAXIMUM_LATENCY_MULTIPLIER`（默认 `1.5`）
+- `AGENT_RAG_ROUTING_GUARD_MAXIMUM_COST_MULTIPLIER`（默认 `1.5`）
 - `AGENT_RAG_ROUTING_MINIMUM_SAMPLES_PER_MODE`
 - `AGENT_RAG_ROUTING_MINIMUM_UTILITY_LIFT`
 - `AGENT_RAG_ROUTING_COST_WEIGHT`
