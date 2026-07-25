@@ -58,6 +58,15 @@ class RoutingPolicyDeploymentServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("quality guard");
 
+        assertThatThrownBy(() -> service.deploy(
+                RoutingPolicyMode.ACTIVE,
+                null,
+                "off-policy evaluation not ready",
+                new RoutingPolicyDeploymentService.PromotionEvidence(
+                        true, 20, true, false)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("off-policy evaluation");
+
         RoutingPolicyDeploymentState active = service.deploy(
                 RoutingPolicyMode.ACTIVE,
                 null,

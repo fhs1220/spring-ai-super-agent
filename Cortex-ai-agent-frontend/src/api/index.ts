@@ -214,6 +214,38 @@ export interface RoutingPolicyRegistry {
   updatedAt: string
 }
 
+export type OffPolicyEvaluationState =
+  | 'NO_ARTIFACT'
+  | 'COLLECTING'
+  | 'READY'
+  | 'REGRESSION'
+  | 'ERROR'
+
+export interface RoutingPolicyOffPolicyEvaluation {
+  state: OffPolicyEvaluationState
+  policyArtifactVersion: string
+  observedTrajectoryCount: number
+  probabilityLoggedTrajectoryCount: number
+  exploratoryTrajectoryCount: number
+  eligibleTrajectoryCount: number
+  singleActionSamples: number
+  multiActionSamples: number
+  targetMatchedSamples: number
+  minimumSamplesPerAction: number
+  effectiveSampleSize: number
+  minimumEffectiveSampleSize: number
+  behaviorAverageReward: number
+  estimatedPolicyReward: number
+  estimatedRewardLift: number
+  rewardLiftStandardError: number
+  rewardLiftLowerConfidenceBound: number
+  maximumRewardRegression: number
+  healthyForPromotion: boolean
+  blockers: string[]
+  evaluatedAt: string
+  reason: string
+}
+
 export interface RoutingModeStats {
   sampleCount: number
   successfulCount: number
@@ -422,6 +454,14 @@ export async function fetchRoutingPolicyQualityGuard(): Promise<RoutingPolicyQua
 export async function fetchRoutingPolicyRegistry(): Promise<RoutingPolicyRegistry> {
   const response = await http.get<RoutingPolicyRegistry>(
     '/ai/love_app/agents/routing-policy/registry',
+  )
+  return response.data
+}
+
+export async function fetchRoutingPolicyOffPolicyEvaluation():
+  Promise<RoutingPolicyOffPolicyEvaluation> {
+  const response = await http.get<RoutingPolicyOffPolicyEvaluation>(
+    '/ai/love_app/agents/routing-policy/off-policy-evaluation',
   )
   return response.data
 }

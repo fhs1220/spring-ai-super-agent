@@ -146,6 +146,61 @@ class TrajectoryAwareRoutingPolicyTest {
         assertThat(canary.learnedApplied()).isTrue();
         assertThat(canary.rolloutMode()).isEqualTo(RoutingPolicyMode.CANARY);
         assertThat(canary.source()).startsWith("CANARY_LEARNED_");
+        assertThat(canary.behaviorActionProbability()).isEqualTo(1);
+        assertThat(canary.explorationEligible()).isFalse();
+    }
+
+    @Test
+    void recordsBehaviorProbabilityForCanaryExploration() {
+        InMemoryAgentTrajectoryRepository repository =
+                new InMemoryAgentTrajectoryRepository();
+        saveMode(repository, "single",
+                AdaptiveMultiAgentOrchestrator.SINGLE_MODE, 0.68, 0.001, 300);
+        saveMode(repository, "multi",
+                AdaptiveMultiAgentOrchestrator.MULTI_MODE, 0.91, 0.004, 600);
+        RoutingPolicyDeploymentService deployments = new RoutingPolicyDeploymentService(
+                new MemoryDeploymentRepository(),
+                RoutingPolicyMode.SHADOW,
+                0.5,
+                2,
+                10,
+                Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC)
+        );
+        deployments.initialize();
+        TrajectoryAwareRoutingPolicy policy = policy(
+                repository, 0.05, 0.05, deployments);
+        deployments.deploy(
+                RoutingPolicyMode.CANARY,
+                0.5,
+                "exploration logging",
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0, false)
+        );
+
+        List<TrajectoryAwareRoutingPolicy.RoutingPolicyDecision> decisions =
+                java.util.stream.IntStream.range(0, 10_000)
+                        .mapToObj(index -> policy.decide(
+                                new TrajectoryAwareRoutingPolicy.RoutingContext(
+                                        BUCKET,
+                                        false,
+                                        false,
+                                        "routing-key-" + index
+                                )))
+                        .toList();
+        TrajectoryAwareRoutingPolicy.RoutingPolicyDecision selected = decisions.stream()
+                .filter(TrajectoryAwareRoutingPolicy.RoutingPolicyDecision::canarySelected)
+                .findFirst()
+                .orElseThrow();
+        TrajectoryAwareRoutingPolicy.RoutingPolicyDecision control = decisions.stream()
+                .filter(decision -> !decision.canarySelected())
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(selected.multiAgent()).isTrue();
+        assertThat(control.multiAgent()).isFalse();
+        assertThat(selected.behaviorActionProbability()).isEqualTo(0.5);
+        assertThat(control.behaviorActionProbability()).isEqualTo(0.5);
+        assertThat(selected.explorationEligible()).isTrue();
+        assertThat(control.explorationEligible()).isTrue();
     }
 
     @Test

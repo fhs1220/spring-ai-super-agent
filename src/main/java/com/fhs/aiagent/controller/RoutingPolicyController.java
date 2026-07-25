@@ -3,6 +3,7 @@ package com.fhs.aiagent.controller;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyDeploymentService;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyDeploymentState;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyMode;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyOffPolicyEvaluator;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyQualityGuard;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryCoordinator;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryService;
@@ -35,16 +36,20 @@ public class RoutingPolicyController {
 
     private final RoutingPolicyRegistryCoordinator registryCoordinator;
 
+    private final RoutingPolicyOffPolicyEvaluator offPolicyEvaluator;
+
     public RoutingPolicyController(RoutingPolicyDeploymentService deploymentService,
                                    TrajectoryAwareRoutingPolicy routingPolicy,
                                    RoutingPolicyQualityGuard qualityGuard,
                                    RoutingPolicyRegistryService registryService,
-                                   RoutingPolicyRegistryCoordinator registryCoordinator) {
+                                   RoutingPolicyRegistryCoordinator registryCoordinator,
+                                   RoutingPolicyOffPolicyEvaluator offPolicyEvaluator) {
         this.deploymentService = deploymentService;
         this.routingPolicy = routingPolicy;
         this.qualityGuard = qualityGuard;
         this.registryService = registryService;
         this.registryCoordinator = registryCoordinator;
+        this.offPolicyEvaluator = offPolicyEvaluator;
     }
 
     @GetMapping("/deployments")
@@ -60,6 +65,8 @@ public class RoutingPolicyController {
         TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status = routingPolicy.status();
         RoutingPolicyQualityGuard.QualityGuardReport guardReport =
                 qualityGuard.evaluateAndMaybeRollback();
+        RoutingPolicyOffPolicyEvaluator.OffPolicyEvaluationReport offPolicyReport =
+                offPolicyEvaluator.evaluate();
         try {
             if (request.mode() == RoutingPolicyMode.CANARY
                     || request.mode() == RoutingPolicyMode.ACTIVE) {
@@ -77,7 +84,8 @@ public class RoutingPolicyController {
                     new RoutingPolicyDeploymentService.PromotionEvidence(
                             status.ready(),
                             guardReport.canary().sampleCount(),
-                            guardReport.healthyForPromotion()
+                            guardReport.healthyForPromotion(),
+                            offPolicyReport.healthyForPromotion()
                     )
             );
         } catch (IllegalArgumentException exception) {

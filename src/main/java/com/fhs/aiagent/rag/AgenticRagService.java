@@ -263,6 +263,14 @@ public class AgenticRagService {
                                     multiAgentDecision.policyCanarySelected()
                             ),
                             Map.entry(
+                                    "policyBehaviorActionProbability",
+                                    multiAgentDecision.policyBehaviorActionProbability()
+                            ),
+                            Map.entry(
+                                    "policyExplorationEligible",
+                                    multiAgentDecision.policyExplorationEligible()
+                            ),
+                            Map.entry(
                                     "policyConfidence",
                                     multiAgentDecision.policyConfidence()
                             ),

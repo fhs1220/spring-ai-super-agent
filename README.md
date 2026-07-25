@@ -126,8 +126,8 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 - `ACTIVE`：全部流量应用学习策略。
 
 从 `SHADOW` 晋升 `CANARY` 要求单/多 Agent 样本都达到学习门槛；从 `CANARY` 晋升
-`ACTIVE` 还要求至少 20 条实际灰度样本，并且在线质量守卫必须为 `HEALTHY`。每次发布都会原子保存到
-`tmp/routing-policy/deployment.json`，并保留有界历史用于回滚。
+`ACTIVE` 还要求至少 20 条实际灰度样本、在线质量守卫为 `HEALTHY`，并且离线策略评测通过。
+每次发布都会原子保存到 `tmp/routing-policy/deployment.json`，并保留有界历史用于回滚。
 
 灰度质量守卫每 30 秒按同一个发布版本比较灰度组与对照组的平均奖励、忠实度、完成率、
 端到端延迟和估算成本。两组都达到门槛后，如果任一指标超过允许回退阈值，会自动创建一条
@@ -148,12 +148,19 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 发布记录通过 `policyVersion` 绑定资产。`CANARY/ACTIVE` 只执行注册表中已验证的冻结策略，
 新轨迹不会让已发布策略在后台无版本漂移。旧版 v1 全局资产会自动迁移为兼容的全局规则。
 
+灰度路由会在轨迹中记录实际动作的行为策略概率和探索资格。离线评测器只使用同一策略资产下
+具有有效概率的探索轨迹，通过 SNIPS（自归一化逆倾向评分）估计冻结策略奖励，同时检查
+SINGLE/MULTI 双动作支持度、重要性权重、有效样本量和奖励提升的 95% 置信下界。历史轨迹
+没有行为概率时不会被误用于反事实评测；评测样本不足或置信下界显示奖励回退时，
+`ACTIVE` 晋升会被拒绝。
+
 查看不包含用户问题的策略状态：
 
 ```http
 GET /api/ai/love_app/agents/routing-policy
 GET /api/ai/love_app/agents/routing-policy/quality-guard
 GET /api/ai/love_app/agents/routing-policy/registry
+GET /api/ai/love_app/agents/routing-policy/off-policy-evaluation
 ```
 
 主要配置：
@@ -174,6 +181,10 @@ GET /api/ai/love_app/agents/routing-policy/registry
 - `AGENT_RAG_ROUTING_REGISTRY_ALGORITHM`
 - `AGENT_RAG_ROUTING_REGISTRY_MAXIMUM_ARTIFACTS`（默认 `50`）
 - `AGENT_RAG_ROUTING_REGISTRY_RECONCILE_INTERVAL_MS`（默认 `60000`）
+- `AGENT_RAG_ROUTING_OPE_MINIMUM_SAMPLES_PER_ACTION`（默认 `20`）
+- `AGENT_RAG_ROUTING_OPE_MINIMUM_EFFECTIVE_SAMPLE_SIZE`（默认 `20`）
+- `AGENT_RAG_ROUTING_OPE_MAXIMUM_IMPORTANCE_WEIGHT`（默认 `20`）
+- `AGENT_RAG_ROUTING_OPE_MAXIMUM_REWARD_REGRESSION`（默认 `0.03`）
 - `AGENT_RAG_ROUTING_MINIMUM_SAMPLES_PER_MODE`
 - `AGENT_RAG_ROUTING_MINIMUM_UTILITY_LIFT`
 - `AGENT_RAG_ROUTING_COST_WEIGHT`

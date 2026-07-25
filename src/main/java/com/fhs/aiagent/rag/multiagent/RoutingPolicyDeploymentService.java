@@ -166,6 +166,10 @@ public class RoutingPolicyDeploymentService {
                 throw new IllegalStateException(
                         "ACTIVE promotion requires the canary quality guard to be healthy");
             }
+            if (!evidence.offPolicyHealthy()) {
+                throw new IllegalStateException(
+                        "ACTIVE promotion requires off-policy evaluation to be healthy");
+            }
         }
     }
 
@@ -237,7 +241,15 @@ public class RoutingPolicyDeploymentService {
     public record PromotionEvidence(
             boolean policyReady,
             int canarySelectedSamples,
-            boolean canaryHealthy
+            boolean canaryHealthy,
+            boolean offPolicyHealthy
     ) {
+
+        public PromotionEvidence(
+                boolean policyReady,
+                int canarySelectedSamples,
+                boolean canaryHealthy) {
+            this(policyReady, canarySelectedSamples, canaryHealthy, true);
+        }
     }
 }

@@ -17,6 +17,8 @@ public record MultiAgentDecision(
         String policyRolloutMode,
         boolean policyApplied,
         boolean policyCanarySelected,
+        double policyBehaviorActionProbability,
+        boolean policyExplorationEligible,
         double policyConfidence,
         int policyEvidenceSamples,
         String policyDeploymentVersion,

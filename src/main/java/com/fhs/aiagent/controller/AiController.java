@@ -8,6 +8,7 @@ import com.fhs.aiagent.rag.multiagent.AgentDescriptor;
 import com.fhs.aiagent.rag.multiagent.AgentHealth;
 import com.fhs.aiagent.rag.multiagent.TrajectoryAwareRoutingPolicy;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyQualityGuard;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyOffPolicyEvaluator;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryService;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryState;
 import com.fhs.aiagent.rag.run.AgentRunStatus;
@@ -61,6 +62,8 @@ public class AiController {
 
     private final RoutingPolicyRegistryService routingPolicyRegistryService;
 
+    private final RoutingPolicyOffPolicyEvaluator routingPolicyOffPolicyEvaluator;
+
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     private final Map<String, ActiveRun> activeRuns = new ConcurrentHashMap<>();
@@ -72,7 +75,8 @@ public class AiController {
                         DurableAgentRunService durableAgentRunService,
                         TrajectoryAwareRoutingPolicy routingPolicy,
                         RoutingPolicyQualityGuard routingPolicyQualityGuard,
-                        RoutingPolicyRegistryService routingPolicyRegistryService) {
+                        RoutingPolicyRegistryService routingPolicyRegistryService,
+                        RoutingPolicyOffPolicyEvaluator routingPolicyOffPolicyEvaluator) {
         this.loveApp = loveApp;
         this.agentRlService = agentRlService;
         this.bailianRlDatasetService = bailianRlDatasetService;
@@ -81,6 +85,7 @@ public class AiController {
         this.routingPolicy = routingPolicy;
         this.routingPolicyQualityGuard = routingPolicyQualityGuard;
         this.routingPolicyRegistryService = routingPolicyRegistryService;
+        this.routingPolicyOffPolicyEvaluator = routingPolicyOffPolicyEvaluator;
     }
 
     @PostMapping("/chat/agentic-rag")
@@ -218,6 +223,12 @@ public class AiController {
     @GetMapping("/agents/routing-policy/registry")
     public RoutingPolicyRegistryState routingPolicyRegistry() {
         return routingPolicyRegistryService.state();
+    }
+
+    @GetMapping("/agents/routing-policy/off-policy-evaluation")
+    public RoutingPolicyOffPolicyEvaluator.OffPolicyEvaluationReport
+            routingPolicyOffPolicyEvaluation() {
+        return routingPolicyOffPolicyEvaluator.evaluate();
     }
 
     @PreDestroy

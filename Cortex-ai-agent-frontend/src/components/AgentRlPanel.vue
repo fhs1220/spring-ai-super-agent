@@ -5,6 +5,7 @@ import type {
   DatasetReadiness,
   RoutingPolicyQualityGuard,
   RoutingPolicyRegistry,
+  RoutingPolicyOffPolicyEvaluation,
   RoutingPolicyStatus,
 } from '../api'
 
@@ -14,6 +15,7 @@ const props = defineProps<{
   routingPolicy: RoutingPolicyStatus | null
   routingPolicyQualityGuard: RoutingPolicyQualityGuard | null
   routingPolicyRegistry: RoutingPolicyRegistry | null
+  routingPolicyOffPolicyEvaluation: RoutingPolicyOffPolicyEvaluation | null
   loading: boolean
   error: string
 }>()
@@ -76,6 +78,19 @@ const guardLabel = computed(() => {
   }
   return props.routingPolicyQualityGuard
     ? labels[props.routingPolicyQualityGuard.state]
+    : '加载中'
+})
+
+const offPolicyLabel = computed(() => {
+  const labels = {
+    NO_ARTIFACT: '等待策略资产',
+    COLLECTING: '积累探索数据',
+    READY: '评测通过',
+    REGRESSION: '发现奖励回退',
+    ERROR: '评测异常',
+  }
+  return props.routingPolicyOffPolicyEvaluation
+    ? labels[props.routingPolicyOffPolicyEvaluation.state]
     : '加载中'
 })
 
@@ -177,6 +192,41 @@ function shortVersion(value: string | undefined): string {
         class="guard-reason"
       >
         {{ routingPolicyQualityGuard.violations[0] ?? routingPolicyQualityGuard.reason }}
+      </p>
+      <div class="registry-line">
+        <span>离线策略评测</span>
+        <strong>{{ offPolicyLabel }}</strong>
+      </div>
+      <div class="artifact-meta">
+        <span>
+          SINGLE {{ routingPolicyOffPolicyEvaluation?.singleActionSamples ?? 0 }}
+          / {{ routingPolicyOffPolicyEvaluation?.minimumSamplesPerAction ?? '—' }}
+        </span>
+        <span>
+          MULTI {{ routingPolicyOffPolicyEvaluation?.multiActionSamples ?? 0 }}
+          / {{ routingPolicyOffPolicyEvaluation?.minimumSamplesPerAction ?? '—' }}
+        </span>
+        <span>
+          ESS {{ score(routingPolicyOffPolicyEvaluation?.effectiveSampleSize) }}
+          / {{ score(routingPolicyOffPolicyEvaluation?.minimumEffectiveSampleSize) }}
+        </span>
+        <span v-if="routingPolicyOffPolicyEvaluation?.state === 'READY'">
+          SNIPS Δ {{ routingPolicyOffPolicyEvaluation.estimatedRewardLift.toFixed(3) }}
+          · 95% 下界
+          {{ routingPolicyOffPolicyEvaluation.rewardLiftLowerConfidenceBound.toFixed(3) }}
+        </span>
+      </div>
+      <p
+        v-if="
+          routingPolicyOffPolicyEvaluation?.state === 'REGRESSION'
+          || routingPolicyOffPolicyEvaluation?.state === 'ERROR'
+        "
+        class="guard-reason"
+      >
+        {{
+          routingPolicyOffPolicyEvaluation.blockers[0]
+          ?? routingPolicyOffPolicyEvaluation.reason
+        }}
       </p>
       <div class="registry-line">
         <span>策略资产</span>

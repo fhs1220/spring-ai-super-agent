@@ -227,6 +227,8 @@ public class TrajectoryAwareRoutingPolicy {
                     deployment.mode(),
                     false,
                     false,
+                    1,
+                    false,
                     1.0,
                     0,
                     deployment.version(),
@@ -501,6 +503,8 @@ public class TrajectoryAwareRoutingPolicy {
                     deployment.mode(),
                     false,
                     false,
+                    1,
+                    false,
                     candidate.confidence(),
                     candidate.evidenceSamples(),
                     deployment.version(),
@@ -511,8 +515,16 @@ public class TrajectoryAwareRoutingPolicy {
         if (deployment.mode() == RoutingPolicyMode.CANARY) {
             boolean selected = learnedCandidate
                     && stableFraction(context.routingKey()) < deployment.canaryRate();
-            boolean applied = selected
+            boolean actionsDiffer = learnedCandidate
                     && candidate.multiAgent() != context.deterministicMultiAgent();
+            boolean applied = selected && actionsDiffer;
+            boolean explorationEligible = actionsDiffer
+                    && deployment.canaryRate() < 1;
+            double behaviorActionProbability = actionsDiffer
+                    ? (selected
+                            ? deployment.canaryRate()
+                            : 1 - deployment.canaryRate())
+                    : 1;
             return new RoutingPolicyDecision(
                     selected ? candidate.multiAgent() : context.deterministicMultiAgent(),
                     candidate.multiAgent(),
@@ -521,6 +533,8 @@ public class TrajectoryAwareRoutingPolicy {
                     deployment.mode(),
                     applied,
                     selected,
+                    round(behaviorActionProbability),
+                    explorationEligible,
                     candidate.confidence(),
                     candidate.evidenceSamples(),
                     deployment.version(),
@@ -539,6 +553,8 @@ public class TrajectoryAwareRoutingPolicy {
                 candidate.source(),
                 deployment.mode(),
                 applied,
+                false,
+                1,
                 false,
                 candidate.confidence(),
                 candidate.evidenceSamples(),
@@ -559,6 +575,8 @@ public class TrajectoryAwareRoutingPolicy {
                 source,
                 deployment.mode(),
                 false,
+                false,
+                1,
                 false,
                 0,
                 0,
@@ -763,6 +781,8 @@ public class TrajectoryAwareRoutingPolicy {
             RoutingPolicyMode rolloutMode,
             boolean learnedApplied,
             boolean canarySelected,
+            double behaviorActionProbability,
+            boolean explorationEligible,
             double confidence,
             int evidenceSamples,
             String deploymentVersion,

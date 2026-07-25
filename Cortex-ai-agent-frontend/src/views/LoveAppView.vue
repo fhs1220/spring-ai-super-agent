@@ -10,6 +10,7 @@ import {
   fetchRoutingPolicyStatus,
   fetchRoutingPolicyQualityGuard,
   fetchRoutingPolicyRegistry,
+  fetchRoutingPolicyOffPolicyEvaluation,
   generateChatId,
   streamAgenticRag,
   submitAgentRlFeedback,
@@ -21,6 +22,7 @@ import {
   type RoutingPolicyStatus,
   type RoutingPolicyQualityGuard,
   type RoutingPolicyRegistry,
+  type RoutingPolicyOffPolicyEvaluation,
 } from '../api'
 
 interface Message {
@@ -55,6 +57,8 @@ const readiness = ref<DatasetReadiness | null>(null)
 const routingPolicy = ref<RoutingPolicyStatus | null>(null)
 const routingPolicyQualityGuard = ref<RoutingPolicyQualityGuard | null>(null)
 const routingPolicyRegistry = ref<RoutingPolicyRegistry | null>(null)
+const routingPolicyOffPolicyEvaluation =
+  ref<RoutingPolicyOffPolicyEvaluation | null>(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
 const activeRun = shallowRef<ActiveRun | null>(null)
@@ -155,12 +159,14 @@ async function loadDashboard() {
     routingPolicyResult,
     routingPolicyQualityGuardResult,
     routingPolicyRegistryResult,
+    routingPolicyOffPolicyEvaluationResult,
   ] = await Promise.allSettled([
     fetchAgentRlMetrics(),
     fetchDatasetReadiness(),
     fetchRoutingPolicyStatus(),
     fetchRoutingPolicyQualityGuard(),
     fetchRoutingPolicyRegistry(),
+    fetchRoutingPolicyOffPolicyEvaluation(),
   ])
 
   if (metricsResult.status === 'fulfilled') {
@@ -178,12 +184,17 @@ async function loadDashboard() {
   if (routingPolicyRegistryResult.status === 'fulfilled') {
     routingPolicyRegistry.value = routingPolicyRegistryResult.value
   }
+  if (routingPolicyOffPolicyEvaluationResult.status === 'fulfilled') {
+    routingPolicyOffPolicyEvaluation.value =
+      routingPolicyOffPolicyEvaluationResult.value
+  }
   if (
     metricsResult.status === 'rejected'
     || readinessResult.status === 'rejected'
     || routingPolicyResult.status === 'rejected'
     || routingPolicyQualityGuardResult.status === 'rejected'
     || routingPolicyRegistryResult.status === 'rejected'
+    || routingPolicyOffPolicyEvaluationResult.status === 'rejected'
   ) {
     dashboardError.value = '指标暂时不可用，请确认后端服务已启动'
   }
@@ -499,6 +510,7 @@ function back() {
       :routing-policy="routingPolicy"
       :routing-policy-quality-guard="routingPolicyQualityGuard"
       :routing-policy-registry="routingPolicyRegistry"
+      :routing-policy-off-policy-evaluation="routingPolicyOffPolicyEvaluation"
       :loading="dashboardLoading"
       :error="dashboardError"
       @refresh="loadDashboard"
