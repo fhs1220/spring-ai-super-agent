@@ -4,6 +4,8 @@ import com.fhs.aiagent.rag.multiagent.RoutingPolicyDeploymentService;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyDeploymentState;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyMode;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyQualityGuard;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryCoordinator;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryService;
 import com.fhs.aiagent.rag.multiagent.TrajectoryAwareRoutingPolicy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -29,12 +31,20 @@ public class RoutingPolicyController {
 
     private final RoutingPolicyQualityGuard qualityGuard;
 
+    private final RoutingPolicyRegistryService registryService;
+
+    private final RoutingPolicyRegistryCoordinator registryCoordinator;
+
     public RoutingPolicyController(RoutingPolicyDeploymentService deploymentService,
                                    TrajectoryAwareRoutingPolicy routingPolicy,
-                                   RoutingPolicyQualityGuard qualityGuard) {
+                                   RoutingPolicyQualityGuard qualityGuard,
+                                   RoutingPolicyRegistryService registryService,
+                                   RoutingPolicyRegistryCoordinator registryCoordinator) {
         this.deploymentService = deploymentService;
         this.routingPolicy = routingPolicy;
         this.qualityGuard = qualityGuard;
+        this.registryService = registryService;
+        this.registryCoordinator = registryCoordinator;
     }
 
     @GetMapping("/deployments")
@@ -51,9 +61,18 @@ public class RoutingPolicyController {
         RoutingPolicyQualityGuard.QualityGuardReport guardReport =
                 qualityGuard.evaluateAndMaybeRollback();
         try {
+            if (request.mode() == RoutingPolicyMode.CANARY
+                    || request.mode() == RoutingPolicyMode.ACTIVE) {
+                registryCoordinator.reconcileNow();
+            }
+            String policyVersion = resolvePolicyVersion(
+                    request.mode(),
+                    request.policyVersion()
+            );
             return deploymentService.deploy(
                     request.mode(),
                     request.canaryRate(),
+                    policyVersion,
                     request.reason(),
                     new RoutingPolicyDeploymentService.PromotionEvidence(
                             status.ready(),
@@ -63,9 +82,30 @@ public class RoutingPolicyController {
             );
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (NoSuchElementException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
         } catch (IllegalStateException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
         }
+    }
+
+    private String resolvePolicyVersion(RoutingPolicyMode target, String requested) {
+        String normalized = requested == null ? "" : requested.trim();
+        if (target == RoutingPolicyMode.CANARY) {
+            String version = normalized.isBlank()
+                    ? registryService.latestValidatedCandidate().version()
+                    : normalized;
+            return registryService.requireDeployable(version).version();
+        }
+        if (target == RoutingPolicyMode.ACTIVE) {
+            String current = deploymentService.current().policyVersion();
+            if (!normalized.isBlank() && !normalized.equals(current)) {
+                throw new IllegalStateException(
+                        "ACTIVE promotion must keep the current CANARY policy artifact");
+            }
+            return registryService.requireDeployable(current).version();
+        }
+        return deploymentService.current().policyVersion();
     }
 
     @PostMapping("/rollback")
@@ -81,6 +121,7 @@ public class RoutingPolicyController {
     public record DeploymentRequest(
             RoutingPolicyMode mode,
             Double canaryRate,
+            String policyVersion,
             String reason
     ) {
     }

@@ -103,6 +103,11 @@ agent:
         maximum-completion-regression: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_COMPLETION_REGRESSION:0.05}
         maximum-latency-multiplier: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_LATENCY_MULTIPLIER:1.5}
         maximum-cost-multiplier: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_COST_MULTIPLIER:1.5}
+      registry:
+        state-file: ${AGENT_RAG_ROUTING_REGISTRY_STATE_FILE:tmp/routing-policy/registry.json}
+        algorithm: ${AGENT_RAG_ROUTING_REGISTRY_ALGORITHM:trajectory-utility-global-policy-v1}
+        maximum-artifacts: ${AGENT_RAG_ROUTING_REGISTRY_MAXIMUM_ARTIFACTS:50}
+        reconcile-interval-ms: ${AGENT_RAG_ROUTING_REGISTRY_RECONCILE_INTERVAL_MS:60000}
     observability:
       # Agent 阶段级硬超时，覆盖底层客户端重试/握手卡住的情况。
       model-call-timeout-seconds: ${AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS:30}

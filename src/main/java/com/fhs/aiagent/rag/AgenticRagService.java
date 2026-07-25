@@ -273,6 +273,10 @@ public class AgenticRagService {
                             Map.entry(
                                     "policyDeploymentVersion",
                                     multiAgentDecision.policyDeploymentVersion()
+                            ),
+                            Map.entry(
+                                    "policyArtifactVersion",
+                                    multiAgentDecision.policyArtifactVersion()
                             )
                     )
             );
@@ -1104,6 +1108,8 @@ public class AgenticRagService {
                                         "policyCandidateSource", "DETERMINISTIC"),
                                 "发布模式：" + output.getOrDefault(
                                         "policyRolloutMode", "OFF"),
+                                "策略资产：" + output.getOrDefault(
+                                        "policyArtifactVersion", "routing-policy-baseline-v1"),
                                 "策略已应用：" + output.getOrDefault("policyApplied", false),
                                 "策略置信度：" + output.getOrDefault("policyConfidence", 0),
                                 "策略样本：" + output.getOrDefault("policyEvidenceSamples", 0)

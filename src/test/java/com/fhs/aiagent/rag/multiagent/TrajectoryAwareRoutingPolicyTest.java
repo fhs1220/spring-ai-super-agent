@@ -149,6 +149,53 @@ class TrajectoryAwareRoutingPolicyTest {
     }
 
     @Test
+    void canaryExecutesFrozenRegisteredArtifact() {
+        InMemoryAgentTrajectoryRepository repository = new InMemoryAgentTrajectoryRepository();
+        saveMode(repository, "single", AdaptiveMultiAgentOrchestrator.SINGLE_MODE, 0.68, 0.001, 300);
+        saveMode(repository, "multi", AdaptiveMultiAgentOrchestrator.MULTI_MODE, 0.91, 0.004, 600);
+        RoutingPolicyDeploymentService deployments = new RoutingPolicyDeploymentService(
+                new MemoryDeploymentRepository(),
+                RoutingPolicyMode.SHADOW,
+                1,
+                2,
+                10,
+                Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC)
+        );
+        deployments.initialize();
+        RoutingPolicyRegistryService registry = new RoutingPolicyRegistryService(
+                new MemoryRegistryRepository(),
+                repository,
+                "trajectory-utility-global-policy-v1",
+                "qwen-test",
+                Map.of("minimumUtilityLift", "0.03"),
+                0.03,
+                10,
+                Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC)
+        );
+        registry.initialize();
+        TrajectoryAwareRoutingPolicy policy = policy(
+                repository, 0.05, 0.05, deployments, registry);
+        registry.reconcileNow(policy.status());
+        RoutingPolicyArtifact artifact = registry.latestValidatedCandidate();
+        deployments.deploy(
+                RoutingPolicyMode.CANARY,
+                1.0,
+                artifact.version(),
+                "frozen artifact canary",
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0, false)
+        );
+
+        TrajectoryAwareRoutingPolicy.RoutingPolicyDecision decision = policy.decide(
+                new TrajectoryAwareRoutingPolicy.RoutingContext(
+                        BUCKET, false, false, "artifact-canary-user"));
+
+        assertThat(decision.multiAgent()).isTrue();
+        assertThat(decision.source()).isEqualTo("CANARY_LEARNED_ARTIFACT");
+        assertThat(decision.policyArtifactVersion()).isEqualTo(artifact.version());
+        assertThat(decision.reason()).contains("冻结策略资产");
+    }
+
+    @Test
     void fallsBackToOffModeWhenDeploymentStateIsUnavailable() {
         RoutingPolicyDeploymentRepository broken = new RoutingPolicyDeploymentRepository() {
             @Override
@@ -211,6 +258,30 @@ class TrajectoryAwareRoutingPolicyTest {
                 60_000,
                 Duration.ofSeconds(30),
                 Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC)
+        );
+    }
+
+    private static TrajectoryAwareRoutingPolicy policy(
+            AgentTrajectoryRepository repository,
+            double costWeight,
+            double latencyWeight,
+            RoutingPolicyDeploymentService deploymentService,
+            RoutingPolicyRegistryService registryService) {
+        return new TrajectoryAwareRoutingPolicy(
+                repository,
+                true,
+                2,
+                100,
+                0.03,
+                0.72,
+                costWeight,
+                latencyWeight,
+                0.02,
+                60_000,
+                Duration.ofSeconds(30),
+                Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC),
+                deploymentService,
+                registryService
         );
     }
 
@@ -296,6 +367,23 @@ class TrajectoryAwareRoutingPolicyTest {
 
         @Override
         public RoutingPolicyDeploymentState save(RoutingPolicyDeploymentState state) {
+            this.state = state;
+            return state;
+        }
+    }
+
+    private static final class MemoryRegistryRepository
+            implements RoutingPolicyRegistryRepository {
+
+        private RoutingPolicyRegistryState state;
+
+        @Override
+        public Optional<RoutingPolicyRegistryState> load() {
+            return Optional.ofNullable(state);
+        }
+
+        @Override
+        public RoutingPolicyRegistryState save(RoutingPolicyRegistryState state) {
             this.state = state;
             return state;
         }

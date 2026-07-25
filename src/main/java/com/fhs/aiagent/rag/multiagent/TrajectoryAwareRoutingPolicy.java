@@ -56,6 +56,8 @@ public class TrajectoryAwareRoutingPolicy {
 
     private RoutingPolicyDeploymentService deploymentService;
 
+    private RoutingPolicyRegistryService registryService;
+
     private volatile PolicySnapshot cachedSnapshot;
 
     @Autowired
@@ -75,7 +77,8 @@ public class TrajectoryAwareRoutingPolicy {
             @Value("${agent.rag.routing-policy.cost-budget-cny:0.02}") double costBudgetCny,
             @Value("${agent.rag.routing-policy.latency-budget-ms:60000}") double latencyBudgetMs,
             @Value("${agent.rag.routing-policy.refresh-seconds:30}") long refreshSeconds,
-            RoutingPolicyDeploymentService deploymentService) {
+            RoutingPolicyDeploymentService deploymentService,
+            RoutingPolicyRegistryService registryService) {
         this(
                 repository,
                 enabled,
@@ -92,6 +95,8 @@ public class TrajectoryAwareRoutingPolicy {
         );
         this.deploymentService = Objects.requireNonNull(
                 deploymentService, "deploymentService");
+        this.registryService = Objects.requireNonNull(
+                registryService, "registryService");
     }
 
     TrajectoryAwareRoutingPolicy(AgentTrajectoryRepository repository,
@@ -120,6 +125,7 @@ public class TrajectoryAwareRoutingPolicy {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.fallbackDeployment = new RoutingPolicyDeployment(
                 "routing-test-active",
+                RoutingPolicyRegistryService.BASELINE_VERSION,
                 RoutingPolicyMode.ACTIVE,
                 1,
                 clock.instant(),
@@ -128,6 +134,7 @@ public class TrajectoryAwareRoutingPolicy {
         // 发布状态读取失败时的展示/决策回退：必须是 OFF，避免把故障显示成“正式生效”。
         this.unavailableDeployment = new RoutingPolicyDeployment(
                 "routing-unavailable",
+                RoutingPolicyRegistryService.BASELINE_VERSION,
                 RoutingPolicyMode.OFF,
                 1,
                 clock.instant(),
@@ -166,6 +173,38 @@ public class TrajectoryAwareRoutingPolicy {
                 deploymentService, "deploymentService");
     }
 
+    TrajectoryAwareRoutingPolicy(AgentTrajectoryRepository repository,
+                                 boolean enabled,
+                                 int minimumSamplesPerMode,
+                                 int maximumTrajectories,
+                                 double minimumUtilityLift,
+                                 double successRewardThreshold,
+                                 double costWeight,
+                                 double latencyWeight,
+                                 double costBudgetCny,
+                                 double latencyBudgetMs,
+                                 Duration refreshInterval,
+                                 Clock clock,
+                                 RoutingPolicyDeploymentService deploymentService,
+                                 RoutingPolicyRegistryService registryService) {
+        this(
+                repository,
+                enabled,
+                minimumSamplesPerMode,
+                maximumTrajectories,
+                minimumUtilityLift,
+                successRewardThreshold,
+                costWeight,
+                latencyWeight,
+                costBudgetCny,
+                latencyBudgetMs,
+                refreshInterval,
+                clock,
+                deploymentService
+        );
+        this.registryService = Objects.requireNonNull(registryService, "registryService");
+    }
+
     public RoutingPolicyDecision decide(RoutingContext context) {
         Objects.requireNonNull(context, "context");
         RoutingPolicyDeployment deployment;
@@ -191,6 +230,7 @@ public class TrajectoryAwareRoutingPolicy {
                     1.0,
                     0,
                     deployment.version(),
+                    deployment.policyVersion(),
                     "检测到关系安全风险，强制启用安全专业 Agent"
             );
         }
@@ -203,11 +243,57 @@ public class TrajectoryAwareRoutingPolicy {
             );
         }
 
-        CandidateDecision candidate = candidate(context);
+        CandidateDecision candidate = candidate(context, deployment);
         return applyDeployment(context, candidate, deployment);
     }
 
-    private CandidateDecision candidate(RoutingContext context) {
+    private CandidateDecision candidate(RoutingContext context,
+                                        RoutingPolicyDeployment deployment) {
+        if ((deployment.mode() == RoutingPolicyMode.CANARY
+                || deployment.mode() == RoutingPolicyMode.ACTIVE)
+                && !RoutingPolicyRegistryService.BASELINE_VERSION.equals(
+                deployment.policyVersion())) {
+            return artifactCandidate(context, deployment.policyVersion());
+        }
+        return dynamicCandidate(context);
+    }
+
+    private CandidateDecision artifactCandidate(RoutingContext context,
+                                                String policyVersion) {
+        if (registryService == null) {
+            return dynamicCandidate(context);
+        }
+        try {
+            RoutingPolicyArtifact artifact = registryService.requireDeployable(policyVersion);
+            RoutingPolicyArtifact.OfflineEvaluation evaluation =
+                    artifact.offlineEvaluation();
+            boolean multiAgent = AdaptiveMultiAgentOrchestrator.MULTI_MODE.equals(
+                    evaluation.recommendedMode());
+            int evidenceSamples = evaluation.singleAgent().sampleCount()
+                    + evaluation.multiAgent().sampleCount();
+            return new CandidateDecision(
+                    multiAgent,
+                    "LEARNED_ARTIFACT",
+                    confidence(evaluation.multiAgentUtilityLift(), evidenceSamples),
+                    evidenceSamples,
+                    "执行冻结策略资产 %s（训练指纹 %s）"
+                            .formatted(
+                                    artifact.version(),
+                                    artifact.trainingDataFingerprint().substring(0, 12)
+                            )
+            );
+        } catch (RuntimeException exception) {
+            return new CandidateDecision(
+                    context.deterministicMultiAgent(),
+                    "ARTIFACT_FALLBACK",
+                    0,
+                    0,
+                    "策略资产不可用，回退确定性路由"
+            );
+        }
+    }
+
+    private CandidateDecision dynamicCandidate(RoutingContext context) {
         PolicySnapshot snapshot;
         try {
             snapshot = snapshot();
@@ -339,6 +425,7 @@ public class TrajectoryAwareRoutingPolicy {
                     candidate.confidence(),
                     candidate.evidenceSamples(),
                     deployment.version(),
+                    deployment.policyVersion(),
                     "Shadow 仅记录候选，不改变执行；" + candidate.reason()
             );
         }
@@ -358,6 +445,7 @@ public class TrajectoryAwareRoutingPolicy {
                     candidate.confidence(),
                     candidate.evidenceSamples(),
                     deployment.version(),
+                    deployment.policyVersion(),
                     selected
                             ? "命中灰度流量；" + candidate.reason()
                             : "未命中灰度流量，执行确定性路由；" + candidate.reason()
@@ -376,6 +464,7 @@ public class TrajectoryAwareRoutingPolicy {
                 candidate.confidence(),
                 candidate.evidenceSamples(),
                 deployment.version(),
+                deployment.policyVersion(),
                 candidate.reason()
         );
     }
@@ -395,6 +484,7 @@ public class TrajectoryAwareRoutingPolicy {
                 0,
                 0,
                 deployment.version(),
+                deployment.policyVersion(),
                 reason
         );
     }
@@ -597,6 +687,7 @@ public class TrajectoryAwareRoutingPolicy {
             double confidence,
             int evidenceSamples,
             String deploymentVersion,
+            String policyArtifactVersion,
             String reason
     ) {
     }

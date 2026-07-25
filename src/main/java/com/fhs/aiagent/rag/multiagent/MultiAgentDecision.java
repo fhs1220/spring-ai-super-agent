@@ -19,6 +19,7 @@ public record MultiAgentDecision(
         boolean policyCanarySelected,
         double policyConfidence,
         int policyEvidenceSamples,
-        String policyDeploymentVersion
+        String policyDeploymentVersion,
+        String policyArtifactVersion
 ) {
 }

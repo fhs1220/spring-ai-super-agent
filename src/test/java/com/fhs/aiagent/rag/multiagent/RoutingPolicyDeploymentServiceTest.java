@@ -34,10 +34,13 @@ class RoutingPolicyDeploymentServiceTest {
         RoutingPolicyDeploymentState canary = service.deploy(
                 RoutingPolicyMode.CANARY,
                 0.2,
+                "routing-policy-candidate-1",
                 "balanced evidence ready",
                 new RoutingPolicyDeploymentService.PromotionEvidence(true, 0, false));
         assertThat(canary.current().mode()).isEqualTo(RoutingPolicyMode.CANARY);
         assertThat(canary.current().canaryRate()).isEqualTo(0.2);
+        assertThat(canary.current().policyVersion())
+                .isEqualTo("routing-policy-candidate-1");
 
         assertThatThrownBy(() -> service.deploy(
                 RoutingPolicyMode.ACTIVE,
@@ -61,9 +64,13 @@ class RoutingPolicyDeploymentServiceTest {
                 "canary passed",
                 new RoutingPolicyDeploymentService.PromotionEvidence(true, 20, true));
         assertThat(active.current().mode()).isEqualTo(RoutingPolicyMode.ACTIVE);
+        assertThat(active.current().policyVersion())
+                .isEqualTo("routing-policy-candidate-1");
 
         RoutingPolicyDeploymentState rolledBack = service.rollback("quality regression");
         assertThat(rolledBack.current().mode()).isEqualTo(RoutingPolicyMode.CANARY);
+        assertThat(rolledBack.current().policyVersion())
+                .isEqualTo("routing-policy-candidate-1");
         assertThat(rolledBack.history().getFirst().mode()).isEqualTo(RoutingPolicyMode.ACTIVE);
     }
 

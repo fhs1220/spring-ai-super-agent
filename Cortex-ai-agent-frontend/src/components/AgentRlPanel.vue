@@ -4,6 +4,7 @@ import type {
   AgentRlMetrics,
   DatasetReadiness,
   RoutingPolicyQualityGuard,
+  RoutingPolicyRegistry,
   RoutingPolicyStatus,
 } from '../api'
 
@@ -12,6 +13,7 @@ const props = defineProps<{
   readiness: DatasetReadiness | null
   routingPolicy: RoutingPolicyStatus | null
   routingPolicyQualityGuard: RoutingPolicyQualityGuard | null
+  routingPolicyRegistry: RoutingPolicyRegistry | null
   loading: boolean
   error: string
 }>()
@@ -76,6 +78,13 @@ const guardLabel = computed(() => {
     ? labels[props.routingPolicyQualityGuard.state]
     : '加载中'
 })
+
+const latestArtifact = computed(() => props.routingPolicyRegistry?.artifacts[0] ?? null)
+
+function shortVersion(value: string | undefined): string {
+  if (!value) return '—'
+  return value.length > 24 ? `${value.slice(0, 21)}…` : value
+}
 </script>
 
 <template>
@@ -161,6 +170,23 @@ const guardLabel = computed(() => {
       >
         {{ routingPolicyQualityGuard.violations[0] ?? routingPolicyQualityGuard.reason }}
       </p>
+      <div class="registry-line">
+        <span>策略资产</span>
+        <strong>{{ routingPolicyRegistry?.artifacts.length ?? 0 }}</strong>
+      </div>
+      <div class="artifact-line">
+        <span :title="latestArtifact?.version">
+          {{ shortVersion(latestArtifact?.version) }}
+        </span>
+        <b :class="`artifact-${latestArtifact?.status.toLowerCase() ?? 'loading'}`">
+          {{ latestArtifact?.status ?? 'LOADING' }}
+        </b>
+      </div>
+      <div v-if="latestArtifact && latestArtifact.status !== 'BASELINE'" class="artifact-meta">
+        <span>样本 {{ latestArtifact.trainingSampleCount }}</span>
+        <span>指纹 {{ latestArtifact.trainingDataFingerprint.slice(0, 10) }}</span>
+        <span>效用 Δ {{ latestArtifact.offlineEvaluation.multiAgentUtilityLift.toFixed(3) }}</span>
+      </div>
     </section>
 
     <div class="metric-grid">
@@ -392,6 +418,45 @@ h2 {
   margin: 7px 0 0;
   color: #fca5a5;
   font-size: 0.62rem;
+}
+.registry-line,
+.artifact-line,
+.artifact-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.registry-line {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+}
+.registry-line strong {
+  color: var(--text-heading);
+  font-family: var(--mono);
+}
+.artifact-line {
+  margin-top: 7px;
+  color: var(--text);
+  font: 0.57rem/1.2 var(--mono);
+}
+.artifact-line b {
+  color: var(--text-muted);
+  font-size: 0.52rem;
+}
+.artifact-line .artifact-validated {
+  color: var(--accent);
+}
+.artifact-line .artifact-rejected {
+  color: #fca5a5;
+}
+.artifact-meta {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font: 0.5rem/1.2 var(--mono);
 }
 .metric-grid {
   display: grid;

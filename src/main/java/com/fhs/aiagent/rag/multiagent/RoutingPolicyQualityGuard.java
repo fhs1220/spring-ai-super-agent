@@ -434,6 +434,7 @@ public class RoutingPolicyQualityGuard {
         } catch (RuntimeException exception) {
             return new RoutingPolicyDeployment(
                     "routing-unavailable",
+                    RoutingPolicyRegistryService.BASELINE_VERSION,
                     RoutingPolicyMode.OFF,
                     1,
                     now,

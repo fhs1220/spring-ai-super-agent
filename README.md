@@ -133,11 +133,24 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 端到端延迟和估算成本。两组都达到门槛后，如果任一指标超过允许回退阈值，会自动创建一条
 带指标原因的 `SHADOW` 发布记录；自动回滚因此可以跨重启审计，不会影响正在执行的回答请求。
 
+策略注册中心每 60 秒检查一次学习状态。单/多 Agent 证据平衡后，它会生成不含用户问题和
+答案的不可变策略资产，内容包括：
+
+- 路由算法、上游模型和成本/延迟/效用超参数；
+- 训练轨迹集合的 SHA-256 指纹和样本数；
+- 单/多 Agent 离线奖励、成本、延迟、净效用及推荐模式；
+- 离线门禁结论、验证失败原因、父策略版本和创建时间。
+
+资产版本同时对算法、模型、参数、训练数据和评测结论做内容寻址。同一资产不会重复注册；
+任何输入变化都会产生新版本。发布记录通过 `policyVersion` 绑定资产。`CANARY/ACTIVE`
+只执行注册表中已验证的冻结策略结论，新轨迹不会让已发布策略在后台无版本漂移。
+
 查看不包含用户问题的策略状态：
 
 ```http
 GET /api/ai/love_app/agents/routing-policy
 GET /api/ai/love_app/agents/routing-policy/quality-guard
+GET /api/ai/love_app/agents/routing-policy/registry
 ```
 
 主要配置：
@@ -154,6 +167,10 @@ GET /api/ai/love_app/agents/routing-policy/quality-guard
 - `AGENT_RAG_ROUTING_GUARD_MAXIMUM_COMPLETION_REGRESSION`（默认 `0.05`）
 - `AGENT_RAG_ROUTING_GUARD_MAXIMUM_LATENCY_MULTIPLIER`（默认 `1.5`）
 - `AGENT_RAG_ROUTING_GUARD_MAXIMUM_COST_MULTIPLIER`（默认 `1.5`）
+- `AGENT_RAG_ROUTING_REGISTRY_STATE_FILE`
+- `AGENT_RAG_ROUTING_REGISTRY_ALGORITHM`
+- `AGENT_RAG_ROUTING_REGISTRY_MAXIMUM_ARTIFACTS`（默认 `50`）
+- `AGENT_RAG_ROUTING_REGISTRY_RECONCILE_INTERVAL_MS`（默认 `60000`）
 - `AGENT_RAG_ROUTING_MINIMUM_SAMPLES_PER_MODE`
 - `AGENT_RAG_ROUTING_MINIMUM_UTILITY_LIFT`
 - `AGENT_RAG_ROUTING_COST_WEIGHT`
@@ -175,9 +192,13 @@ POST /api/agent-routing-policy/rollback
 {
   "mode": "CANARY",
   "canaryRate": 0.1,
+  "policyVersion": "routing-policy-替换为已验证版本",
   "reason": "balanced offline evidence passed"
 }
 ```
+
+`CANARY` 未提供 `policyVersion` 时会选择最新的已验证非基线资产；`ACTIVE` 必须沿用当前
+灰度资产，禁止在正式晋升时偷换策略。紧急切换 `OFF/SHADOW` 和回滚不依赖注册表可用性。
 
 ### RAG A/B 自动化评测与回归门禁
 

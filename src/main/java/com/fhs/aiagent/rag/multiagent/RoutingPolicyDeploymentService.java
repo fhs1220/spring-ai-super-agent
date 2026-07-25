@@ -89,6 +89,15 @@ public class RoutingPolicyDeploymentService {
             Double canaryRate,
             String reason,
             PromotionEvidence evidence) {
+        return deploy(mode, canaryRate, null, reason, evidence);
+    }
+
+    public synchronized RoutingPolicyDeploymentState deploy(
+            RoutingPolicyMode mode,
+            Double canaryRate,
+            String policyVersion,
+            String reason,
+            PromotionEvidence evidence) {
         Objects.requireNonNull(mode, "mode");
         RoutingPolicyDeploymentState currentState = requireState();
         validatePromotion(currentState.current(), mode, evidence);
@@ -99,6 +108,10 @@ public class RoutingPolicyDeploymentService {
                 : currentState.current().canaryRate();
         RoutingPolicyDeployment deployment = new RoutingPolicyDeployment(
                 "routing-" + UUID.randomUUID(),
+                normalizePolicyVersion(
+                        policyVersion,
+                        currentState.current().policyVersion()
+                ),
                 mode,
                 resolvedCanaryRate,
                 clock.instant(),
@@ -117,6 +130,7 @@ public class RoutingPolicyDeploymentService {
         RoutingPolicyDeployment previous = history.getFirst();
         RoutingPolicyDeployment rollback = new RoutingPolicyDeployment(
                 "routing-" + UUID.randomUUID(),
+                previous.policyVersion(),
                 previous.mode(),
                 previous.canaryRate(),
                 clock.instant(),
@@ -173,6 +187,7 @@ public class RoutingPolicyDeploymentService {
     private RoutingPolicyDeploymentState initialState() {
         RoutingPolicyDeployment initial = new RoutingPolicyDeployment(
                 "routing-initial",
+                RoutingPolicyRegistryService.BASELINE_VERSION,
                 defaultMode,
                 defaultCanaryRate,
                 clock.instant(),
@@ -207,6 +222,16 @@ public class RoutingPolicyDeploymentService {
             return fallback;
         }
         return normalized.length() <= 500 ? normalized : normalized.substring(0, 500);
+    }
+
+    private String normalizePolicyVersion(String requested, String fallback) {
+        String normalized = requested == null ? "" : requested.trim();
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        return fallback == null || fallback.isBlank()
+                ? RoutingPolicyRegistryService.BASELINE_VERSION
+                : fallback;
     }
 
     public record PromotionEvidence(

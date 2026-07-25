@@ -8,6 +8,8 @@ import com.fhs.aiagent.rag.multiagent.AgentDescriptor;
 import com.fhs.aiagent.rag.multiagent.AgentHealth;
 import com.fhs.aiagent.rag.multiagent.TrajectoryAwareRoutingPolicy;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyQualityGuard;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryService;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryState;
 import com.fhs.aiagent.rag.run.AgentRunStatus;
 import com.fhs.aiagent.rag.run.DurableAgentRun;
 import com.fhs.aiagent.rag.run.DurableAgentRunService;
@@ -57,6 +59,8 @@ public class AiController {
 
     private final RoutingPolicyQualityGuard routingPolicyQualityGuard;
 
+    private final RoutingPolicyRegistryService routingPolicyRegistryService;
+
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     private final Map<String, ActiveRun> activeRuns = new ConcurrentHashMap<>();
@@ -67,7 +71,8 @@ public class AiController {
                         AdaptiveMultiAgentOrchestrator multiAgentOrchestrator,
                         DurableAgentRunService durableAgentRunService,
                         TrajectoryAwareRoutingPolicy routingPolicy,
-                        RoutingPolicyQualityGuard routingPolicyQualityGuard) {
+                        RoutingPolicyQualityGuard routingPolicyQualityGuard,
+                        RoutingPolicyRegistryService routingPolicyRegistryService) {
         this.loveApp = loveApp;
         this.agentRlService = agentRlService;
         this.bailianRlDatasetService = bailianRlDatasetService;
@@ -75,6 +80,7 @@ public class AiController {
         this.durableAgentRunService = durableAgentRunService;
         this.routingPolicy = routingPolicy;
         this.routingPolicyQualityGuard = routingPolicyQualityGuard;
+        this.routingPolicyRegistryService = routingPolicyRegistryService;
     }
 
     @PostMapping("/chat/agentic-rag")
@@ -207,6 +213,11 @@ public class AiController {
     @GetMapping("/agents/routing-policy/quality-guard")
     public RoutingPolicyQualityGuard.QualityGuardReport routingPolicyQualityGuard() {
         return routingPolicyQualityGuard.status();
+    }
+
+    @GetMapping("/agents/routing-policy/registry")
+    public RoutingPolicyRegistryState routingPolicyRegistry() {
+        return routingPolicyRegistryService.state();
     }
 
     @PreDestroy

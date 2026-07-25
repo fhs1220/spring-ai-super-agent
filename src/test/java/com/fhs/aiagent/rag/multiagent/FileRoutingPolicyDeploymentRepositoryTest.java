@@ -24,6 +24,7 @@ class FileRoutingPolicyDeploymentRepositoryTest {
         RoutingPolicyDeploymentState state = new RoutingPolicyDeploymentState(
                 new RoutingPolicyDeployment(
                         "routing-1",
+                        RoutingPolicyRegistryService.BASELINE_VERSION,
                         RoutingPolicyMode.SHADOW,
                         0.1,
                         Instant.parse("2026-07-25T00:00:00Z"),

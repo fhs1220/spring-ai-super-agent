@@ -9,6 +9,7 @@ import {
   fetchDatasetReadiness,
   fetchRoutingPolicyStatus,
   fetchRoutingPolicyQualityGuard,
+  fetchRoutingPolicyRegistry,
   generateChatId,
   streamAgenticRag,
   submitAgentRlFeedback,
@@ -19,6 +20,7 @@ import {
   type RewardBreakdown,
   type RoutingPolicyStatus,
   type RoutingPolicyQualityGuard,
+  type RoutingPolicyRegistry,
 } from '../api'
 
 interface Message {
@@ -52,6 +54,7 @@ const metrics = ref<AgentRlMetrics | null>(null)
 const readiness = ref<DatasetReadiness | null>(null)
 const routingPolicy = ref<RoutingPolicyStatus | null>(null)
 const routingPolicyQualityGuard = ref<RoutingPolicyQualityGuard | null>(null)
+const routingPolicyRegistry = ref<RoutingPolicyRegistry | null>(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
 const activeRun = shallowRef<ActiveRun | null>(null)
@@ -151,11 +154,13 @@ async function loadDashboard() {
     readinessResult,
     routingPolicyResult,
     routingPolicyQualityGuardResult,
+    routingPolicyRegistryResult,
   ] = await Promise.allSettled([
     fetchAgentRlMetrics(),
     fetchDatasetReadiness(),
     fetchRoutingPolicyStatus(),
     fetchRoutingPolicyQualityGuard(),
+    fetchRoutingPolicyRegistry(),
   ])
 
   if (metricsResult.status === 'fulfilled') {
@@ -170,11 +175,15 @@ async function loadDashboard() {
   if (routingPolicyQualityGuardResult.status === 'fulfilled') {
     routingPolicyQualityGuard.value = routingPolicyQualityGuardResult.value
   }
+  if (routingPolicyRegistryResult.status === 'fulfilled') {
+    routingPolicyRegistry.value = routingPolicyRegistryResult.value
+  }
   if (
     metricsResult.status === 'rejected'
     || readinessResult.status === 'rejected'
     || routingPolicyResult.status === 'rejected'
     || routingPolicyQualityGuardResult.status === 'rejected'
+    || routingPolicyRegistryResult.status === 'rejected'
   ) {
     dashboardError.value = '指标暂时不可用，请确认后端服务已启动'
   }
@@ -489,6 +498,7 @@ function back() {
       :readiness="readiness"
       :routing-policy="routingPolicy"
       :routing-policy-quality-guard="routingPolicyQualityGuard"
+      :routing-policy-registry="routingPolicyRegistry"
       :loading="dashboardLoading"
       :error="dashboardError"
       @refresh="loadDashboard"

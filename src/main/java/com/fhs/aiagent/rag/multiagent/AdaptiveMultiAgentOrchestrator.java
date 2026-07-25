@@ -178,6 +178,7 @@ public class AdaptiveMultiAgentOrchestrator {
                                 0,
                                 0,
                                 "routing-none",
+                                RoutingPolicyRegistryService.BASELINE_VERSION,
                                 "未启用轨迹学习策略"
                         )
                         : routingPolicy.decide(new TrajectoryAwareRoutingPolicy.RoutingContext(
@@ -203,7 +204,8 @@ public class AdaptiveMultiAgentOrchestrator {
                 policyDecision.canarySelected(),
                 policyDecision.confidence(),
                 policyDecision.evidenceSamples(),
-                policyDecision.deploymentVersion()
+                policyDecision.deploymentVersion(),
+                policyDecision.policyArtifactVersion()
         );
     }
 

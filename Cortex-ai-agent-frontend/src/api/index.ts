@@ -146,10 +146,58 @@ export type RoutingPolicyMode = 'OFF' | 'SHADOW' | 'CANARY' | 'ACTIVE'
 
 export interface RoutingPolicyDeployment {
   version: string
+  policyVersion: string
   mode: RoutingPolicyMode
   canaryRate: number
   createdAt: string
   reason: string
+}
+
+export type RoutingPolicyArtifactStatus =
+  | 'BASELINE'
+  | 'VALIDATED'
+  | 'REJECTED'
+  | 'ARCHIVED'
+
+export interface RoutingPolicyArtifactModeEvaluation {
+  sampleCount: number
+  successfulCount: number
+  usageMeasuredSamples: number
+  averageReward: number
+  averageCostCny: number
+  averageLatencyMs: number
+  utility: number
+}
+
+export interface RoutingPolicyOfflineEvaluation {
+  balancedEvidence: boolean
+  observedTrajectoryCount: number
+  minimumSamplesPerMode: number
+  singleAgent: RoutingPolicyArtifactModeEvaluation
+  multiAgent: RoutingPolicyArtifactModeEvaluation
+  multiAgentUtilityLift: number
+  recommendedMode: string
+  validationPassed: boolean
+  validationFailures: string[]
+}
+
+export interface RoutingPolicyArtifact {
+  version: string
+  status: RoutingPolicyArtifactStatus
+  algorithm: string
+  upstreamModel: string
+  parameters: Record<string, string>
+  trainingDataFingerprint: string
+  trainingSampleCount: number
+  offlineEvaluation: RoutingPolicyOfflineEvaluation
+  parentVersion: string
+  createdAt: string
+  validationReason: string
+}
+
+export interface RoutingPolicyRegistry {
+  artifacts: RoutingPolicyArtifact[]
+  updatedAt: string
 }
 
 export interface RoutingModeStats {
@@ -353,6 +401,13 @@ export async function fetchRoutingPolicyStatus(): Promise<RoutingPolicyStatus> {
 export async function fetchRoutingPolicyQualityGuard(): Promise<RoutingPolicyQualityGuard> {
   const response = await http.get<RoutingPolicyQualityGuard>(
     '/ai/love_app/agents/routing-policy/quality-guard',
+  )
+  return response.data
+}
+
+export async function fetchRoutingPolicyRegistry(): Promise<RoutingPolicyRegistry> {
+  const response = await http.get<RoutingPolicyRegistry>(
+    '/ai/love_app/agents/routing-policy/registry',
   )
   return response.data
 }
