@@ -4,8 +4,35 @@ set -u
 cd "$(dirname "$0")"
 LOG="verify-results.log"
 : > "$LOG"
+VERIFY_HOST="127.0.0.1"
+VERIFY_PORT="${VERIFY_ROUTING_POLICY_PORT:-18123}"
+BASE_URL="http://${VERIFY_HOST}:${VERIFY_PORT}/api"
+MVN_PID=""
 
 note() { echo "$1" | tee -a "$LOG"; }
+
+cleanup() {
+  if [ -n "$MVN_PID" ] && kill -0 "$MVN_PID" 2>/dev/null; then
+    kill "$MVN_PID" 2>/dev/null
+    for _ in $(seq 1 25); do
+      kill -0 "$MVN_PID" 2>/dev/null || break
+      sleep 0.2
+    done
+    if kill -0 "$MVN_PID" 2>/dev/null; then
+      # 只强制结束本脚本创建的 Maven/应用进程，不按端口误杀其他服务。
+      kill -9 "$MVN_PID" 2>/dev/null
+    fi
+    wait "$MVN_PID" 2>/dev/null
+  fi
+}
+trap cleanup EXIT INT TERM
+
+case "$VERIFY_PORT" in
+  ''|*[!0-9]*)
+    note "RESULT: INVALID_PORT ($VERIFY_PORT)"
+    exit 1
+    ;;
+esac
 
 MVN_ARGS=()
 if [ -f /private/tmp/super-agent-maven-settings.xml ]; then
@@ -28,8 +55,15 @@ if [ $TEST_EXIT -ne 0 ]; then
 fi
 
 note "[2/3] 启动后端(约需 1-2 分钟)..."
-AGENT_EVALUATION_API_ENABLED=true SPRING_AI_MCP_CLIENT_ENABLED=false \
+if lsof -nP -iTCP:"$VERIFY_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  note "RESULT: PORT_IN_USE ($VERIFY_PORT)，请设置 VERIFY_ROUTING_POLICY_PORT"
+  exit 1
+fi
+
+SERVER_PORT="$VERIFY_PORT" \
+  AGENT_EVALUATION_API_ENABLED=true SPRING_AI_MCP_CLIENT_ENABLED=false \
   sh mvnw -o "${MVN_ARGS[@]}" \
+  -Dspring-boot.run.fork=false \
   org.springframework.boot:spring-boot-maven-plugin:3.3.5:run \
   > boot-verify.log 2>&1 &
 MVN_PID=$!
@@ -37,7 +71,7 @@ MVN_PID=$!
 UP=0
 for i in $(seq 1 90); do
   sleep 2
-  if curl -sf -o /dev/null http://127.0.0.1:8123/api/ai/love_app/agents/routing-policy; then
+  if curl -sf -o /dev/null "$BASE_URL/ai/love_app/agents/routing-policy"; then
     UP=1; break
   fi
   if ! kill -0 $MVN_PID 2>/dev/null; then break; fi
@@ -51,17 +85,14 @@ if [ $UP -ne 1 ]; then
 fi
 
 note "[3/3] HTTP 验证..."
-STATUS_BODY=$(curl -sf http://127.0.0.1:8123/api/ai/love_app/agents/routing-policy)
+STATUS_BODY=$(curl -sf "$BASE_URL/ai/love_app/agents/routing-policy")
 echo "status-body: $STATUS_BODY" >> "$LOG"
-MGMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8123/api/agent-routing-policy/deployments)
+MGMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+  "$BASE_URL/agent-routing-policy/deployments")
 note "management-api http code (期望 404): $MGMT_CODE"
 
 echo "$STATUS_BODY" | grep -q '"mode":"SHADOW"' && SHADOW_OK=1 || SHADOW_OK=0
 note "默认 SHADOW: $([ $SHADOW_OK -eq 1 ] && echo OK || echo FAIL)"
-
-kill $MVN_PID 2>/dev/null
-sleep 3
-lsof -ti :8123 | xargs kill -9 2>/dev/null
 
 if [ $SHADOW_OK -eq 1 ] && [ "$MGMT_CODE" = "404" ]; then
   note "RESULT: ALL_PASSED"
