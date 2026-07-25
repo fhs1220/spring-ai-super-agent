@@ -105,9 +105,14 @@ agent:
         maximum-cost-multiplier: ${AGENT_RAG_ROUTING_GUARD_MAXIMUM_COST_MULTIPLIER:1.5}
       registry:
         state-file: ${AGENT_RAG_ROUTING_REGISTRY_STATE_FILE:tmp/routing-policy/registry.json}
-        algorithm: ${AGENT_RAG_ROUTING_REGISTRY_ALGORITHM:trajectory-utility-contextual-policy-v2}
+        algorithm: ${AGENT_RAG_ROUTING_REGISTRY_ALGORITHM:trajectory-utility-contextual-policy-v3}
         maximum-artifacts: ${AGENT_RAG_ROUTING_REGISTRY_MAXIMUM_ARTIFACTS:50}
         reconcile-interval-ms: ${AGENT_RAG_ROUTING_REGISTRY_RECONCILE_INTERVAL_MS:60000}
+      temporal-holdout:
+        # 只用较早轨迹训练，较新的时间窗口仅用于独立发布验证。
+        validation-ratio: ${AGENT_RAG_ROUTING_HOLDOUT_VALIDATION_RATIO:0.25}
+        minimum-samples-per-mode: ${AGENT_RAG_ROUTING_HOLDOUT_MINIMUM_SAMPLES_PER_MODE:4}
+        minimum-utility-lift-lower-bound: ${AGENT_RAG_ROUTING_HOLDOUT_MINIMUM_LIFT_LCB:0.0}
       off-policy:
         minimum-samples-per-action: ${AGENT_RAG_ROUTING_OPE_MINIMUM_SAMPLES_PER_ACTION:20}
         minimum-effective-sample-size: ${AGENT_RAG_ROUTING_OPE_MINIMUM_EFFECTIVE_SAMPLE_SIZE:20}

@@ -16,6 +16,7 @@ public record RoutingPolicyArtifact(
         Map<String, String> parameters,
         String trainingDataFingerprint,
         int trainingSampleCount,
+        TemporalHoldoutEvaluation temporalHoldout,
         OfflineEvaluation offlineEvaluation,
         DecisionRule globalRule,
         Map<String, DecisionRule> contextualRules,
@@ -33,6 +34,9 @@ public record RoutingPolicyArtifact(
         parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
         trainingDataFingerprint = normalize(trainingDataFingerprint);
         trainingSampleCount = Math.max(0, trainingSampleCount);
+        temporalHoldout = temporalHoldout == null
+                ? TemporalHoldoutEvaluation.empty()
+                : temporalHoldout;
         offlineEvaluation = offlineEvaluation == null
                 ? OfflineEvaluation.empty()
                 : offlineEvaluation;
@@ -45,6 +49,43 @@ public record RoutingPolicyArtifact(
         parentVersion = normalize(parentVersion);
         createdAt = createdAt == null ? Instant.now() : createdAt;
         validationReason = normalize(validationReason);
+    }
+
+    /**
+     * 兼容 schema v1/v2 的构造方式和已持久化 JSON。
+     */
+    public RoutingPolicyArtifact(
+            int schemaVersion,
+            String version,
+            RoutingPolicyArtifactStatus status,
+            String algorithm,
+            String upstreamModel,
+            Map<String, String> parameters,
+            String trainingDataFingerprint,
+            int trainingSampleCount,
+            OfflineEvaluation offlineEvaluation,
+            DecisionRule globalRule,
+            Map<String, DecisionRule> contextualRules,
+            String parentVersion,
+            Instant createdAt,
+            String validationReason) {
+        this(
+                schemaVersion,
+                version,
+                status,
+                algorithm,
+                upstreamModel,
+                parameters,
+                trainingDataFingerprint,
+                trainingSampleCount,
+                TemporalHoldoutEvaluation.empty(),
+                offlineEvaluation,
+                globalRule,
+                contextualRules,
+                parentVersion,
+                createdAt,
+                validationReason
+        );
     }
 
     private static String normalize(String value) {
@@ -101,6 +142,71 @@ public record RoutingPolicyArtifact(
 
         static ModeEvaluation empty() {
             return new ModeEvaluation(0, 0, 0, 0, 0, 0, 0);
+        }
+    }
+
+    public record TemporalHoldoutEvaluation(
+            boolean enabled,
+            double validationRatio,
+            Instant cutoff,
+            String validationDataFingerprint,
+            int validationSampleCount,
+            int minimumSamplesPerMode,
+            double confidenceLevel,
+            double minimumUtilityLiftLowerBound,
+            Map<String, RuleValidation> rules,
+            boolean validationPassed,
+            List<String> validationFailures
+    ) {
+
+        public TemporalHoldoutEvaluation {
+            validationRatio = Math.max(0, Math.min(0.5, validationRatio));
+            cutoff = cutoff == null ? Instant.EPOCH : cutoff;
+            validationDataFingerprint = normalize(validationDataFingerprint);
+            validationSampleCount = Math.max(0, validationSampleCount);
+            minimumSamplesPerMode = Math.max(0, minimumSamplesPerMode);
+            confidenceLevel = Math.max(0, Math.min(1, confidenceLevel));
+            rules = rules == null ? Map.of() : Map.copyOf(rules);
+            validationFailures = validationFailures == null
+                    ? List.of()
+                    : List.copyOf(validationFailures);
+        }
+
+        static TemporalHoldoutEvaluation empty() {
+            return new TemporalHoldoutEvaluation(
+                    false,
+                    0,
+                    Instant.EPOCH,
+                    "",
+                    0,
+                    0,
+                    0.95,
+                    0,
+                    Map.of(),
+                    false,
+                    List.of("temporal holdout is unavailable")
+            );
+        }
+    }
+
+    public record RuleValidation(
+            String scope,
+            String recommendedMode,
+            int singleAgentSamples,
+            int multiAgentSamples,
+            double candidateUtilityLift,
+            double standardError,
+            double lowerConfidenceBound,
+            boolean passed,
+            String reason
+    ) {
+
+        public RuleValidation {
+            scope = normalize(scope);
+            recommendedMode = normalize(recommendedMode);
+            singleAgentSamples = Math.max(0, singleAgentSamples);
+            multiAgentSamples = Math.max(0, multiAgentSamples);
+            reason = normalize(reason);
         }
     }
 

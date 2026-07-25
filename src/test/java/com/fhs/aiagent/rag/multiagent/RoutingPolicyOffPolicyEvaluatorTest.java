@@ -146,7 +146,7 @@ class RoutingPolicyOffPolicyEvaluatorTest {
                         "test global rule"
                 );
         return new RoutingPolicyArtifact(
-                2,
+                3,
                 ARTIFACT_VERSION,
                 RoutingPolicyArtifactStatus.VALIDATED,
                 "test",
@@ -154,6 +154,29 @@ class RoutingPolicyOffPolicyEvaluatorTest {
                 Map.of(),
                 "fingerprint",
                 4,
+                new RoutingPolicyArtifact.TemporalHoldoutEvaluation(
+                        true,
+                        0.5,
+                        NOW,
+                        "validation-fingerprint",
+                        4,
+                        2,
+                        0.95,
+                        0,
+                        Map.of("GLOBAL", new RoutingPolicyArtifact.RuleValidation(
+                                "GLOBAL",
+                                AdaptiveMultiAgentOrchestrator.MULTI_MODE,
+                                2,
+                                2,
+                                0.2,
+                                0,
+                                0.2,
+                                true,
+                                "passed"
+                        )),
+                        true,
+                        List.of()
+                ),
                 null,
                 global,
                 Map.of(),

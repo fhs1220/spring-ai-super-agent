@@ -51,7 +51,7 @@ fi
 
 note "[1/3] 运行专项测试..."
 sh mvnw "${MVN_ARGS[@]}" \
-  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,RoutingPolicyRegistryServiceTest,RoutingPolicyOffPolicyEvaluatorTest,RoutingPolicyDriftMonitorTest,FileRoutingPolicyRegistryRepositoryTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
+  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,RoutingPolicyRegistryServiceTest,RoutingPolicyTemporalHoldoutEvaluatorTest,RoutingPolicyOffPolicyEvaluatorTest,RoutingPolicyDriftMonitorTest,FileRoutingPolicyRegistryRepositoryTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
   test >> "$LOG" 2>&1
 TEST_EXIT=$?
 note "[1/3] 测试退出码: $TEST_EXIT"
@@ -116,9 +116,12 @@ note "质量守卫待命: $([ $GUARD_OK -eq 1 ] && echo OK || echo FAIL)"
 echo "$REGISTRY_BODY" | grep -q '"version":"routing-policy-baseline-v1"' \
   && REGISTRY_OK=1 || REGISTRY_OK=0
 note "策略注册表基线: $([ $REGISTRY_OK -eq 1 ] && echo OK || echo FAIL)"
-echo "$REGISTRY_BODY" | grep -q '"schemaVersion":2' \
+echo "$REGISTRY_BODY" | grep -q '"schemaVersion":3' \
   && SCHEMA_OK=1 || SCHEMA_OK=0
-note "策略资产 schema v2: $([ $SCHEMA_OK -eq 1 ] && echo OK || echo FAIL)"
+note "策略资产 schema v3: $([ $SCHEMA_OK -eq 1 ] && echo OK || echo FAIL)"
+echo "$REGISTRY_BODY" | grep -q '"temporalHoldout":' \
+  && HOLDOUT_OK=1 || HOLDOUT_OK=0
+note "时间留出验证报告: $([ $HOLDOUT_OK -eq 1 ] && echo OK || echo FAIL)"
 echo "$OPE_BODY" | grep -q '"state":"NO_ARTIFACT"' \
   && OPE_OK=1 || OPE_OK=0
 note "离线策略评测冷启动: $([ $OPE_OK -eq 1 ] && echo OK || echo FAIL)"
@@ -128,7 +131,7 @@ note "ACTIVE 漂移监控待命: $([ $DRIFT_OK -eq 1 ] && echo OK || echo FAIL)"
 
 if [ $SHADOW_OK -eq 1 ] && [ $GUARD_OK -eq 1 ] \
   && [ $REGISTRY_OK -eq 1 ] && [ $SCHEMA_OK -eq 1 ] \
-  && [ $OPE_OK -eq 1 ] && [ $DRIFT_OK -eq 1 ] \
+  && [ $HOLDOUT_OK -eq 1 ] && [ $OPE_OK -eq 1 ] && [ $DRIFT_OK -eq 1 ] \
   && [ "$MGMT_CODE" = "404" ]; then
   note "RESULT: ALL_PASSED"
   exit 0

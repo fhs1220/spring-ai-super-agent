@@ -428,6 +428,23 @@ public class TrajectoryAwareRoutingPolicy {
      */
     public LearnedPolicySnapshot learnedPolicySnapshot() {
         PolicySnapshot snapshot = snapshot();
+        return learnedPolicySnapshot(snapshot);
+    }
+
+    /**
+     * 仅从调用方提供的轨迹训练策略快照。策略注册表用它实现严格的时间留出，
+     * 避免验证集进入规则训练。
+     */
+    public LearnedPolicySnapshot learnedPolicySnapshot(
+            List<AgentTrajectory> trainingTrajectories) {
+        Objects.requireNonNull(trainingTrajectories, "trainingTrajectories");
+        return learnedPolicySnapshot(buildSnapshot(
+                trainingTrajectories,
+                clock.instant()
+        ));
+    }
+
+    private LearnedPolicySnapshot learnedPolicySnapshot(PolicySnapshot snapshot) {
         Map<String, LearnedRule> contextual = new LinkedHashMap<>();
         snapshot.contextual().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -620,7 +637,13 @@ public class TrajectoryAwareRoutingPolicy {
     }
 
     private PolicySnapshot buildSnapshot(Instant refreshedAt) {
-        List<Observation> observations = repository.findAll().stream()
+        return buildSnapshot(repository.findAll(), refreshedAt);
+    }
+
+    private PolicySnapshot buildSnapshot(
+            List<AgentTrajectory> trajectories,
+            Instant refreshedAt) {
+        List<Observation> observations = trajectories.stream()
                 .filter(this::eligible)
                 .limit(maximumTrajectories)
                 .map(this::observation)

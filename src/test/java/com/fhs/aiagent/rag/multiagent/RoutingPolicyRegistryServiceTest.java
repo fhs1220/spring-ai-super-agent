@@ -39,10 +39,13 @@ class RoutingPolicyRegistryServiceTest {
         assertThat(duplicate.artifacts()).hasSize(2);
         RoutingPolicyArtifact artifact = first.artifacts().getFirst();
         assertThat(artifact.status()).isEqualTo(RoutingPolicyArtifactStatus.VALIDATED);
-        assertThat(artifact.schemaVersion()).isEqualTo(2);
+        assertThat(artifact.schemaVersion()).isEqualTo(3);
         assertThat(artifact.version()).startsWith("routing-policy-");
         assertThat(artifact.trainingDataFingerprint()).hasSize(64);
         assertThat(artifact.trainingSampleCount()).isEqualTo(4);
+        assertThat(artifact.temporalHoldout().validationSampleCount()).isEqualTo(4);
+        assertThat(artifact.temporalHoldout().validationPassed()).isTrue();
+        assertThat(artifact.temporalHoldout().rules().get("GLOBAL").passed()).isTrue();
         assertThat(artifact.parentVersion())
                 .isEqualTo(RoutingPolicyRegistryService.BASELINE_VERSION);
         assertThat(artifact.offlineEvaluation().recommendedMode())
@@ -166,7 +169,7 @@ class RoutingPolicyRegistryServiceTest {
     }
 
     @Test
-    void normalizesPersistedBuiltInBaselineToSchemaV2() {
+    void normalizesPersistedBuiltInBaselineToSchemaV3() {
         MemoryRegistryRepository repository = new MemoryRegistryRepository();
         repository.save(new RoutingPolicyRegistryState(
                 List.of(new RoutingPolicyArtifact(
@@ -192,9 +195,64 @@ class RoutingPolicyRegistryServiceTest {
 
         service.initialize();
 
-        assertThat(service.state().artifacts().getFirst().schemaVersion()).isEqualTo(2);
+        assertThat(service.state().artifacts().getFirst().schemaVersion()).isEqualTo(3);
         assertThat(service.state().artifacts().getFirst().status())
                 .isEqualTo(RoutingPolicyArtifactStatus.BASELINE);
+    }
+
+    @Test
+    void refusesLegacyLearnedArtifactWithoutTemporalHoldout() {
+        MemoryRegistryRepository repository = new MemoryRegistryRepository();
+        RoutingPolicyArtifact legacy = new RoutingPolicyArtifact(
+                2,
+                "routing-policy-legacy",
+                RoutingPolicyArtifactStatus.VALIDATED,
+                "trajectory-utility-contextual-policy-v2",
+                "qwen-test",
+                Map.of(),
+                "legacy-fingerprint",
+                20,
+                new RoutingPolicyArtifact.OfflineEvaluation(
+                        true,
+                        20,
+                        2,
+                        new RoutingPolicyArtifact.ModeEvaluation(
+                                10, 10, 10, 0.6, 0, 0, 0.6),
+                        new RoutingPolicyArtifact.ModeEvaluation(
+                                10, 10, 10, 0.9, 0, 0, 0.9),
+                        0.3,
+                        AdaptiveMultiAgentOrchestrator.MULTI_MODE,
+                        true,
+                        List.of()
+                ),
+                new RoutingPolicyArtifact.DecisionRule(
+                        true,
+                        AdaptiveMultiAgentOrchestrator.MULTI_MODE,
+                        0.9,
+                        10,
+                        0.3,
+                        null,
+                        null,
+                        "legacy"
+                ),
+                Map.of(),
+                RoutingPolicyRegistryService.BASELINE_VERSION,
+                NOW,
+                "legacy validated"
+        );
+        repository.save(new RoutingPolicyRegistryState(
+                List.of(legacy),
+                NOW
+        ));
+        RoutingPolicyRegistryService service = service(
+                repository, new InMemoryAgentTrajectoryRepository());
+        service.initialize();
+
+        assertThatThrownBy(() -> service.requireDeployable(legacy.version()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("temporal holdout");
+        assertThatThrownBy(service::latestValidatedCandidate)
+                .isInstanceOf(NoSuchElementException.class);
     }
 
     private RoutingPolicyRegistryService service(
@@ -252,21 +310,31 @@ class RoutingPolicyRegistryServiceTest {
         repository.save(trajectory(
                 "single-2", AdaptiveMultiAgentOrchestrator.SINGLE_MODE, 0.60));
         repository.save(trajectory(
+                "single-3", AdaptiveMultiAgentOrchestrator.SINGLE_MODE, 0.60));
+        repository.save(trajectory(
+                "single-4", AdaptiveMultiAgentOrchestrator.SINGLE_MODE, 0.60));
+        repository.save(trajectory(
                 "multi-1", AdaptiveMultiAgentOrchestrator.MULTI_MODE, 0.90));
         repository.save(trajectory(
                 "multi-2", AdaptiveMultiAgentOrchestrator.MULTI_MODE, 0.90));
+        repository.save(trajectory(
+                "multi-3", AdaptiveMultiAgentOrchestrator.MULTI_MODE, 0.90));
+        repository.save(trajectory(
+                "multi-4", AdaptiveMultiAgentOrchestrator.MULTI_MODE, 0.90));
         return repository;
     }
 
     private AgentTrajectory trajectory(String id, String mode, double reward) {
+        int sequence = Integer.parseInt(id.substring(id.lastIndexOf('-') + 1));
+        Instant eventTime = NOW.plusSeconds(sequence);
         AgentStep route = new AgentStep(
                 id + "-route",
                 AgentStepType.ROUTE,
-                NOW,
+                eventTime,
                 1,
                 true,
                 Map.of(),
-                Map.of("mode", mode, "featureBucket", "GLOBAL")
+                Map.of("mode", mode, "featureBucket", "HOUSEHOLD")
         );
         RewardBreakdown breakdown = new RewardBreakdown(
                 reward, reward, reward, reward, reward, reward, reward, 0.5);
@@ -278,8 +346,8 @@ class RoutingPolicyRegistryServiceTest {
                 "policy",
                 "model",
                 "sensitive question that must not enter the registry",
-                NOW,
-                NOW,
+                eventTime,
+                eventTime,
                 "COMPLETED",
                 List.of(route),
                 List.of(),

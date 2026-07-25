@@ -192,6 +192,32 @@ export interface RoutingPolicyDecisionRule {
   reason: string
 }
 
+export interface RoutingPolicyRuleValidation {
+  scope: string
+  recommendedMode: string
+  singleAgentSamples: number
+  multiAgentSamples: number
+  candidateUtilityLift: number
+  standardError: number
+  lowerConfidenceBound: number
+  passed: boolean
+  reason: string
+}
+
+export interface RoutingPolicyTemporalHoldout {
+  enabled: boolean
+  validationRatio: number
+  cutoff: string
+  validationDataFingerprint: string
+  validationSampleCount: number
+  minimumSamplesPerMode: number
+  confidenceLevel: number
+  minimumUtilityLiftLowerBound: number
+  rules: Record<string, RoutingPolicyRuleValidation>
+  validationPassed: boolean
+  validationFailures: string[]
+}
+
 export interface RoutingPolicyArtifact {
   schemaVersion?: number
   version: string
@@ -201,6 +227,7 @@ export interface RoutingPolicyArtifact {
   parameters: Record<string, string>
   trainingDataFingerprint: string
   trainingSampleCount: number
+  temporalHoldout: RoutingPolicyTemporalHoldout
   offlineEvaluation: RoutingPolicyOfflineEvaluation
   globalRule?: RoutingPolicyDecisionRule
   contextualRules?: Record<string, RoutingPolicyDecisionRule>

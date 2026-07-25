@@ -39,9 +39,12 @@ public class RoutingPolicyRegistryCoordinator {
     }
 
     public RoutingPolicyRegistryState reconcileNow() {
+        RoutingPolicyTemporalHoldoutEvaluator.TemporalDatasetSplit dataset =
+                registryService.temporalDatasetSplit();
         return registryService.reconcileNow(
                 routingPolicy.status(),
-                routingPolicy.learnedPolicySnapshot()
+                routingPolicy.learnedPolicySnapshot(dataset.training()),
+                dataset
         );
     }
 }

@@ -208,6 +208,14 @@ class TrajectoryAwareRoutingPolicyTest {
         InMemoryAgentTrajectoryRepository repository = new InMemoryAgentTrajectoryRepository();
         saveMode(repository, "single", AdaptiveMultiAgentOrchestrator.SINGLE_MODE, 0.68, 0.001, 300);
         saveMode(repository, "multi", AdaptiveMultiAgentOrchestrator.MULTI_MODE, 0.91, 0.004, 600);
+        repository.save(trajectory("single-3", AdaptiveMultiAgentOrchestrator.SINGLE_MODE,
+                0.68, 0.001, 300));
+        repository.save(trajectory("single-4", AdaptiveMultiAgentOrchestrator.SINGLE_MODE,
+                0.68, 0.001, 300));
+        repository.save(trajectory("multi-3", AdaptiveMultiAgentOrchestrator.MULTI_MODE,
+                0.91, 0.004, 600));
+        repository.save(trajectory("multi-4", AdaptiveMultiAgentOrchestrator.MULTI_MODE,
+                0.91, 0.004, 600));
         RoutingPolicyDeploymentService deployments = new RoutingPolicyDeploymentService(
                 new MemoryDeploymentRepository(),
                 RoutingPolicyMode.SHADOW,
@@ -230,7 +238,13 @@ class TrajectoryAwareRoutingPolicyTest {
         registry.initialize();
         TrajectoryAwareRoutingPolicy policy = policy(
                 repository, 0.05, 0.05, deployments, registry);
-        registry.reconcileNow(policy.status(), policy.learnedPolicySnapshot());
+        RoutingPolicyTemporalHoldoutEvaluator.TemporalDatasetSplit dataset =
+                registry.temporalDatasetSplit();
+        registry.reconcileNow(
+                policy.status(),
+                policy.learnedPolicySnapshot(dataset.training()),
+                dataset
+        );
         RoutingPolicyArtifact artifact = registry.latestValidatedCandidate();
         deployments.deploy(
                 RoutingPolicyMode.CANARY,
@@ -379,7 +393,9 @@ class TrajectoryAwareRoutingPolicyTest {
                                               double reward,
                                               double cost,
                                               long latency) {
-        Instant now = Instant.parse("2026-07-25T00:00:00Z");
+        int sequence = Integer.parseInt(id.substring(id.lastIndexOf('-') + 1));
+        Instant now = Instant.parse("2026-07-25T00:00:00Z")
+                .plusSeconds(sequence);
         AgentStep route = new AgentStep(
                 id + "-route",
                 AgentStepType.ROUTE,

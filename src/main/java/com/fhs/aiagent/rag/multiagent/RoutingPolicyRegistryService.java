@@ -40,6 +40,8 @@ public class RoutingPolicyRegistryService {
 
     private final AgentTrajectoryRepository trajectoryRepository;
 
+    private final RoutingPolicyTemporalHoldoutEvaluator temporalHoldoutEvaluator;
+
     private final String algorithm;
 
     private final String upstreamModel;
@@ -59,7 +61,7 @@ public class RoutingPolicyRegistryService {
             RoutingPolicyRegistryRepository repository,
             AgentTrajectoryRepository trajectoryRepository,
             @Value("${agent.rag.routing-policy.registry.algorithm:"
-                    + "trajectory-utility-contextual-policy-v2}") String algorithm,
+                    + "trajectory-utility-contextual-policy-v3}") String algorithm,
             @Value("${spring.ai.dashscope.chat.options.model:qwen-plus}")
             String upstreamModel,
             @Value("${agent.rag.routing-policy.minimum-utility-lift:0.03}")
@@ -69,7 +71,8 @@ public class RoutingPolicyRegistryService {
             @Value("${agent.rag.routing-policy.cost-budget-cny:0.02}") double costBudgetCny,
             @Value("${agent.rag.routing-policy.latency-budget-ms:60000}") double latencyBudgetMs,
             @Value("${agent.rag.routing-policy.registry.maximum-artifacts:50}")
-            int maximumArtifacts) {
+            int maximumArtifacts,
+            RoutingPolicyTemporalHoldoutEvaluator temporalHoldoutEvaluator) {
         this(
                 repository,
                 trajectoryRepository,
@@ -84,7 +87,8 @@ public class RoutingPolicyRegistryService {
                 ),
                 minimumUtilityLift,
                 maximumArtifacts,
-                Clock.systemUTC()
+                Clock.systemUTC(),
+                temporalHoldoutEvaluator
         );
     }
 
@@ -97,9 +101,42 @@ public class RoutingPolicyRegistryService {
             double minimumUtilityLift,
             int maximumArtifacts,
             Clock clock) {
+        this(
+                repository,
+                trajectoryRepository,
+                algorithm,
+                upstreamModel,
+                parameters,
+                minimumUtilityLift,
+                maximumArtifacts,
+                clock,
+                new RoutingPolicyTemporalHoldoutEvaluator(
+                        0.5,
+                        1,
+                        0,
+                        parse(parameters, "costWeight", 0.05),
+                        parse(parameters, "latencyWeight", 0.05),
+                        parse(parameters, "costBudgetCny", 0.02),
+                        parse(parameters, "latencyBudgetMs", 60000)
+                )
+        );
+    }
+
+    RoutingPolicyRegistryService(
+            RoutingPolicyRegistryRepository repository,
+            AgentTrajectoryRepository trajectoryRepository,
+            String algorithm,
+            String upstreamModel,
+            Map<String, String> parameters,
+            double minimumUtilityLift,
+            int maximumArtifacts,
+            Clock clock,
+            RoutingPolicyTemporalHoldoutEvaluator temporalHoldoutEvaluator) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.trajectoryRepository = Objects.requireNonNull(
                 trajectoryRepository, "trajectoryRepository");
+        this.temporalHoldoutEvaluator = Objects.requireNonNull(
+                temporalHoldoutEvaluator, "temporalHoldoutEvaluator");
         this.algorithm = requireText(algorithm, "algorithm");
         this.upstreamModel = requireText(upstreamModel, "upstreamModel");
         this.parameters = Map.copyOf(parameters);
@@ -153,16 +190,35 @@ public class RoutingPolicyRegistryService {
     public synchronized RoutingPolicyRegistryState reconcileNow(
             TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status,
             TrajectoryAwareRoutingPolicy.LearnedPolicySnapshot learnedSnapshot) {
+        return reconcileNow(status, learnedSnapshot, temporalDatasetSplit());
+    }
+
+    public synchronized RoutingPolicyRegistryState reconcileNow(
+            TrajectoryAwareRoutingPolicy.RoutingPolicyStatus status,
+            TrajectoryAwareRoutingPolicy.LearnedPolicySnapshot learnedSnapshot,
+            RoutingPolicyTemporalHoldoutEvaluator.TemporalDatasetSplit datasetSplit) {
         RoutingPolicyRegistryState currentState = requireState();
         if (!status.ready()) {
             return currentState;
         }
-        List<AgentTrajectory> trainingData = eligibleTrajectories();
+        List<AgentTrajectory> trainingData = datasetSplit.training();
         String fingerprint = fingerprint(trainingData);
-        RoutingPolicyArtifact.DecisionRule globalRule =
+        String validationFingerprint = fingerprint(datasetSplit.validation());
+        RoutingPolicyArtifact.DecisionRule trainedGlobalRule =
                 freezeRule(learnedSnapshot.global());
-        Map<String, RoutingPolicyArtifact.DecisionRule> contextualRules =
+        Map<String, RoutingPolicyArtifact.DecisionRule> trainedContextualRules =
                 freezeContextualRules(learnedSnapshot.contextual());
+        RoutingPolicyTemporalHoldoutEvaluator.TemporalValidationOutcome
+                temporalValidation = temporalHoldoutEvaluator.evaluate(
+                        datasetSplit,
+                        validationFingerprint,
+                        trainedGlobalRule,
+                        trainedContextualRules
+                );
+        RoutingPolicyArtifact.DecisionRule globalRule =
+                temporalValidation.globalRule();
+        Map<String, RoutingPolicyArtifact.DecisionRule> contextualRules =
+                temporalValidation.contextualRules();
         RoutingPolicyArtifact.OfflineEvaluation evaluation = evaluation(
                 status,
                 globalRule,
@@ -172,7 +228,8 @@ public class RoutingPolicyRegistryService {
                 fingerprint,
                 evaluation,
                 globalRule,
-                contextualRules
+                contextualRules,
+                temporalValidation.report()
         );
         boolean alreadyRegistered = currentState.artifacts().stream()
                 .anyMatch(artifact -> version.equals(artifact.version()));
@@ -180,14 +237,16 @@ public class RoutingPolicyRegistryService {
             return currentState;
         }
 
-        RoutingPolicyArtifactStatus artifactStatus = evaluation.validationPassed()
+        boolean validationPassed = evaluation.validationPassed()
+                && temporalValidation.report().validationPassed();
+        RoutingPolicyArtifactStatus artifactStatus = validationPassed
                 ? RoutingPolicyArtifactStatus.VALIDATED
                 : RoutingPolicyArtifactStatus.REJECTED;
-        String validationReason = evaluation.validationPassed()
-                ? "balanced evidence and at least one frozen rule passed utility gate"
-                : String.join("; ", evaluation.validationFailures());
+        String validationReason = validationPassed
+                ? "training gates and independent temporal holdout passed"
+                : validationReason(evaluation, temporalValidation.report());
         RoutingPolicyArtifact artifact = new RoutingPolicyArtifact(
-                2,
+                3,
                 version,
                 artifactStatus,
                 algorithm,
@@ -195,6 +254,7 @@ public class RoutingPolicyRegistryService {
                 parameters,
                 fingerprint,
                 trainingData.size(),
+                temporalValidation.report(),
                 evaluation,
                 globalRule,
                 contextualRules,
@@ -219,6 +279,11 @@ public class RoutingPolicyRegistryService {
         return state;
     }
 
+    public RoutingPolicyTemporalHoldoutEvaluator.TemporalDatasetSplit
+            temporalDatasetSplit() {
+        return temporalHoldoutEvaluator.split(eligibleTrajectories());
+    }
+
     public RoutingPolicyRegistryState state() {
         return requireState();
     }
@@ -241,6 +306,12 @@ public class RoutingPolicyRegistryService {
             throw new IllegalStateException(
                     "Baseline routing policy cannot be promoted to CANARY");
         }
+        if (!artifact.temporalHoldout().enabled()
+                || !artifact.temporalHoldout().validationPassed()) {
+            throw new IllegalStateException(
+                    "Routing policy artifact has not passed temporal holdout: "
+                            + version);
+        }
         return artifact;
     }
 
@@ -249,6 +320,8 @@ public class RoutingPolicyRegistryService {
                 .filter(artifact ->
                         artifact.status() == RoutingPolicyArtifactStatus.VALIDATED)
                 .filter(artifact -> !BASELINE_VERSION.equals(artifact.version()))
+                .filter(artifact -> artifact.temporalHoldout().enabled()
+                        && artifact.temporalHoldout().validationPassed())
                 .findFirst()
                 .orElseThrow(() -> new NoSuchElementException(
                         "No validated learned routing policy artifact"));
@@ -265,13 +338,13 @@ public class RoutingPolicyRegistryService {
             RoutingPolicyRegistryState currentState) {
         boolean requiresMigration = currentState.artifacts().stream()
                 .anyMatch(artifact -> BASELINE_VERSION.equals(artifact.version())
-                        && artifact.schemaVersion() < 2);
+                        && artifact.schemaVersion() < 3);
         if (!requiresMigration) {
             return currentState;
         }
         List<RoutingPolicyArtifact> migrated = currentState.artifacts().stream()
                 .map(artifact -> BASELINE_VERSION.equals(artifact.version())
-                        && artifact.schemaVersion() < 2
+                        && artifact.schemaVersion() < 3
                         ? baselineArtifact(artifact.createdAt())
                         : artifact)
                 .toList();
@@ -280,7 +353,7 @@ public class RoutingPolicyRegistryService {
 
     private RoutingPolicyArtifact baselineArtifact(Instant createdAt) {
         return new RoutingPolicyArtifact(
-                2,
+                3,
                 BASELINE_VERSION,
                 RoutingPolicyArtifactStatus.BASELINE,
                 "deterministic-complexity-router-v1",
@@ -404,9 +477,10 @@ public class RoutingPolicyRegistryService {
             String trainingDataFingerprint,
             RoutingPolicyArtifact.OfflineEvaluation evaluation,
             RoutingPolicyArtifact.DecisionRule globalRule,
-            Map<String, RoutingPolicyArtifact.DecisionRule> contextualRules) {
+            Map<String, RoutingPolicyArtifact.DecisionRule> contextualRules,
+            RoutingPolicyArtifact.TemporalHoldoutEvaluation temporalHoldout) {
         MessageDigest digest = sha256Digest();
-        digest.update("schemaVersion=2\n".getBytes(StandardCharsets.UTF_8));
+        digest.update("schemaVersion=3\n".getBytes(StandardCharsets.UTF_8));
         digest.update(("algorithm=" + algorithm + "\n")
                 .getBytes(StandardCharsets.UTF_8));
         digest.update(("upstreamModel=" + upstreamModel + "\n")
@@ -434,6 +508,29 @@ public class RoutingPolicyRegistryService {
                     + evaluation.validationFailures().get(index) + "\n")
                     .getBytes(StandardCharsets.UTF_8));
         }
+        digest.update(("holdout.validationRatio=" + temporalHoldout.validationRatio() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout.cutoff=" + temporalHoldout.cutoff() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout.validationDataFingerprint="
+                + temporalHoldout.validationDataFingerprint() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout.validationSampleCount="
+                + temporalHoldout.validationSampleCount() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout.minimumSamplesPerMode="
+                + temporalHoldout.minimumSamplesPerMode() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout.minimumUtilityLiftLowerBound="
+                + temporalHoldout.minimumUtilityLiftLowerBound() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        temporalHoldout.rules().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> updateValidationDigest(
+                        digest,
+                        entry.getKey(),
+                        entry.getValue()
+                ));
         updateRuleDigest(digest, "global", globalRule);
         contextualRules.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -444,6 +541,33 @@ public class RoutingPolicyRegistryService {
                 ));
         return "routing-policy-"
                 + HexFormat.of().formatHex(digest.digest()).substring(0, 12);
+    }
+
+    private void updateValidationDigest(
+            MessageDigest digest,
+            String scope,
+            RoutingPolicyArtifact.RuleValidation validation) {
+        digest.update(("holdout." + scope + ".recommendedMode="
+                + validation.recommendedMode() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout." + scope + ".singleAgentSamples="
+                + validation.singleAgentSamples() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout." + scope + ".multiAgentSamples="
+                + validation.multiAgentSamples() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout." + scope + ".candidateUtilityLift="
+                + validation.candidateUtilityLift() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout." + scope + ".standardError="
+                + validation.standardError() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout." + scope + ".lowerConfidenceBound="
+                + validation.lowerConfidenceBound() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+        digest.update(("holdout." + scope + ".passed="
+                + validation.passed() + "\n")
+                .getBytes(StandardCharsets.UTF_8));
     }
 
     private void updateRuleDigest(MessageDigest digest,
@@ -532,6 +656,29 @@ public class RoutingPolicyRegistryService {
             throw new IllegalArgumentException(name + " must not be blank");
         }
         return normalized;
+    }
+
+    private String validationReason(
+            RoutingPolicyArtifact.OfflineEvaluation evaluation,
+            RoutingPolicyArtifact.TemporalHoldoutEvaluation temporalHoldout) {
+        List<String> failures = new ArrayList<>();
+        failures.addAll(evaluation.validationFailures());
+        failures.addAll(temporalHoldout.validationFailures());
+        return failures.isEmpty()
+                ? "temporal validation did not produce a deployable rule"
+                : String.join("; ", failures);
+    }
+
+    private static double parse(
+            Map<String, String> parameters,
+            String key,
+            double fallback) {
+        try {
+            return Double.parseDouble(parameters.getOrDefault(
+                    key, Double.toString(fallback)));
+        } catch (RuntimeException ignored) {
+            return fallback;
+        }
     }
 
     private double round(double value) {

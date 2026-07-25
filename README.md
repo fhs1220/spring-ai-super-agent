@@ -147,9 +147,15 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 - 单/多 Agent 离线奖励、成本、延迟、净效用及推荐模式；
 - 离线门禁结论、验证失败原因、父策略版本和创建时间。
 
-只有单/多 Agent 样本数和效用提升同时通过门禁的规则才会进入资产。线上推理按
+注册中心按完成时间把较早轨迹作为训练窗口，把较新的 25%（且默认单/多 Agent 至少各
+4 条）保留为独立验证窗口。训练窗口只负责生成候选规则；验证窗口重新计算候选动作相对
+另一动作的净效用提升、标准误差与 95% 置信下界。只有置信下界不低于发布门槛的规则才会
+保留，避免训练集指标直接充当发布证据。策略资产 schema v3 会同时保存训练/验证指纹、
+时间切分点、双动作样本数、置信下界与失败原因，确保验证过程可审计且可复现。
+
+只有单/多 Agent 样本数、训练效用提升和独立时间留出验证同时通过门禁的规则才会进入资产。线上推理按
 “场景规则 → 全局规则 → 确定性路由”逐级回退。资产版本同时对算法、模型、参数、训练数据、
-评测结论和全部冻结规则做内容寻址。同一资产不会重复注册；任何输入变化都会产生新版本。
+验证窗口、评测结论和全部冻结规则做内容寻址。同一资产不会重复注册；任何输入变化都会产生新版本。
 发布记录通过 `policyVersion` 绑定资产。`CANARY/ACTIVE` 只执行注册表中已验证的冻结策略，
 新轨迹不会让已发布策略在后台无版本漂移。旧版 v1 全局资产会自动迁移为兼容的全局规则。
 
@@ -187,6 +193,9 @@ GET /api/ai/love_app/agents/routing-policy/drift
 - `AGENT_RAG_ROUTING_REGISTRY_ALGORITHM`
 - `AGENT_RAG_ROUTING_REGISTRY_MAXIMUM_ARTIFACTS`（默认 `50`）
 - `AGENT_RAG_ROUTING_REGISTRY_RECONCILE_INTERVAL_MS`（默认 `60000`）
+- `AGENT_RAG_ROUTING_HOLDOUT_VALIDATION_RATIO`（默认 `0.25`）
+- `AGENT_RAG_ROUTING_HOLDOUT_MINIMUM_SAMPLES_PER_MODE`（默认 `4`）
+- `AGENT_RAG_ROUTING_HOLDOUT_MINIMUM_LIFT_LCB`（默认 `0.0`）
 - `AGENT_RAG_ROUTING_OPE_MINIMUM_SAMPLES_PER_ACTION`（默认 `20`）
 - `AGENT_RAG_ROUTING_OPE_MINIMUM_EFFECTIVE_SAMPLE_SIZE`（默认 `20`）
 - `AGENT_RAG_ROUTING_OPE_MAXIMUM_IMPORTANCE_WEIGHT`（默认 `20`）

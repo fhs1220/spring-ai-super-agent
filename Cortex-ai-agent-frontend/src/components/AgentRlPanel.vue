@@ -120,6 +120,15 @@ const contextualCoverage = computed(() => {
   if (bucketCount === 0) return '—'
   return percent(contextualRuleCount.value / bucketCount)
 })
+const holdoutRule = computed(() => {
+  const rules = latestArtifact.value?.temporalHoldout?.rules ?? {}
+  return rules.GLOBAL ?? Object.values(rules).find((rule) => rule.passed) ?? Object.values(rules)[0]
+})
+const holdoutLabel = computed(() => {
+  const holdout = latestArtifact.value?.temporalHoldout
+  if (!holdout?.enabled) return '等待新策略'
+  return holdout.validationPassed ? '独立验证通过' : '独立验证未通过'
+})
 
 function shortVersion(value: string | undefined): string {
   if (!value) return '—'
@@ -307,6 +316,50 @@ function shortVersion(value: string | undefined): string {
           }}
         </span>
       </div>
+      <div v-if="latestArtifact && latestArtifact.status !== 'BASELINE'" class="registry-line">
+        <span>时间留出门禁</span>
+        <strong
+          :class="
+            latestArtifact.temporalHoldout.validationPassed
+              ? 'artifact-validated'
+              : 'artifact-rejected'
+          "
+        >
+          {{ holdoutLabel }}
+        </strong>
+      </div>
+      <div v-if="latestArtifact && latestArtifact.status !== 'BASELINE'" class="artifact-meta">
+        <span>训练 {{ latestArtifact.trainingSampleCount }}</span>
+        <span>
+          较新验证 {{ latestArtifact.temporalHoldout.validationSampleCount }}
+          · {{ percent(latestArtifact.temporalHoldout.validationRatio) }}
+        </span>
+        <span>
+          SINGLE {{ holdoutRule?.singleAgentSamples ?? 0 }}
+          / {{ latestArtifact.temporalHoldout.minimumSamplesPerMode }}
+        </span>
+        <span>
+          MULTI {{ holdoutRule?.multiAgentSamples ?? 0 }}
+          / {{ latestArtifact.temporalHoldout.minimumSamplesPerMode }}
+        </span>
+        <span v-if="holdoutRule">
+          95% 效用下界 {{ holdoutRule.lowerConfidenceBound.toFixed(3) }}
+          / {{ latestArtifact.temporalHoldout.minimumUtilityLiftLowerBound.toFixed(3) }}
+        </span>
+      </div>
+      <p
+        v-if="
+          latestArtifact
+          && latestArtifact.status !== 'BASELINE'
+          && !latestArtifact.temporalHoldout.validationPassed
+        "
+        class="guard-reason"
+      >
+        {{
+          latestArtifact.temporalHoldout.validationFailures[0]
+          ?? latestArtifact.validationReason
+        }}
+      </p>
     </section>
 
     <div class="metric-grid">
@@ -557,6 +610,12 @@ h2 {
 .registry-line strong {
   color: var(--text-heading);
   font-family: var(--mono);
+}
+.registry-line strong.artifact-validated {
+  color: var(--accent);
+}
+.registry-line strong.artifact-rejected {
+  color: #fca5a5;
 }
 .artifact-line {
   margin-top: 7px;
