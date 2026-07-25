@@ -8,6 +8,7 @@ VERIFY_HOST="127.0.0.1"
 VERIFY_PORT="${VERIFY_ROUTING_POLICY_PORT:-18123}"
 BASE_URL="http://${VERIFY_HOST}:${VERIFY_PORT}/api"
 MVN_PID=""
+VERIFY_STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/routing-policy-verify.XXXXXX")"
 
 note() { echo "$1" | tee -a "$LOG"; }
 
@@ -24,6 +25,11 @@ cleanup() {
     fi
     wait "$MVN_PID" 2>/dev/null
   fi
+  case "$VERIFY_STATE_DIR" in
+    */routing-policy-verify.*)
+      rm -rf -- "$VERIFY_STATE_DIR"
+      ;;
+  esac
 }
 trap cleanup EXIT INT TERM
 
@@ -61,6 +67,9 @@ if lsof -nP -iTCP:"$VERIFY_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
 fi
 
 SERVER_PORT="$VERIFY_PORT" \
+  AGENT_RAG_ROUTING_DEPLOYMENT_STATE_FILE="$VERIFY_STATE_DIR/deployment.json" \
+  AGENT_RAG_ROUTING_REGISTRY_STATE_FILE="$VERIFY_STATE_DIR/registry.json" \
+  AGENT_RL_STORAGE_DIRECTORY="$VERIFY_STATE_DIR/trajectories" \
   AGENT_EVALUATION_API_ENABLED=true SPRING_AI_MCP_CLIENT_ENABLED=false \
   sh mvnw -o "${MVN_ARGS[@]}" \
   -Dspring-boot.run.fork=false \
