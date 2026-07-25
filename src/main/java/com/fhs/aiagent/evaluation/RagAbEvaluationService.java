@@ -104,9 +104,9 @@ public class RagAbEvaluationService {
             if (index % 2 == 0) {
                 baseline = execute(RagEvaluationVariant.TRADITIONAL_RAG, evaluationCase, runId);
                 throwIfCancelled(cancellation);
-                candidate = execute(RagEvaluationVariant.AGENTIC_RAG_V4, evaluationCase, runId);
+                candidate = execute(RagEvaluationVariant.AGENTIC_RAG_V5, evaluationCase, runId);
             } else {
-                candidate = execute(RagEvaluationVariant.AGENTIC_RAG_V4, evaluationCase, runId);
+                candidate = execute(RagEvaluationVariant.AGENTIC_RAG_V5, evaluationCase, runId);
                 throwIfCancelled(cancellation);
                 baseline = execute(RagEvaluationVariant.TRADITIONAL_RAG, evaluationCase, runId);
             }
@@ -137,7 +137,7 @@ public class RagAbEvaluationService {
         RagAbReport.VariantSummary baselineSummary = summarize(
                 RagEvaluationVariant.TRADITIONAL_RAG, comparisons, true);
         RagAbReport.VariantSummary candidateSummary = summarize(
-                RagEvaluationVariant.AGENTIC_RAG_V4, comparisons, false);
+                RagEvaluationVariant.AGENTIC_RAG_V5, comparisons, false);
         double routeAccuracy = round(comparisons.stream()
                 .filter(comparison -> comparison.candidate().score().routeCorrect())
                 .count() / (double) Math.max(1, comparisons.size()));

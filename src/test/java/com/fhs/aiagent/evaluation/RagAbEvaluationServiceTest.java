@@ -73,8 +73,8 @@ class RagAbEvaluationServiceTest {
         assertThat(service.loadCases()).hasSize(12);
         assertThat(executionOrder).containsExactly(
                 RagEvaluationVariant.TRADITIONAL_RAG,
-                RagEvaluationVariant.AGENTIC_RAG_V4,
-                RagEvaluationVariant.AGENTIC_RAG_V4,
+                RagEvaluationVariant.AGENTIC_RAG_V5,
+                RagEvaluationVariant.AGENTIC_RAG_V5,
                 RagEvaluationVariant.TRADITIONAL_RAG
         );
         assertThat(report.caseCount()).isEqualTo(2);

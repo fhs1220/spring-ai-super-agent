@@ -74,6 +74,18 @@ agent:
       # 保存运行请求、阶段事件和最终结果，支持重启后的状态查询与显式恢复。
       storage-directory: ${AGENT_RAG_RUNTIME_STORAGE_DIRECTORY:tmp/agent-runs}
       maximum-events: ${AGENT_RAG_RUNTIME_MAXIMUM_EVENTS:200}
+    routing-policy:
+      # 冷启动时保持确定性路由；单/多 Agent 样本都充足后才允许学习策略覆盖。
+      enabled: ${AGENT_RAG_ROUTING_POLICY_ENABLED:true}
+      minimum-samples-per-mode: ${AGENT_RAG_ROUTING_MINIMUM_SAMPLES_PER_MODE:8}
+      maximum-trajectories: ${AGENT_RAG_ROUTING_MAXIMUM_TRAJECTORIES:500}
+      minimum-utility-lift: ${AGENT_RAG_ROUTING_MINIMUM_UTILITY_LIFT:0.03}
+      success-reward-threshold: ${AGENT_RAG_ROUTING_SUCCESS_REWARD_THRESHOLD:0.72}
+      cost-weight: ${AGENT_RAG_ROUTING_COST_WEIGHT:0.05}
+      latency-weight: ${AGENT_RAG_ROUTING_LATENCY_WEIGHT:0.05}
+      cost-budget-cny: ${AGENT_RAG_ROUTING_COST_BUDGET_CNY:0.02}
+      latency-budget-ms: ${AGENT_RAG_ROUTING_LATENCY_BUDGET_MS:60000}
+      refresh-seconds: ${AGENT_RAG_ROUTING_REFRESH_SECONDS:30}
     observability:
       # Agent 阶段级硬超时，覆盖底层客户端重试/握手卡住的情况。
       model-call-timeout-seconds: ${AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS:30}
@@ -81,7 +93,7 @@ agent:
       input-price-per-million-tokens-cny: ${AGENT_RAG_INPUT_PRICE_PER_MILLION_TOKENS_CNY:0.3}
       output-price-per-million-tokens-cny: ${AGENT_RAG_OUTPUT_PRICE_PER_MILLION_TOKENS_CNY:0.6}
   rl:
-    policy-version: ${AGENT_RL_POLICY_VERSION:agentic-rag-v4}
+    policy-version: ${AGENT_RL_POLICY_VERSION:agentic-rag-v5}
     storage-directory: ${AGENT_RL_STORAGE_DIRECTORY:tmp/agent-rl/trajectories}
     # 轨迹包含用户问题和答案；仅在受信任环境中显式开启管理 API。
     api-enabled: ${AGENT_RL_API_ENABLED:false}

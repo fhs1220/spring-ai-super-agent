@@ -24,7 +24,7 @@ class RagAnswerScorerTest {
                 "ADAPTIVE_MULTI_AGENT"
         );
         RagVariantExecution execution = new RagVariantExecution(
-                RagEvaluationVariant.AGENTIC_RAG_V4,
+                RagEvaluationVariant.AGENTIC_RAG_V5,
                 "双方先沟通并认真倾听，约定每周一起复盘。[来源 1]",
                 100,
                 50,
@@ -56,7 +56,7 @@ class RagAnswerScorerTest {
                 "SINGLE_AGENT"
         );
         RagVariantExecution execution = new RagVariantExecution(
-                RagEvaluationVariant.AGENTIC_RAG_V4,
+                RagEvaluationVariant.AGENTIC_RAG_V5,
                 "请你详细描述家务问题（参考来源3）。",
                 100,
                 0,

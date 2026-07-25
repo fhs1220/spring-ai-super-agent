@@ -10,6 +10,10 @@ public record MultiAgentDecision(
         boolean multiAgent,
         double complexityScore,
         String reason,
-        List<AgentDomain> selectedDomains
+        List<AgentDomain> selectedDomains,
+        String featureBucket,
+        String policySource,
+        double policyConfidence,
+        int policyEvidenceSamples
 ) {
 }

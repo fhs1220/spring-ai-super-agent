@@ -70,7 +70,7 @@ RAG Pipeline 包括：
 
 ### 自适应多 Agent
 
-`agentic-rag-v4` 会先通过确定性 Complexity Router 判断任务是否值得启动多 Agent：
+`agentic-rag-v5` 使用“确定性 Complexity Router + 轨迹学习策略”判断任务是否值得启动多 Agent：
 
 - 单一能力域的问题走 `SINGLE_AGENT` 快速路径，避免额外延迟和成本；
 - 同时涉及关系、育儿、家务、家庭财务或安全风险的复合问题走
@@ -102,6 +102,35 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 - `AGENT_RAG_CIRCUIT_BREAKER_FAILURE_THRESHOLD`
 - `AGENT_RAG_CIRCUIT_BREAKER_COOLDOWN_SECONDS`
 
+#### 轨迹学习路由
+
+路由策略按任务能力域、结构化要求和问题长度生成 `featureBucket`，分别统计
+`SINGLE_AGENT` 与 `ADAPTIVE_MULTI_AGENT` 的：
+
+- 平均总奖励和成功样本数；
+- 平均人民币估算成本；
+- 平均端到端阶段耗时；
+- 扣除成本和延迟惩罚后的净效用。
+
+同一上下文和全局样本都不足时保持确定性路由。只有单/多 Agent 至少各有 8 条轨迹，且净效用
+差达到 `0.03`，学习策略才会覆盖静态判断。关系安全任务始终执行 `SAFETY_OVERRIDE`，
+不会因为成本数据被降级。路由来源、置信度、证据样本数与特征桶都会写入 Agent Trace。
+
+查看不包含用户问题的策略状态：
+
+```http
+GET /api/ai/love_app/agents/routing-policy
+```
+
+主要配置：
+
+- `AGENT_RAG_ROUTING_POLICY_ENABLED`
+- `AGENT_RAG_ROUTING_MINIMUM_SAMPLES_PER_MODE`
+- `AGENT_RAG_ROUTING_MINIMUM_UTILITY_LIFT`
+- `AGENT_RAG_ROUTING_COST_WEIGHT`
+- `AGENT_RAG_ROUTING_LATENCY_WEIGHT`
+- `AGENT_RAG_ROUTING_REFRESH_SECONDS`
+
 ### RAG A/B 自动化评测与回归门禁
 
 项目内置版本化 JSONL 基准集
@@ -109,7 +138,7 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 拒绝无必要追问和关系安全样本。评测会比较：
 
 - A：`TRADITIONAL_RAG`，原查询重写 + 单次知识库问答；
-- B：`AGENTIC_RAG_V4`，当前自适应 Agentic RAG / 多 Agent 策略。
+- B：`AGENTIC_RAG_V5`，当前学习型路由 Agentic RAG / 多 Agent 策略。
 
 每条样本使用隔离的 `chatId`，并按样本序号交替 A/B 执行顺序。确定性评分覆盖任务要点、
 直接回答、`[来源 n]` 引用、禁用表达、长度约束和 B 版本的路由准确率。报告包含胜/平/负、

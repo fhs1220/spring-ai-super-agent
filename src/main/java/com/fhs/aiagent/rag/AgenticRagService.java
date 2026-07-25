@@ -91,7 +91,7 @@ public class AgenticRagService {
                              AgentTrajectoryRepository trajectoryRepository,
                              AgentRewardCalculator rewardCalculator,
                              AdaptiveMultiAgentOrchestrator multiAgentOrchestrator,
-                             @Value("${agent.rl.policy-version:agentic-rag-v4}") String policyVersion,
+                             @Value("${agent.rl.policy-version:agentic-rag-v5}") String policyVersion,
                              @Value("${spring.ai.dashscope.chat.options.model:unknown}") String model,
                              @Value("${agent.rag.observability.input-price-per-million-tokens-cny:0.3}")
                              double inputPricePerMillionTokens,
@@ -243,7 +243,11 @@ public class AgenticRagService {
                             "reason", multiAgentDecision.reason(),
                             "selectedDomains", multiAgentDecision.selectedDomains().stream()
                                     .map(Enum::name)
-                                    .toList()
+                                    .toList(),
+                            "featureBucket", multiAgentDecision.featureBucket(),
+                            "policySource", multiAgentDecision.policySource(),
+                            "policyConfidence", multiAgentDecision.policyConfidence(),
+                            "policyEvidenceSamples", multiAgentDecision.policyEvidenceSamples()
                     )
             );
             emit(listener, "ROUTE", "COMPLETED", "自适应路由",
@@ -1068,7 +1072,10 @@ public class AgenticRagService {
                         List.of(
                                 "复杂度：" + output.getOrDefault("complexityScore", 0),
                                 "原因：" + output.getOrDefault("reason", ""),
-                                "能力域：" + stringList(output.get("selectedDomains"))
+                                "能力域：" + stringList(output.get("selectedDomains")),
+                                "策略：" + output.getOrDefault("policySource", "DETERMINISTIC"),
+                                "策略置信度：" + output.getOrDefault("policyConfidence", 0),
+                                "策略样本：" + output.getOrDefault("policyEvidenceSamples", 0)
                         )
                 );
             }

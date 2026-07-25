@@ -6,6 +6,7 @@ import com.fhs.aiagent.rag.AgentRunCancelledException;
 import com.fhs.aiagent.rag.multiagent.AdaptiveMultiAgentOrchestrator;
 import com.fhs.aiagent.rag.multiagent.AgentDescriptor;
 import com.fhs.aiagent.rag.multiagent.AgentHealth;
+import com.fhs.aiagent.rag.multiagent.TrajectoryAwareRoutingPolicy;
 import com.fhs.aiagent.rag.run.AgentRunStatus;
 import com.fhs.aiagent.rag.run.DurableAgentRun;
 import com.fhs.aiagent.rag.run.DurableAgentRunService;
@@ -51,6 +52,8 @@ public class AiController {
 
     private final DurableAgentRunService durableAgentRunService;
 
+    private final TrajectoryAwareRoutingPolicy routingPolicy;
+
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     private final Map<String, ActiveRun> activeRuns = new ConcurrentHashMap<>();
@@ -59,12 +62,14 @@ public class AiController {
                         AgentRlService agentRlService,
                         BailianRlDatasetService bailianRlDatasetService,
                         AdaptiveMultiAgentOrchestrator multiAgentOrchestrator,
-                        DurableAgentRunService durableAgentRunService) {
+                        DurableAgentRunService durableAgentRunService,
+                        TrajectoryAwareRoutingPolicy routingPolicy) {
         this.loveApp = loveApp;
         this.agentRlService = agentRlService;
         this.bailianRlDatasetService = bailianRlDatasetService;
         this.multiAgentOrchestrator = multiAgentOrchestrator;
         this.durableAgentRunService = durableAgentRunService;
+        this.routingPolicy = routingPolicy;
     }
 
     @PostMapping("/chat/agentic-rag")
@@ -187,6 +192,11 @@ public class AiController {
     @GetMapping("/agents/health")
     public List<AgentHealth> agentHealth() {
         return multiAgentOrchestrator.health();
+    }
+
+    @GetMapping("/agents/routing-policy")
+    public TrajectoryAwareRoutingPolicy.RoutingPolicyStatus routingPolicy() {
+        return routingPolicy.status();
     }
 
     @PreDestroy

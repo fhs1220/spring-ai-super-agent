@@ -66,6 +66,8 @@ public class AdaptiveMultiAgentOrchestrator {
 
     private final Map<String, CircuitState> circuitStates = new ConcurrentHashMap<>();
 
+    private TrajectoryAwareRoutingPolicy routingPolicy;
+
     @Autowired
     public AdaptiveMultiAgentOrchestrator(
             ChatModel dashscopeChatModel,
@@ -77,7 +79,8 @@ public class AdaptiveMultiAgentOrchestrator {
             @Value("${agent.rag.multi-agent.circuit-breaker-failure-threshold:3}")
             int circuitBreakerFailureThreshold,
             @Value("${agent.rag.multi-agent.circuit-breaker-cooldown-seconds:60}")
-            long circuitBreakerCooldownSeconds) {
+            long circuitBreakerCooldownSeconds,
+            TrajectoryAwareRoutingPolicy routingPolicy) {
         this(
                 ChatClient.builder(dashscopeChatModel).build(),
                 enabled,
@@ -89,6 +92,7 @@ public class AdaptiveMultiAgentOrchestrator {
                 Duration.ofSeconds(Math.max(1, circuitBreakerCooldownSeconds)),
                 Clock.systemUTC()
         );
+        this.routingPolicy = java.util.Objects.requireNonNull(routingPolicy, "routingPolicy");
     }
 
     public AdaptiveMultiAgentOrchestrator(ChatClient chatClient,
@@ -152,21 +156,42 @@ public class AdaptiveMultiAgentOrchestrator {
         boolean useMultiAgent = enabled
                 && (domains.size() >= minimumDomains || (structuredTask && domains.size() >= 2));
 
-        List<AgentDomain> selected = selectDomains(domains);
-        String reason;
+        String deterministicReason;
         if (!enabled) {
-            reason = "多 Agent 功能已关闭，使用单 Agent 基线";
+            deterministicReason = "多 Agent 功能已关闭，使用单 Agent 基线";
         } else if (useMultiAgent) {
-            reason = "问题覆盖 %d 个能力域，可并行分解".formatted(domains.size());
+            deterministicReason = "问题覆盖 %d 个能力域，可并行分解".formatted(domains.size());
         } else {
-            reason = "问题集中在单一能力域，避免不必要的多 Agent 成本";
+            deterministicReason = "问题集中在单一能力域，避免不必要的多 Agent 成本";
         }
+        String featureBucket = featureBucket(domains, structuredTask, longQuestion);
+        TrajectoryAwareRoutingPolicy.RoutingPolicyDecision policyDecision =
+                routingPolicy == null
+                        ? new TrajectoryAwareRoutingPolicy.RoutingPolicyDecision(
+                                useMultiAgent,
+                                "DETERMINISTIC",
+                                0,
+                                0,
+                                "未启用轨迹学习策略"
+                        )
+                        : routingPolicy.decide(new TrajectoryAwareRoutingPolicy.RoutingContext(
+                                featureBucket,
+                                useMultiAgent,
+                                domains.contains(AgentDomain.SAFETY)
+                        ));
+        boolean finalMultiAgent = enabled && policyDecision.multiAgent();
+        List<AgentDomain> selected = finalMultiAgent ? selectDomains(domains) : List.of();
+        String reason = deterministicReason + "；" + policyDecision.reason();
         return new MultiAgentDecision(
-                useMultiAgent ? MULTI_MODE : SINGLE_MODE,
-                useMultiAgent,
+                finalMultiAgent ? MULTI_MODE : SINGLE_MODE,
+                finalMultiAgent,
                 round(complexity),
                 reason,
-                useMultiAgent ? selected : List.of()
+                selected,
+                featureBucket,
+                policyDecision.source(),
+                policyDecision.confidence(),
+                policyDecision.evidenceSamples()
         );
     }
 
@@ -545,6 +570,18 @@ public class AdaptiveMultiAgentOrchestrator {
 
     private boolean containsAny(String text, List<String> keywords) {
         return keywords.stream().anyMatch(text::contains);
+    }
+
+    private String featureBucket(Set<AgentDomain> domains,
+                                 boolean structuredTask,
+                                 boolean longQuestion) {
+        String domainKey = domains.stream()
+                .map(Enum::name)
+                .sorted()
+                .reduce((left, right) -> left + "+" + right)
+                .orElse(AgentDomain.RELATIONSHIP.name());
+        return "%s|structured=%s|long=%s".formatted(
+                domainKey, structuredTask, longQuestion);
     }
 
     private double round(double value) {
