@@ -79,6 +79,8 @@ RAG Pipeline 包括：
   Shared Evidence Blackboard；
 - Synthesis Agent 基于统一知识库证据合并贡献，Review Agent 再检查忠实度和任务完成度；
 - 单个专业 Agent 失败不会中断任务，全部失败或综合失败时自动降级到原单 Agent 生成路径。
+- 专业 Agent 有独立总时间预算，只重试失败的 Agent，不重复执行已成功的并行分支；
+- 连续失败达到阈值后开启内存熔断，在冷却期跳过故障 Agent，并继续使用其他贡献或单 Agent 降级。
 
 当前内置能力：
 
@@ -89,11 +91,16 @@ RAG Pipeline 包括：
 - 关系安全 Agent
 
 `GET /api/ai/love_app/agents` 会返回不包含提示词和密钥的能力契约，可在未来映射为
-A2A Agent Card。相关开关：
+A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的熔断状态、
+连续失败次数和预计恢复时间。相关开关：
 
 - `AGENT_RAG_MULTI_AGENT_ENABLED`
 - `AGENT_RAG_MULTI_AGENT_MINIMUM_DOMAINS`
 - `AGENT_RAG_MULTI_AGENT_MAX_AGENTS`
+- `AGENT_RAG_SPECIALIST_MAX_ATTEMPTS`
+- `AGENT_RAG_SPECIALIST_TIMEOUT_SECONDS`
+- `AGENT_RAG_CIRCUIT_BREAKER_FAILURE_THRESHOLD`
+- `AGENT_RAG_CIRCUIT_BREAKER_COOLDOWN_SECONDS`
 
 ### RAG A/B 自动化评测与回归门禁
 

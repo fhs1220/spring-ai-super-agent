@@ -18,9 +18,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 
 /**
@@ -46,25 +52,82 @@ public class AdaptiveMultiAgentOrchestrator {
 
     private final int maxAgents;
 
+    private final int specialistMaxAttempts;
+
+    private final long specialistTimeoutMs;
+
+    private final int circuitBreakerFailureThreshold;
+
+    private final Duration circuitBreakerCooldown;
+
+    private final Clock clock;
+
     private final Map<AgentDomain, DomainSpecialistAgent> specialists;
+
+    private final Map<String, CircuitState> circuitStates = new ConcurrentHashMap<>();
 
     @Autowired
     public AdaptiveMultiAgentOrchestrator(
             ChatModel dashscopeChatModel,
             @Value("${agent.rag.multi-agent.enabled:true}") boolean enabled,
             @Value("${agent.rag.multi-agent.minimum-domains:2}") int minimumDomains,
-            @Value("${agent.rag.multi-agent.max-agents:3}") int maxAgents) {
-        this(ChatClient.builder(dashscopeChatModel).build(), enabled, minimumDomains, maxAgents);
+            @Value("${agent.rag.multi-agent.max-agents:3}") int maxAgents,
+            @Value("${agent.rag.multi-agent.specialist-max-attempts:2}") int specialistMaxAttempts,
+            @Value("${agent.rag.multi-agent.specialist-timeout-seconds:35}") long specialistTimeoutSeconds,
+            @Value("${agent.rag.multi-agent.circuit-breaker-failure-threshold:3}")
+            int circuitBreakerFailureThreshold,
+            @Value("${agent.rag.multi-agent.circuit-breaker-cooldown-seconds:60}")
+            long circuitBreakerCooldownSeconds) {
+        this(
+                ChatClient.builder(dashscopeChatModel).build(),
+                enabled,
+                minimumDomains,
+                maxAgents,
+                specialistMaxAttempts,
+                Duration.ofSeconds(Math.max(1, specialistTimeoutSeconds)),
+                circuitBreakerFailureThreshold,
+                Duration.ofSeconds(Math.max(1, circuitBreakerCooldownSeconds)),
+                Clock.systemUTC()
+        );
     }
 
     public AdaptiveMultiAgentOrchestrator(ChatClient chatClient,
                                           boolean enabled,
                                           int minimumDomains,
                                           int maxAgents) {
+        this(
+                chatClient,
+                enabled,
+                minimumDomains,
+                maxAgents,
+                2,
+                Duration.ofSeconds(35),
+                3,
+                Duration.ofSeconds(60),
+                Clock.systemUTC()
+        );
+    }
+
+    AdaptiveMultiAgentOrchestrator(ChatClient chatClient,
+                                   boolean enabled,
+                                   int minimumDomains,
+                                   int maxAgents,
+                                   int specialistMaxAttempts,
+                                   Duration specialistTimeout,
+                                   int circuitBreakerFailureThreshold,
+                                   Duration circuitBreakerCooldown,
+                                   Clock clock) {
         this.chatClient = chatClient;
         this.enabled = enabled;
         this.minimumDomains = Math.max(1, minimumDomains);
         this.maxAgents = Math.max(1, Math.min(5, maxAgents));
+        this.specialistMaxAttempts = Math.max(1, Math.min(3, specialistMaxAttempts));
+        this.specialistTimeoutMs = requirePositive(
+                specialistTimeout, "specialistTimeout").toMillis();
+        this.circuitBreakerFailureThreshold = Math.max(1, circuitBreakerFailureThreshold);
+        this.circuitBreakerCooldown = requirePositive(
+                circuitBreakerCooldown, "circuitBreakerCooldown");
+        this.clock = java.util.Objects.requireNonNull(clock, "clock");
         this.specialists = createSpecialists(chatClient);
     }
 
@@ -194,30 +257,58 @@ public class AdaptiveMultiAgentOrchestrator {
                 .toList();
     }
 
+    public List<AgentHealth> health() {
+        Instant now = clock.instant();
+        return specialists.entrySet().stream()
+                .map(entry -> {
+                    AgentDescriptor descriptor = entry.getValue().descriptor();
+                    CircuitSnapshot snapshot = circuitState(descriptor.id()).snapshot(now);
+                    return new AgentHealth(
+                            descriptor.id(),
+                            descriptor.name(),
+                            entry.getKey(),
+                            snapshot.open() ? "OPEN" : "CLOSED",
+                            snapshot.consecutiveFailures(),
+                            snapshot.openUntil()
+                    );
+                })
+                .toList();
+    }
+
     private List<SpecialistContribution> executeSpecialists(List<AgentDomain> domains,
                                                             AgentRequest request,
                                                             AgentTelemetryCollector telemetry,
                                                             AgentProgressListener progressListener) {
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-        List<CompletableFuture<SpecialistContribution>> futures = List.of();
+        List<AgentTask> tasks = List.of();
         try {
-            futures = domains.stream()
+            tasks = domains.stream()
                     .map(specialists::get)
                     .filter(java.util.Objects::nonNull)
-                    .map(agent -> CompletableFuture.supplyAsync(
-                            () -> executeSpecialist(
-                                    agent, request, telemetry, progressListener), executor))
+                    .map(agent -> new AgentTask(
+                            agent,
+                            CompletableFuture.supplyAsync(
+                                            () -> executeSpecialist(
+                                                    agent, request, telemetry, progressListener),
+                                            executor)
+                                    .orTimeout(specialistTimeoutMs, TimeUnit.MILLISECONDS)
+                    ))
                     .toList();
             List<SpecialistContribution> contributions = new ArrayList<>();
-            for (CompletableFuture<SpecialistContribution> future : futures) {
+            for (AgentTask task : tasks) {
                 try {
-                    contributions.add(future.get());
+                    contributions.add(task.future().get());
                 } catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();
                     throw new AgentRunCancelledException(
                             "Multi-agent specialist execution cancelled", exception);
                 } catch (ExecutionException exception) {
                     Throwable cause = exception.getCause();
+                    if (cause instanceof TimeoutException) {
+                        contributions.add(onSpecialistTimeout(
+                                task.agent(), progressListener));
+                        continue;
+                    }
                     if (cause instanceof RuntimeException runtimeException) {
                         throw runtimeException;
                     }
@@ -226,7 +317,7 @@ public class AdaptiveMultiAgentOrchestrator {
             }
             return List.copyOf(contributions);
         } finally {
-            futures.forEach(future -> future.cancel(true));
+            tasks.forEach(task -> task.future().cancel(true));
             executor.shutdownNow();
         }
     }
@@ -236,6 +327,29 @@ public class AdaptiveMultiAgentOrchestrator {
                                                      AgentTelemetryCollector telemetry,
                                                      AgentProgressListener progressListener) {
         AgentDescriptor descriptor = agent.descriptor();
+        CircuitState circuit = circuitState(descriptor.id());
+        CircuitSnapshot snapshot = circuit.snapshot(clock.instant());
+        if (snapshot.open()) {
+            SpecialistContribution skipped = failedContribution(
+                    agent,
+                    0,
+                    "CircuitOpen: agent unavailable until " + snapshot.openUntil());
+            emit(progressListener, new AgentProgressEvent(
+                    "SPECIALIST",
+                    "SKIPPED",
+                    descriptor.name(),
+                    "专业 Agent 熔断中，已跳过并继续其他 Agent",
+                    List.of(
+                            "连续失败：" + snapshot.consecutiveFailures(),
+                            "恢复时间：" + snapshot.openUntil()
+                    ),
+                    0,
+                    Instant.now()
+            ));
+            return skipped;
+        }
+
+        long startedAt = System.nanoTime();
         emit(progressListener, new AgentProgressEvent(
                 "SPECIALIST",
                 "STARTED",
@@ -245,21 +359,122 @@ public class AdaptiveMultiAgentOrchestrator {
                 0,
                 Instant.now()
         ));
-        SpecialistContribution contribution = agent.execute(request, telemetry);
+        SpecialistContribution contribution = null;
+        int attempt = 0;
+        while (attempt < specialistMaxAttempts) {
+            attempt++;
+            if (attempt > 1) {
+                emit(progressListener, new AgentProgressEvent(
+                        "SPECIALIST",
+                        "RETRYING",
+                        descriptor.name(),
+                        "专业 Agent 正在执行第 %d 次尝试".formatted(attempt),
+                        List.of("最大尝试次数：" + specialistMaxAttempts),
+                        elapsedMs(startedAt),
+                        Instant.now()
+                ));
+            }
+            contribution = agent.execute(request, telemetry);
+            if (contribution.success()) {
+                circuit.recordSuccess();
+                break;
+            }
+            circuit.recordFailure(
+                    clock.instant(),
+                    circuitBreakerFailureThreshold,
+                    circuitBreakerCooldown
+            );
+        }
+        SpecialistContribution resolved = contribution == null
+                ? failedContribution(agent, elapsedMs(startedAt), "Agent returned no contribution")
+                : withDuration(contribution, elapsedMs(startedAt));
         emit(progressListener, new AgentProgressEvent(
                 "SPECIALIST",
-                contribution.success() ? "COMPLETED" : "FAILED",
-                contribution.agentName(),
-                contribution.success() ? "专业分析已完成" : "专业分析失败，其他 Agent 将继续",
+                resolved.success() ? "COMPLETED" : "FAILED",
+                resolved.agentName(),
+                resolved.success() ? "专业分析已完成" : "专业分析失败，其他 Agent 将继续",
                 List.of(
-                        "领域：" + contribution.domain().name(),
-                        "置信度：" + contribution.confidence(),
-                        "过程奖励：" + contribution.processReward()
+                        "领域：" + resolved.domain().name(),
+                        "尝试次数：" + attempt,
+                        "置信度：" + resolved.confidence(),
+                        "过程奖励：" + resolved.processReward()
                 ),
-                contribution.durationMs(),
+                resolved.durationMs(),
+                Instant.now()
+        ));
+        return resolved;
+    }
+
+    private SpecialistContribution onSpecialistTimeout(DomainSpecialistAgent agent,
+                                                       AgentProgressListener progressListener) {
+        AgentDescriptor descriptor = agent.descriptor();
+        circuitState(descriptor.id()).recordFailure(
+                clock.instant(),
+                circuitBreakerFailureThreshold,
+                circuitBreakerCooldown
+        );
+        SpecialistContribution contribution = failedContribution(
+                agent,
+                specialistTimeoutMs,
+                "Timeout: specialist exceeded " + specialistTimeoutMs + " ms"
+        );
+        emit(progressListener, new AgentProgressEvent(
+                "SPECIALIST",
+                "TIMED_OUT",
+                descriptor.name(),
+                "专业 Agent 超时，其他 Agent 将继续",
+                List.of("总预算：" + specialistTimeoutMs + " ms"),
+                specialistTimeoutMs,
                 Instant.now()
         ));
         return contribution;
+    }
+
+    private SpecialistContribution failedContribution(DomainSpecialistAgent agent,
+                                                      long durationMs,
+                                                      String error) {
+        AgentDescriptor descriptor = agent.descriptor();
+        AgentDomain domain = specialists.entrySet().stream()
+                .filter(entry -> entry.getValue() == agent)
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(AgentDomain.RELATIONSHIP);
+        return new SpecialistContribution(
+                descriptor.id(),
+                descriptor.name(),
+                domain,
+                false,
+                List.of(),
+                List.of(),
+                List.of(),
+                "",
+                0,
+                0,
+                durationMs,
+                error
+        );
+    }
+
+    private SpecialistContribution withDuration(SpecialistContribution contribution,
+                                                long durationMs) {
+        return new SpecialistContribution(
+                contribution.agentId(),
+                contribution.agentName(),
+                contribution.domain(),
+                contribution.success(),
+                contribution.findings(),
+                contribution.recommendations(),
+                contribution.citedSources(),
+                contribution.uncertainty(),
+                contribution.confidence(),
+                contribution.processReward(),
+                durationMs,
+                contribution.error()
+        );
+    }
+
+    private CircuitState circuitState(String agentId) {
+        return circuitStates.computeIfAbsent(agentId, ignored -> new CircuitState());
     }
 
     private void emit(AgentProgressListener listener, AgentProgressEvent event) {
@@ -340,6 +555,13 @@ public class AdaptiveMultiAgentOrchestrator {
         return Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
     }
 
+    private Duration requirePositive(Duration duration, String name) {
+        if (duration == null || duration.isZero() || duration.isNegative()) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
+        return duration;
+    }
+
     private Map<AgentDomain, DomainSpecialistAgent> createSpecialists(ChatClient client) {
         Map<AgentDomain, DomainSpecialistAgent> agents = new EnumMap<>(AgentDomain.class);
         agents.put(AgentDomain.RELATIONSHIP, specialist(
@@ -398,6 +620,55 @@ public class AdaptiveMultiAgentOrchestrator {
                 description,
                 client
         );
+    }
+
+    private record AgentTask(
+            DomainSpecialistAgent agent,
+            CompletableFuture<SpecialistContribution> future
+    ) {
+    }
+
+    private record CircuitSnapshot(
+            boolean open,
+            int consecutiveFailures,
+            Instant openUntil
+    ) {
+    }
+
+    private static final class CircuitState {
+
+        private final AtomicInteger consecutiveFailures = new AtomicInteger();
+
+        private int failureThreshold = 1;
+
+        private Instant openUntil;
+
+        private synchronized void recordSuccess() {
+            consecutiveFailures.set(0);
+            openUntil = null;
+        }
+
+        private synchronized void recordFailure(Instant now,
+                                                int threshold,
+                                                Duration cooldown) {
+            failureThreshold = Math.max(1, threshold);
+            int failures = consecutiveFailures.incrementAndGet();
+            if (failures >= failureThreshold) {
+                openUntil = now.plus(cooldown);
+            }
+        }
+
+        private synchronized CircuitSnapshot snapshot(Instant now) {
+            if (openUntil != null && !now.isBefore(openUntil)) {
+                openUntil = null;
+                consecutiveFailures.set(Math.max(0, failureThreshold - 1));
+            }
+            return new CircuitSnapshot(
+                    openUntil != null,
+                    consecutiveFailures.get(),
+                    openUntil
+            );
+        }
     }
 
     private static Map<AgentDomain, List<String>> domainKeywords() {

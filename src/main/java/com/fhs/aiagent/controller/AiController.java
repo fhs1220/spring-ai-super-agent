@@ -5,6 +5,7 @@ import com.fhs.aiagent.rag.AgentProgressEvent;
 import com.fhs.aiagent.rag.AgentRunCancelledException;
 import com.fhs.aiagent.rag.multiagent.AdaptiveMultiAgentOrchestrator;
 import com.fhs.aiagent.rag.multiagent.AgentDescriptor;
+import com.fhs.aiagent.rag.multiagent.AgentHealth;
 import com.fhs.aiagent.rag.run.AgentRunStatus;
 import com.fhs.aiagent.rag.run.DurableAgentRun;
 import com.fhs.aiagent.rag.run.DurableAgentRunService;
@@ -181,6 +182,11 @@ public class AiController {
     @GetMapping("/agents")
     public List<AgentDescriptor> agents() {
         return multiAgentOrchestrator.descriptors();
+    }
+
+    @GetMapping("/agents/health")
+    public List<AgentHealth> agentHealth() {
+        return multiAgentOrchestrator.health();
     }
 
     @PreDestroy

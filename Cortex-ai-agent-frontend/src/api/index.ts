@@ -91,6 +91,8 @@ export type AgentProgressStatus =
   | 'CANCELLED'
   | 'RETRYING'
   | 'RECOVERY_REQUIRED'
+  | 'SKIPPED'
+  | 'TIMED_OUT'
 
 export interface AgentProgressEvent {
   phase: string

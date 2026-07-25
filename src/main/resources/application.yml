@@ -65,6 +65,11 @@ agent:
       # 检测到至少两个独立能力域时才启用并行 Agent，简单问题保留快速路径。
       minimum-domains: ${AGENT_RAG_MULTI_AGENT_MINIMUM_DOMAINS:2}
       max-agents: ${AGENT_RAG_MULTI_AGENT_MAX_AGENTS:3}
+      # 每个专业 Agent 的总执行预算与局部容错；全部失败时仍会降级到单 Agent。
+      specialist-max-attempts: ${AGENT_RAG_SPECIALIST_MAX_ATTEMPTS:2}
+      specialist-timeout-seconds: ${AGENT_RAG_SPECIALIST_TIMEOUT_SECONDS:35}
+      circuit-breaker-failure-threshold: ${AGENT_RAG_CIRCUIT_BREAKER_FAILURE_THRESHOLD:3}
+      circuit-breaker-cooldown-seconds: ${AGENT_RAG_CIRCUIT_BREAKER_COOLDOWN_SECONDS:60}
     runtime:
       # 保存运行请求、阶段事件和最终结果，支持重启后的状态查询与显式恢复。
       storage-directory: ${AGENT_RAG_RUNTIME_STORAGE_DIRECTORY:tmp/agent-runs}
