@@ -142,6 +142,41 @@ export interface DatasetReadiness {
   warnings: string[]
 }
 
+export type RoutingPolicyMode = 'OFF' | 'SHADOW' | 'CANARY' | 'ACTIVE'
+
+export interface RoutingPolicyDeployment {
+  version: string
+  mode: RoutingPolicyMode
+  canaryRate: number
+  createdAt: string
+  reason: string
+}
+
+export interface RoutingModeStats {
+  sampleCount: number
+  successfulCount: number
+  usageMeasuredSamples: number
+  averageReward: number
+  averageCostCny: number
+  averageLatencyMs: number
+  utility: number
+}
+
+export interface RoutingPolicyStatus {
+  enabled: boolean
+  ready: boolean
+  deployment: RoutingPolicyDeployment
+  minimumSamplesPerMode: number
+  observedTrajectoryCount: number
+  singleAgent: RoutingModeStats
+  multiAgent: RoutingModeStats
+  contextualBucketCount: number
+  canarySelectedTrajectoryCount: number
+  minimumCanarySamples: number
+  refreshedAt: string
+  reason: string
+}
+
 export function loveAppSseUrl(message: string, chatId: string): string {
   const params = new URLSearchParams({ message, chatId })
   return `${API_BASE}/ai/love_app/chat/sse?${params.toString()}`
@@ -269,6 +304,11 @@ export async function fetchAgentRlMetrics(): Promise<AgentRlMetrics> {
 
 export async function fetchDatasetReadiness(): Promise<DatasetReadiness> {
   const response = await http.get<DatasetReadiness>('/ai/love_app/agent-rl/readiness')
+  return response.data
+}
+
+export async function fetchRoutingPolicyStatus(): Promise<RoutingPolicyStatus> {
+  const response = await http.get<RoutingPolicyStatus>('/ai/love_app/agents/routing-policy')
   return response.data
 }
 

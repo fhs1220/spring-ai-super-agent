@@ -7,6 +7,7 @@ import {
   cancelAgenticRag,
   fetchAgentRlMetrics,
   fetchDatasetReadiness,
+  fetchRoutingPolicyStatus,
   generateChatId,
   streamAgenticRag,
   submitAgentRlFeedback,
@@ -15,6 +16,7 @@ import {
   type AgentRlMetrics,
   type DatasetReadiness,
   type RewardBreakdown,
+  type RoutingPolicyStatus,
 } from '../api'
 
 interface Message {
@@ -46,6 +48,7 @@ const loading = ref(false)
 const chatList = ref<HTMLElement | null>(null)
 const metrics = ref<AgentRlMetrics | null>(null)
 const readiness = ref<DatasetReadiness | null>(null)
+const routingPolicy = ref<RoutingPolicyStatus | null>(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
 const activeRun = shallowRef<ActiveRun | null>(null)
@@ -140,9 +143,10 @@ async function submitFeedback(message: Message) {
 async function loadDashboard() {
   dashboardLoading.value = true
   dashboardError.value = ''
-  const [metricsResult, readinessResult] = await Promise.allSettled([
+  const [metricsResult, readinessResult, routingPolicyResult] = await Promise.allSettled([
     fetchAgentRlMetrics(),
     fetchDatasetReadiness(),
+    fetchRoutingPolicyStatus(),
   ])
 
   if (metricsResult.status === 'fulfilled') {
@@ -151,7 +155,14 @@ async function loadDashboard() {
   if (readinessResult.status === 'fulfilled') {
     readiness.value = readinessResult.value
   }
-  if (metricsResult.status === 'rejected' || readinessResult.status === 'rejected') {
+  if (routingPolicyResult.status === 'fulfilled') {
+    routingPolicy.value = routingPolicyResult.value
+  }
+  if (
+    metricsResult.status === 'rejected'
+    || readinessResult.status === 'rejected'
+    || routingPolicyResult.status === 'rejected'
+  ) {
     dashboardError.value = '指标暂时不可用，请确认后端服务已启动'
   }
   dashboardLoading.value = false
@@ -463,6 +474,7 @@ function back() {
     <AgentRlPanel
       :metrics="metrics"
       :readiness="readiness"
+      :routing-policy="routingPolicy"
       :loading="dashboardLoading"
       :error="dashboardError"
       @refresh="loadDashboard"

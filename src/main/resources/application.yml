@@ -77,6 +77,13 @@ agent:
     routing-policy:
       # 冷启动时保持确定性路由；单/多 Agent 样本都充足后才允许学习策略覆盖。
       enabled: ${AGENT_RAG_ROUTING_POLICY_ENABLED:true}
+      mode: ${AGENT_RAG_ROUTING_POLICY_MODE:SHADOW}
+      canary-rate: ${AGENT_RAG_ROUTING_CANARY_RATE:0.1}
+      minimum-canary-samples: ${AGENT_RAG_ROUTING_MINIMUM_CANARY_SAMPLES:20}
+      maximum-deployment-history: ${AGENT_RAG_ROUTING_MAXIMUM_DEPLOYMENT_HISTORY:20}
+      deployment-state-file: ${AGENT_RAG_ROUTING_DEPLOYMENT_STATE_FILE:tmp/routing-policy/deployment.json}
+      # 部署/回滚会改变真实流量，默认只开放只读状态接口。
+      management-api-enabled: ${AGENT_RAG_ROUTING_MANAGEMENT_API_ENABLED:false}
       minimum-samples-per-mode: ${AGENT_RAG_ROUTING_MINIMUM_SAMPLES_PER_MODE:8}
       maximum-trajectories: ${AGENT_RAG_ROUTING_MAXIMUM_TRAJECTORIES:500}
       minimum-utility-lift: ${AGENT_RAG_ROUTING_MINIMUM_UTILITY_LIFT:0.03}

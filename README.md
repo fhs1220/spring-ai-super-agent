@@ -113,8 +113,21 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 - 扣除成本和延迟惩罚后的净效用。
 
 同一上下文和全局样本都不足时保持确定性路由。只有单/多 Agent 至少各有 8 条轨迹，且净效用
-差达到 `0.03`，学习策略才会覆盖静态判断。关系安全任务始终执行 `SAFETY_OVERRIDE`，
-不会因为成本数据被降级。路由来源、置信度、证据样本数与特征桶都会写入 Agent Trace。
+差达到 `0.03`，学习策略才会生成可发布候选。默认发布模式是 `SHADOW`，候选只写入轨迹做
+对照分析，不会改变实际回答；明确晋升到 `CANARY` 或 `ACTIVE` 后才会逐步接管路由。
+关系安全任务始终执行 `SAFETY_OVERRIDE`，不会因为成本数据被降级。执行策略、候选策略、
+发布模式、是否命中灰度、置信度、证据样本数与特征桶都会写入 Agent Trace。
+
+发布状态机：
+
+- `OFF`：关闭学习策略，完全使用确定性路由；
+- `SHADOW`：计算候选策略但不应用，适合安全积累线上对照数据；
+- `CANARY`：按问题稳定哈希选择固定比例流量应用学习策略；
+- `ACTIVE`：全部流量应用学习策略。
+
+从 `SHADOW` 晋升 `CANARY` 要求单/多 Agent 样本都达到学习门槛；从 `CANARY` 晋升
+`ACTIVE` 还要求至少 20 条实际灰度样本。每次发布都会原子保存到
+`tmp/routing-policy/deployment.json`，并保留有界历史用于回滚。
 
 查看不包含用户问题的策略状态：
 
@@ -125,11 +138,33 @@ GET /api/ai/love_app/agents/routing-policy
 主要配置：
 
 - `AGENT_RAG_ROUTING_POLICY_ENABLED`
+- `AGENT_RAG_ROUTING_POLICY_MODE`（默认 `SHADOW`）
+- `AGENT_RAG_ROUTING_CANARY_RATE`（默认 `0.1`）
+- `AGENT_RAG_ROUTING_MINIMUM_CANARY_SAMPLES`（默认 `20`）
 - `AGENT_RAG_ROUTING_MINIMUM_SAMPLES_PER_MODE`
 - `AGENT_RAG_ROUTING_MINIMUM_UTILITY_LIFT`
 - `AGENT_RAG_ROUTING_COST_WEIGHT`
 - `AGENT_RAG_ROUTING_LATENCY_WEIGHT`
 - `AGENT_RAG_ROUTING_REFRESH_SECONDS`
+
+发布/回滚接口默认关闭。仅在受信任环境设置
+`AGENT_RAG_ROUTING_MANAGEMENT_API_ENABLED=true` 后开放：
+
+```http
+GET  /api/agent-routing-policy/deployments
+POST /api/agent-routing-policy/deployments
+POST /api/agent-routing-policy/rollback
+```
+
+例如晋升到 10% 灰度：
+
+```json
+{
+  "mode": "CANARY",
+  "canaryRate": 0.1,
+  "reason": "balanced offline evidence passed"
+}
+```
 
 ### RAG A/B 自动化评测与回归门禁
 

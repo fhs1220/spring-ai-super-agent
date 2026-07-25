@@ -13,7 +13,12 @@ public record MultiAgentDecision(
         List<AgentDomain> selectedDomains,
         String featureBucket,
         String policySource,
+        String policyCandidateSource,
+        String policyRolloutMode,
+        boolean policyApplied,
+        boolean policyCanarySelected,
         double policyConfidence,
-        int policyEvidenceSamples
+        int policyEvidenceSamples,
+        String policyDeploymentVersion
 ) {
 }

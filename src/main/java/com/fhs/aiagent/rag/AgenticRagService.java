@@ -236,18 +236,44 @@ public class AgenticRagService {
                     stepStartedAt,
                     true,
                     Map.of("questionLength", question.length()),
-                    Map.of(
-                            "mode", multiAgentDecision.mode(),
-                            "multiAgent", multiAgentDecision.multiAgent(),
-                            "complexityScore", multiAgentDecision.complexityScore(),
-                            "reason", multiAgentDecision.reason(),
-                            "selectedDomains", multiAgentDecision.selectedDomains().stream()
-                                    .map(Enum::name)
-                                    .toList(),
-                            "featureBucket", multiAgentDecision.featureBucket(),
-                            "policySource", multiAgentDecision.policySource(),
-                            "policyConfidence", multiAgentDecision.policyConfidence(),
-                            "policyEvidenceSamples", multiAgentDecision.policyEvidenceSamples()
+                    Map.ofEntries(
+                            Map.entry("mode", multiAgentDecision.mode()),
+                            Map.entry("multiAgent", multiAgentDecision.multiAgent()),
+                            Map.entry("complexityScore", multiAgentDecision.complexityScore()),
+                            Map.entry("reason", multiAgentDecision.reason()),
+                            Map.entry(
+                                    "selectedDomains",
+                                    multiAgentDecision.selectedDomains().stream()
+                                            .map(Enum::name)
+                                            .toList()
+                            ),
+                            Map.entry("featureBucket", multiAgentDecision.featureBucket()),
+                            Map.entry("policySource", multiAgentDecision.policySource()),
+                            Map.entry(
+                                    "policyCandidateSource",
+                                    multiAgentDecision.policyCandidateSource()
+                            ),
+                            Map.entry(
+                                    "policyRolloutMode",
+                                    multiAgentDecision.policyRolloutMode()
+                            ),
+                            Map.entry("policyApplied", multiAgentDecision.policyApplied()),
+                            Map.entry(
+                                    "policyCanarySelected",
+                                    multiAgentDecision.policyCanarySelected()
+                            ),
+                            Map.entry(
+                                    "policyConfidence",
+                                    multiAgentDecision.policyConfidence()
+                            ),
+                            Map.entry(
+                                    "policyEvidenceSamples",
+                                    multiAgentDecision.policyEvidenceSamples()
+                            ),
+                            Map.entry(
+                                    "policyDeploymentVersion",
+                                    multiAgentDecision.policyDeploymentVersion()
+                            )
                     )
             );
             emit(listener, "ROUTE", "COMPLETED", "自适应路由",
@@ -1074,6 +1100,11 @@ public class AgenticRagService {
                                 "原因：" + output.getOrDefault("reason", ""),
                                 "能力域：" + stringList(output.get("selectedDomains")),
                                 "策略：" + output.getOrDefault("policySource", "DETERMINISTIC"),
+                                "候选策略：" + output.getOrDefault(
+                                        "policyCandidateSource", "DETERMINISTIC"),
+                                "发布模式：" + output.getOrDefault(
+                                        "policyRolloutMode", "OFF"),
+                                "策略已应用：" + output.getOrDefault("policyApplied", false),
                                 "策略置信度：" + output.getOrDefault("policyConfidence", 0),
                                 "策略样本：" + output.getOrDefault("policyEvidenceSamples", 0)
                         )

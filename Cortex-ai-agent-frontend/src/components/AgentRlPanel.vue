@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { AgentRlMetrics, DatasetReadiness } from '../api'
+import type { AgentRlMetrics, DatasetReadiness, RoutingPolicyStatus } from '../api'
 
 const props = defineProps<{
   metrics: AgentRlMetrics | null
   readiness: DatasetReadiness | null
+  routingPolicy: RoutingPolicyStatus | null
   loading: boolean
   error: string
 }>()
@@ -36,6 +37,25 @@ function latency(value: number | undefined): string {
   if (typeof value !== 'number') return '—'
   return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`
 }
+
+const rolloutLabel = computed(() => {
+  const labels = {
+    OFF: '规则路由',
+    SHADOW: '影子评估',
+    CANARY: '灰度发布',
+    ACTIVE: '正式生效',
+  }
+  return props.routingPolicy ? labels[props.routingPolicy.deployment.mode] : '加载中'
+})
+
+const rolloutDescription = computed(() => {
+  const mode = props.routingPolicy?.deployment.mode
+  if (mode === 'SHADOW') return '学习策略只做对照，不影响回答'
+  if (mode === 'CANARY') return '仅对稳定抽样流量应用学习策略'
+  if (mode === 'ACTIVE') return '学习策略已参与全部路由决策'
+  if (mode === 'OFF') return '学习策略已关闭，使用确定性规则'
+  return '正在读取策略发布状态'
+})
 </script>
 
 <template>
@@ -62,6 +82,37 @@ function latency(value: number | undefined): string {
     </div>
 
     <div v-if="error" class="panel-error">{{ error }}</div>
+
+    <section class="policy-card">
+      <div class="policy-heading">
+        <span>路由策略</span>
+        <strong :class="`mode-${routingPolicy?.deployment.mode?.toLowerCase() ?? 'loading'}`">
+          {{ rolloutLabel }}
+        </strong>
+      </div>
+      <p>{{ rolloutDescription }}</p>
+      <div class="policy-samples">
+        <span>
+          SINGLE
+          <b>{{ routingPolicy?.singleAgent.sampleCount ?? 0 }}</b>
+          / {{ routingPolicy?.minimumSamplesPerMode ?? '—' }}
+        </span>
+        <span>
+          MULTI
+          <b>{{ routingPolicy?.multiAgent.sampleCount ?? 0 }}</b>
+          / {{ routingPolicy?.minimumSamplesPerMode ?? '—' }}
+        </span>
+      </div>
+      <div class="policy-meta">
+        <span>{{ routingPolicy?.ready ? '对照样本已平衡' : '正在收集平衡样本' }}</span>
+        <span v-if="routingPolicy?.deployment.mode === 'CANARY'">
+          灰度 {{ percent(routingPolicy.deployment.canaryRate) }} ·
+          {{ routingPolicy.canarySelectedTrajectoryCount }} /
+          {{ routingPolicy.minimumCanarySamples }}
+        </span>
+        <span v-else>观察 {{ routingPolicy?.observedTrajectoryCount ?? 0 }}</span>
+      </div>
+    </section>
 
     <div class="metric-grid">
       <div class="metric-card">
@@ -207,6 +258,69 @@ h2 {
   color: #fca5a5;
   background: rgba(127, 29, 29, 0.16);
   font-size: 0.75rem;
+}
+.policy-card {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(135deg, rgba(74, 222, 128, 0.055), transparent 58%),
+    var(--surface);
+}
+.policy-heading,
+.policy-meta,
+.policy-samples {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.policy-heading span {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+.policy-heading strong {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-heading);
+  font: 600 0.57rem/1 var(--mono);
+  letter-spacing: 0.04em;
+}
+.policy-heading .mode-shadow {
+  color: #f5c76b;
+  border-color: rgba(245, 199, 107, 0.35);
+}
+.policy-heading .mode-canary,
+.policy-heading .mode-active {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+.policy-card p {
+  margin: 9px 0 11px;
+  color: var(--text);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+.policy-samples {
+  margin-bottom: 8px;
+}
+.policy-samples span {
+  flex: 1;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font: 0.55rem/1 var(--mono);
+}
+.policy-samples b {
+  margin-left: 3px;
+  color: var(--text-heading);
+}
+.policy-meta {
+  color: var(--text-muted);
+  font-size: 0.62rem;
 }
 .metric-grid {
   display: grid;

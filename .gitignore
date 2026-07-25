@@ -7,6 +7,7 @@ target/
 tmp/rag/
 tmp/evaluation/
 tmp/agent-runs/
+tmp/routing-policy/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -38,3 +39,5 @@ build/
 
 ### VS Code ###
 .vscode/
+verify-results.log
+boot-verify.log

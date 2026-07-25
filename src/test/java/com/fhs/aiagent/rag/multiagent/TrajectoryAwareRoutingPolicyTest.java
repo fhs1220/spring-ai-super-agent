@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -32,7 +33,8 @@ class TrajectoryAwareRoutingPolicyTest {
         TrajectoryAwareRoutingPolicy policy = policy(repository, 0.05, 0.05);
 
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision decision = policy.decide(
-                new TrajectoryAwareRoutingPolicy.RoutingContext(BUCKET, false, false));
+                new TrajectoryAwareRoutingPolicy.RoutingContext(
+                        BUCKET, false, false, "cold-start-question"));
 
         assertThat(decision.multiAgent()).isFalse();
         assertThat(decision.source()).isEqualTo("COLD_START");
@@ -47,7 +49,8 @@ class TrajectoryAwareRoutingPolicyTest {
         TrajectoryAwareRoutingPolicy policy = policy(repository, 0.05, 0.05);
 
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision decision = policy.decide(
-                new TrajectoryAwareRoutingPolicy.RoutingContext(BUCKET, false, false));
+                new TrajectoryAwareRoutingPolicy.RoutingContext(
+                        BUCKET, false, false, "multi-question"));
 
         assertThat(decision.multiAgent()).isTrue();
         assertThat(decision.source()).isEqualTo("LEARNED_CONTEXTUAL");
@@ -64,7 +67,8 @@ class TrajectoryAwareRoutingPolicyTest {
         TrajectoryAwareRoutingPolicy policy = policy(repository, 0.20, 0.20);
 
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision decision = policy.decide(
-                new TrajectoryAwareRoutingPolicy.RoutingContext(BUCKET, true, false));
+                new TrajectoryAwareRoutingPolicy.RoutingContext(
+                        BUCKET, true, false, "single-question"));
 
         assertThat(decision.multiAgent()).isFalse();
         assertThat(decision.source()).isEqualTo("LEARNED_CONTEXTUAL");
@@ -78,7 +82,10 @@ class TrajectoryAwareRoutingPolicyTest {
 
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision decision = policy.decide(
                 new TrajectoryAwareRoutingPolicy.RoutingContext(
-                        "SAFETY|structured=false|long=false", false, true));
+                        "SAFETY|structured=false|long=false",
+                        false,
+                        true,
+                        "safety-question"));
 
         assertThat(decision.multiAgent()).isTrue();
         assertThat(decision.source()).isEqualTo("SAFETY_OVERRIDE");
@@ -92,12 +99,89 @@ class TrajectoryAwareRoutingPolicyTest {
         TrajectoryAwareRoutingPolicy policy = policy(repository, 0.05, 0.05);
 
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision decision = policy.decide(
-                new TrajectoryAwareRoutingPolicy.RoutingContext(BUCKET, true, false));
+                new TrajectoryAwareRoutingPolicy.RoutingContext(
+                        BUCKET, true, false, "fallback-question"));
 
         assertThat(decision.multiAgent()).isTrue();
         assertThat(decision.source()).isEqualTo("POLICY_FALLBACK");
         assertThat(policy.status().ready()).isFalse();
         assertThat(policy.status().reason()).contains("IllegalStateException");
+    }
+
+    @Test
+    void shadowsLearnedDecisionThenAppliesItOnlyToCanaryTraffic() {
+        InMemoryAgentTrajectoryRepository repository = new InMemoryAgentTrajectoryRepository();
+        saveMode(repository, "single", AdaptiveMultiAgentOrchestrator.SINGLE_MODE, 0.68, 0.001, 300);
+        saveMode(repository, "multi", AdaptiveMultiAgentOrchestrator.MULTI_MODE, 0.91, 0.004, 600);
+        RoutingPolicyDeploymentService deployments = new RoutingPolicyDeploymentService(
+                new MemoryDeploymentRepository(),
+                RoutingPolicyMode.SHADOW,
+                0.1,
+                2,
+                10,
+                Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC)
+        );
+        deployments.initialize();
+        TrajectoryAwareRoutingPolicy policy = policy(
+                repository, 0.05, 0.05, deployments);
+        TrajectoryAwareRoutingPolicy.RoutingContext context =
+                new TrajectoryAwareRoutingPolicy.RoutingContext(
+                        BUCKET, false, false, "stable-canary-user");
+
+        TrajectoryAwareRoutingPolicy.RoutingPolicyDecision shadow = policy.decide(context);
+        assertThat(shadow.multiAgent()).isFalse();
+        assertThat(shadow.candidateMultiAgent()).isTrue();
+        assertThat(shadow.source()).isEqualTo("SHADOW_DETERMINISTIC");
+        assertThat(shadow.learnedApplied()).isFalse();
+
+        deployments.deploy(
+                RoutingPolicyMode.CANARY,
+                1.0,
+                "test canary",
+                new RoutingPolicyDeploymentService.PromotionEvidence(true, 0));
+        TrajectoryAwareRoutingPolicy.RoutingPolicyDecision canary = policy.decide(context);
+
+        assertThat(canary.multiAgent()).isTrue();
+        assertThat(canary.canarySelected()).isTrue();
+        assertThat(canary.learnedApplied()).isTrue();
+        assertThat(canary.rolloutMode()).isEqualTo(RoutingPolicyMode.CANARY);
+        assertThat(canary.source()).startsWith("CANARY_LEARNED_");
+    }
+
+    @Test
+    void fallsBackToOffModeWhenDeploymentStateIsUnavailable() {
+        RoutingPolicyDeploymentRepository broken = new RoutingPolicyDeploymentRepository() {
+            @Override
+            public Optional<RoutingPolicyDeploymentState> load() {
+                throw new IllegalStateException("deployment storage unavailable");
+            }
+
+            @Override
+            public RoutingPolicyDeploymentState save(RoutingPolicyDeploymentState state) {
+                throw new IllegalStateException("deployment storage unavailable");
+            }
+        };
+        RoutingPolicyDeploymentService deployments = new RoutingPolicyDeploymentService(
+                broken,
+                RoutingPolicyMode.SHADOW,
+                0.1,
+                2,
+                10,
+                Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC)
+        );
+        TrajectoryAwareRoutingPolicy policy = policy(
+                new InMemoryAgentTrajectoryRepository(), 0.05, 0.05, deployments);
+
+        TrajectoryAwareRoutingPolicy.RoutingPolicyDecision decision = policy.decide(
+                new TrajectoryAwareRoutingPolicy.RoutingContext(
+                        BUCKET, true, false, "unavailable-question"));
+
+        assertThat(decision.multiAgent()).isTrue();
+        assertThat(decision.source()).isEqualTo("DEPLOYMENT_FALLBACK");
+        assertThat(decision.rolloutMode()).isEqualTo(RoutingPolicyMode.OFF);
+        assertThat(decision.learnedApplied()).isFalse();
+        assertThat(policy.status().deployment().mode()).isEqualTo(RoutingPolicyMode.OFF);
+        assertThat(policy.status().deployment().version()).isEqualTo("routing-unavailable");
     }
 
     private static void saveMode(InMemoryAgentTrajectoryRepository repository,
@@ -127,6 +211,28 @@ class TrajectoryAwareRoutingPolicyTest {
                 60_000,
                 Duration.ofSeconds(30),
                 Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC)
+        );
+    }
+
+    private static TrajectoryAwareRoutingPolicy policy(
+            AgentTrajectoryRepository repository,
+            double costWeight,
+            double latencyWeight,
+            RoutingPolicyDeploymentService deploymentService) {
+        return new TrajectoryAwareRoutingPolicy(
+                repository,
+                true,
+                2,
+                100,
+                0.03,
+                0.72,
+                costWeight,
+                latencyWeight,
+                0.02,
+                60_000,
+                Duration.ofSeconds(30),
+                Clock.fixed(Instant.parse("2026-07-25T00:00:00Z"), ZoneOffset.UTC),
+                deploymentService
         );
     }
 
@@ -176,5 +282,22 @@ class TrajectoryAwareRoutingPolicyTest {
                 telemetry,
                 null
         );
+    }
+
+    private static final class MemoryDeploymentRepository
+            implements RoutingPolicyDeploymentRepository {
+
+        private RoutingPolicyDeploymentState state;
+
+        @Override
+        public Optional<RoutingPolicyDeploymentState> load() {
+            return Optional.ofNullable(state);
+        }
+
+        @Override
+        public RoutingPolicyDeploymentState save(RoutingPolicyDeploymentState state) {
+            this.state = state;
+            return state;
+        }
     }
 }

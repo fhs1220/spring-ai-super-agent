@@ -169,15 +169,22 @@ public class AdaptiveMultiAgentOrchestrator {
                 routingPolicy == null
                         ? new TrajectoryAwareRoutingPolicy.RoutingPolicyDecision(
                                 useMultiAgent,
+                                useMultiAgent,
                                 "DETERMINISTIC",
+                                "DETERMINISTIC",
+                                RoutingPolicyMode.OFF,
+                                false,
+                                false,
                                 0,
                                 0,
+                                "routing-none",
                                 "未启用轨迹学习策略"
                         )
                         : routingPolicy.decide(new TrajectoryAwareRoutingPolicy.RoutingContext(
                                 featureBucket,
                                 useMultiAgent,
-                                domains.contains(AgentDomain.SAFETY)
+                                domains.contains(AgentDomain.SAFETY),
+                                question
                         ));
         boolean finalMultiAgent = enabled && policyDecision.multiAgent();
         List<AgentDomain> selected = finalMultiAgent ? selectDomains(domains) : List.of();
@@ -190,8 +197,13 @@ public class AdaptiveMultiAgentOrchestrator {
                 selected,
                 featureBucket,
                 policyDecision.source(),
+                policyDecision.candidateSource(),
+                policyDecision.rolloutMode().name(),
+                policyDecision.learnedApplied(),
+                policyDecision.canarySelected(),
                 policyDecision.confidence(),
-                policyDecision.evidenceSamples()
+                policyDecision.evidenceSamples(),
+                policyDecision.deploymentVersion()
         );
     }
 

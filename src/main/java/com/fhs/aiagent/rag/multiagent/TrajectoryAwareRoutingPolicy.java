@@ -50,6 +50,12 @@ public class TrajectoryAwareRoutingPolicy {
 
     private final Clock clock;
 
+    private final RoutingPolicyDeployment fallbackDeployment;
+
+    private final RoutingPolicyDeployment unavailableDeployment;
+
+    private RoutingPolicyDeploymentService deploymentService;
+
     private volatile PolicySnapshot cachedSnapshot;
 
     @Autowired
@@ -68,7 +74,8 @@ public class TrajectoryAwareRoutingPolicy {
             @Value("${agent.rag.routing-policy.latency-weight:0.05}") double latencyWeight,
             @Value("${agent.rag.routing-policy.cost-budget-cny:0.02}") double costBudgetCny,
             @Value("${agent.rag.routing-policy.latency-budget-ms:60000}") double latencyBudgetMs,
-            @Value("${agent.rag.routing-policy.refresh-seconds:30}") long refreshSeconds) {
+            @Value("${agent.rag.routing-policy.refresh-seconds:30}") long refreshSeconds,
+            RoutingPolicyDeploymentService deploymentService) {
         this(
                 repository,
                 enabled,
@@ -83,6 +90,8 @@ public class TrajectoryAwareRoutingPolicy {
                 Duration.ofSeconds(Math.max(1, refreshSeconds)),
                 Clock.systemUTC()
         );
+        this.deploymentService = Objects.requireNonNull(
+                deploymentService, "deploymentService");
     }
 
     TrajectoryAwareRoutingPolicy(AgentTrajectoryRepository repository,
@@ -109,30 +118,105 @@ public class TrajectoryAwareRoutingPolicy {
         this.latencyBudgetMs = positive(latencyBudgetMs, "latencyBudgetMs");
         this.refreshInterval = requirePositive(refreshInterval, "refreshInterval");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.fallbackDeployment = new RoutingPolicyDeployment(
+                "routing-test-active",
+                RoutingPolicyMode.ACTIVE,
+                1,
+                clock.instant(),
+                "test/default deployment"
+        );
+        // 发布状态读取失败时的展示/决策回退：必须是 OFF，避免把故障显示成“正式生效”。
+        this.unavailableDeployment = new RoutingPolicyDeployment(
+                "routing-unavailable",
+                RoutingPolicyMode.OFF,
+                1,
+                clock.instant(),
+                "发布状态不可用，临时回退确定性路由"
+        );
+    }
+
+    TrajectoryAwareRoutingPolicy(AgentTrajectoryRepository repository,
+                                 boolean enabled,
+                                 int minimumSamplesPerMode,
+                                 int maximumTrajectories,
+                                 double minimumUtilityLift,
+                                 double successRewardThreshold,
+                                 double costWeight,
+                                 double latencyWeight,
+                                 double costBudgetCny,
+                                 double latencyBudgetMs,
+                                 Duration refreshInterval,
+                                 Clock clock,
+                                 RoutingPolicyDeploymentService deploymentService) {
+        this(
+                repository,
+                enabled,
+                minimumSamplesPerMode,
+                maximumTrajectories,
+                minimumUtilityLift,
+                successRewardThreshold,
+                costWeight,
+                latencyWeight,
+                costBudgetCny,
+                latencyBudgetMs,
+                refreshInterval,
+                clock
+        );
+        this.deploymentService = Objects.requireNonNull(
+                deploymentService, "deploymentService");
     }
 
     public RoutingPolicyDecision decide(RoutingContext context) {
         Objects.requireNonNull(context, "context");
+        RoutingPolicyDeployment deployment;
+        try {
+            deployment = currentDeployment();
+        } catch (RuntimeException exception) {
+            return deterministic(
+                    context,
+                    unavailableDeployment,
+                    "DEPLOYMENT_FALLBACK",
+                    "发布状态不可用，回退确定性路由"
+            );
+        }
         if (context.safetyCritical()) {
             return new RoutingPolicyDecision(
                     true,
+                    true,
                     "SAFETY_OVERRIDE",
+                    "SAFETY_OVERRIDE",
+                    deployment.mode(),
+                    false,
+                    false,
                     1.0,
                     0,
+                    deployment.version(),
                     "检测到关系安全风险，强制启用安全专业 Agent"
             );
         }
-        if (!enabled) {
-            return deterministic(context, "DISABLED", "学习型路由已关闭");
+        if (!enabled || deployment.mode() == RoutingPolicyMode.OFF) {
+            return deterministic(
+                    context,
+                    deployment,
+                    "OFF",
+                    "学习型路由发布模式为 OFF"
+            );
         }
 
+        CandidateDecision candidate = candidate(context);
+        return applyDeployment(context, candidate, deployment);
+    }
+
+    private CandidateDecision candidate(RoutingContext context) {
         PolicySnapshot snapshot;
         try {
             snapshot = snapshot();
         } catch (RuntimeException exception) {
-            return deterministic(
-                    context,
+            return new CandidateDecision(
+                    context.deterministicMultiAgent(),
                     "POLICY_FALLBACK",
+                    0,
+                    0,
                     "轨迹策略暂时不可用，回退确定性路由"
             );
         }
@@ -143,9 +227,11 @@ public class TrajectoryAwareRoutingPolicy {
             scope = "GLOBAL";
         }
         if (!comparison.ready(minimumSamplesPerMode)) {
-            return deterministic(
-                    context,
+            return new CandidateDecision(
+                    context.deterministicMultiAgent(),
                     "COLD_START",
+                    0,
+                    0,
                     "历史样本不足，继续使用确定性复杂度路由（单/多 Agent 至少各需 %d 条）"
                             .formatted(minimumSamplesPerMode)
             );
@@ -158,7 +244,7 @@ public class TrajectoryAwareRoutingPolicy {
         );
         double confidence = confidence(lift, evidenceSamples);
         if (lift >= minimumUtilityLift) {
-            return new RoutingPolicyDecision(
+            return new CandidateDecision(
                     true,
                     "LEARNED_" + scope,
                     confidence,
@@ -167,7 +253,7 @@ public class TrajectoryAwareRoutingPolicy {
             );
         }
         if (lift <= -minimumUtilityLift) {
-            return new RoutingPolicyDecision(
+            return new CandidateDecision(
                     false,
                     "LEARNED_" + scope,
                     confidence,
@@ -175,17 +261,23 @@ public class TrajectoryAwareRoutingPolicy {
                     "历史净效用支持单 Agent（提升 %.4f）".formatted(-lift)
             );
         }
-        return deterministic(
-                context,
+        return new CandidateDecision(
+                context.deterministicMultiAgent(),
                 "LEARNED_TIE_" + scope,
-                "两种模式净效用差 %.4f 未达到覆盖门槛 %.4f"
-                        .formatted(Math.abs(lift), minimumUtilityLift),
                 confidence,
-                evidenceSamples
+                evidenceSamples,
+                "两种模式净效用差 %.4f 未达到覆盖门槛 %.4f"
+                        .formatted(Math.abs(lift), minimumUtilityLift)
         );
     }
 
     public RoutingPolicyStatus status() {
+        RoutingPolicyDeployment deployment;
+        try {
+            deployment = currentDeployment();
+        } catch (RuntimeException exception) {
+            deployment = unavailableDeployment;
+        }
         PolicySnapshot snapshot;
         try {
             snapshot = snapshot();
@@ -194,11 +286,14 @@ public class TrajectoryAwareRoutingPolicy {
             return new RoutingPolicyStatus(
                     enabled,
                     false,
+                    deployment,
                     minimumSamplesPerMode,
                     0,
                     empty,
                     empty,
                     0,
+                    0,
+                    minimumCanarySamples(),
                     clock.instant(),
                     "轨迹策略状态不可用：" + exception.getClass().getSimpleName()
             );
@@ -207,11 +302,14 @@ public class TrajectoryAwareRoutingPolicy {
         return new RoutingPolicyStatus(
                 enabled,
                 ready,
+                deployment,
                 minimumSamplesPerMode,
                 snapshot.observedTrajectoryCount(),
                 snapshot.global().singleAgent(),
                 snapshot.global().multiAgent(),
                 snapshot.contextual().size(),
+                snapshot.canarySelectedTrajectoryCount(),
+                minimumCanarySamples(),
                 snapshot.refreshedAt(),
                 ready
                         ? "策略已有足够的单/多 Agent 对照轨迹"
@@ -223,24 +321,98 @@ public class TrajectoryAwareRoutingPolicy {
         cachedSnapshot = null;
     }
 
-    private RoutingPolicyDecision deterministic(RoutingContext context,
-                                                String source,
-                                                String reason) {
-        return deterministic(context, source, reason, 0, 0);
+    private RoutingPolicyDecision applyDeployment(
+            RoutingContext context,
+            CandidateDecision candidate,
+            RoutingPolicyDeployment deployment) {
+        boolean learnedCandidate = candidate.source().startsWith("LEARNED_")
+                && !candidate.source().startsWith("LEARNED_TIE_");
+        if (deployment.mode() == RoutingPolicyMode.SHADOW) {
+            return new RoutingPolicyDecision(
+                    context.deterministicMultiAgent(),
+                    candidate.multiAgent(),
+                    "SHADOW_DETERMINISTIC",
+                    candidate.source(),
+                    deployment.mode(),
+                    false,
+                    false,
+                    candidate.confidence(),
+                    candidate.evidenceSamples(),
+                    deployment.version(),
+                    "Shadow 仅记录候选，不改变执行；" + candidate.reason()
+            );
+        }
+        if (deployment.mode() == RoutingPolicyMode.CANARY) {
+            boolean selected = learnedCandidate
+                    && stableFraction(context.routingKey()) < deployment.canaryRate();
+            boolean applied = selected
+                    && candidate.multiAgent() != context.deterministicMultiAgent();
+            return new RoutingPolicyDecision(
+                    selected ? candidate.multiAgent() : context.deterministicMultiAgent(),
+                    candidate.multiAgent(),
+                    selected ? "CANARY_" + candidate.source() : "CANARY_CONTROL",
+                    candidate.source(),
+                    deployment.mode(),
+                    applied,
+                    selected,
+                    candidate.confidence(),
+                    candidate.evidenceSamples(),
+                    deployment.version(),
+                    selected
+                            ? "命中灰度流量；" + candidate.reason()
+                            : "未命中灰度流量，执行确定性路由；" + candidate.reason()
+            );
+        }
+        boolean applied = learnedCandidate
+                && candidate.multiAgent() != context.deterministicMultiAgent();
+        return new RoutingPolicyDecision(
+                candidate.multiAgent(),
+                candidate.multiAgent(),
+                candidate.source(),
+                candidate.source(),
+                deployment.mode(),
+                applied,
+                false,
+                candidate.confidence(),
+                candidate.evidenceSamples(),
+                deployment.version(),
+                candidate.reason()
+        );
     }
 
     private RoutingPolicyDecision deterministic(RoutingContext context,
+                                                RoutingPolicyDeployment deployment,
                                                 String source,
-                                                String reason,
-                                                double confidence,
-                                                int samples) {
+                                                String reason) {
         return new RoutingPolicyDecision(
                 context.deterministicMultiAgent(),
+                context.deterministicMultiAgent(),
                 source,
-                confidence,
-                samples,
+                source,
+                deployment.mode(),
+                false,
+                false,
+                0,
+                0,
+                deployment.version(),
                 reason
         );
+    }
+
+    private RoutingPolicyDeployment currentDeployment() {
+        return deploymentService == null
+                ? fallbackDeployment
+                : deploymentService.current();
+    }
+
+    private int minimumCanarySamples() {
+        return deploymentService == null ? 1 : deploymentService.minimumCanarySamples();
+    }
+
+    private double stableFraction(String routingKey) {
+        long unsigned = Integer.toUnsignedLong(
+                Objects.toString(routingKey, "").hashCode());
+        return unsigned / 4_294_967_296.0;
     }
 
     private PolicySnapshot snapshot() {
@@ -280,6 +452,9 @@ public class TrajectoryAwareRoutingPolicy {
                 observations.size(),
                 global,
                 Map.copyOf(contextual),
+                (int) observations.stream()
+                        .filter(Observation::canarySelected)
+                        .count(),
                 refreshedAt
         );
     }
@@ -313,7 +488,10 @@ public class TrajectoryAwareRoutingPolicy {
                 successful,
                 cost,
                 usageMeasured,
-                latencyMs
+                latencyMs,
+                "CANARY".equals(Objects.toString(
+                        route.output().get("policyRolloutMode"), ""))
+                        && Boolean.TRUE.equals(route.output().get("policyCanarySelected"))
         );
     }
 
@@ -403,15 +581,22 @@ public class TrajectoryAwareRoutingPolicy {
     public record RoutingContext(
             String featureBucket,
             boolean deterministicMultiAgent,
-            boolean safetyCritical
+            boolean safetyCritical,
+            String routingKey
     ) {
     }
 
     public record RoutingPolicyDecision(
             boolean multiAgent,
+            boolean candidateMultiAgent,
             String source,
+            String candidateSource,
+            RoutingPolicyMode rolloutMode,
+            boolean learnedApplied,
+            boolean canarySelected,
             double confidence,
             int evidenceSamples,
+            String deploymentVersion,
             String reason
     ) {
     }
@@ -430,11 +615,14 @@ public class TrajectoryAwareRoutingPolicy {
     public record RoutingPolicyStatus(
             boolean enabled,
             boolean ready,
+            RoutingPolicyDeployment deployment,
             int minimumSamplesPerMode,
             int observedTrajectoryCount,
             ModeStats singleAgent,
             ModeStats multiAgent,
             int contextualBucketCount,
+            int canarySelectedTrajectoryCount,
+            int minimumCanarySamples,
             Instant refreshedAt,
             String reason
     ) {
@@ -447,7 +635,8 @@ public class TrajectoryAwareRoutingPolicy {
             boolean successful,
             double costCny,
             boolean usageMeasured,
-            long latencyMs
+            long latencyMs,
+            boolean canarySelected
     ) {
     }
 
@@ -463,7 +652,17 @@ public class TrajectoryAwareRoutingPolicy {
             int observedTrajectoryCount,
             ModeComparison global,
             Map<String, ModeComparison> contextual,
+            int canarySelectedTrajectoryCount,
             Instant refreshedAt
+    ) {
+    }
+
+    private record CandidateDecision(
+            boolean multiAgent,
+            String source,
+            double confidence,
+            int evidenceSamples,
+            String reason
     ) {
     }
 }
