@@ -4,6 +4,7 @@ import com.fhs.aiagent.rl.AgentTrajectoryRepository;
 import com.fhs.aiagent.rl.model.AgentStep;
 import com.fhs.aiagent.rl.model.AgentStepType;
 import com.fhs.aiagent.rl.model.AgentTrajectory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -51,6 +52,7 @@ public class TrajectoryAwareRoutingPolicy {
 
     private volatile PolicySnapshot cachedSnapshot;
 
+    @Autowired
     public TrajectoryAwareRoutingPolicy(
             AgentTrajectoryRepository repository,
             @Value("${agent.rag.routing-policy.enabled:true}") boolean enabled,
