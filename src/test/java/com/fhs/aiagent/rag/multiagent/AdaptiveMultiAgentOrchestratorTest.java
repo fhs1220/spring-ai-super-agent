@@ -43,6 +43,38 @@ class AdaptiveMultiAgentOrchestratorTest {
     }
 
     @Test
+    void isolatedEvaluationCanForceBothRoutingArms() {
+        ChatModel chatModel = mock(ChatModel.class);
+        AdaptiveMultiAgentOrchestrator orchestrator =
+                new AdaptiveMultiAgentOrchestrator(
+                        ChatClient.builder(chatModel).build(),
+                        true,
+                        2,
+                        3
+                );
+
+        MultiAgentDecision forcedSingle = orchestrator.route(
+                "孩子、家务和预算需要共同计划。",
+                MultiAgentRoutingMode.FORCE_SINGLE
+        );
+        MultiAgentDecision forcedMulti = orchestrator.route(
+                "异地恋怎样沟通？",
+                MultiAgentRoutingMode.FORCE_MULTI
+        );
+
+        assertThat(forcedSingle.mode()).isEqualTo(
+                AdaptiveMultiAgentOrchestrator.SINGLE_MODE);
+        assertThat(forcedSingle.selectedDomains()).isEmpty();
+        assertThat(forcedMulti.mode()).isEqualTo(
+                AdaptiveMultiAgentOrchestrator.MULTI_MODE);
+        assertThat(forcedMulti.selectedDomains())
+                .containsExactly(AgentDomain.RELATIONSHIP);
+        assertThat(forcedMulti.policySource())
+                .isEqualTo("EVALUATION_OVERRIDE");
+        assertThat(forcedMulti.policyExplorationEligible()).isFalse();
+    }
+
+    @Test
     void runsSelectedSpecialistsInParallelAndSynthesizesTheirContributions() {
         ChatModel chatModel = mock(ChatModel.class);
         when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {

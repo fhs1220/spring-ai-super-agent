@@ -2,11 +2,13 @@ package com.fhs.aiagent.tools;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 
 
 @SpringBootTest
+@Tag("integration")
 class WebSearchToolTest {
 
     @Value("${search-api.api-key}")

@@ -2,6 +2,7 @@ package com.fhs.aiagent.rag;
 
 import com.fhs.aiagent.rl.AgentRewardCalculator;
 import com.fhs.aiagent.rl.InMemoryAgentTrajectoryRepository;
+import com.fhs.aiagent.rag.multiagent.MultiAgentRoutingMode;
 import com.fhs.aiagent.rl.model.AgentStepType;
 import com.fhs.aiagent.rl.model.AgenticRagResult;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,53 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AgenticRagServiceTest {
+
+    @Test
+    void evaluationRunDoesNotPolluteConversationOrTrainingTrajectories() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"夫妻沟通\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response("先暂停情绪，再表达感受并共同协商。[来源 1]"),
+                response("{\"grounded\":true,\"taskCompleted\":true,"
+                        + "\"revisedAnswer\":null}")
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "冲突后应冷静、表达感受并共同协商。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        InMemoryAgentTrajectoryRepository trajectoryRepository =
+                new InMemoryAgentTrajectoryRepository();
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory,
+                trajectoryRepository,
+                new AgentRewardCalculator()
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "夫妻争吵后怎么恢复沟通？",
+                "isolated-evaluation",
+                "你是恋爱心理顾问。",
+                AgentProgressListener.NONE,
+                AgenticRagService.RunOptions.evaluation(
+                        MultiAgentRoutingMode.FORCE_SINGLE)
+        );
+
+        assertThat(result.trace().executionMode()).isEqualTo("SINGLE_AGENT");
+        assertThat(result.trajectoryId()).isNotBlank();
+        assertThat(trajectoryRepository.findAll()).isEmpty();
+        assertThat(chatMemory.get("isolated-evaluation")).isEmpty();
+    }
 
     @Test
     void followsUpReverifiesAndStoresOnlyUserConversation() {

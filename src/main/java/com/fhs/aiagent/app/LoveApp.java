@@ -3,6 +3,7 @@ package com.fhs.aiagent.app;
 import com.fhs.aiagent.advisor.MyLoggerAdvisor;
 import com.fhs.aiagent.advisor.ReReadingAdvisor;
 import com.fhs.aiagent.rag.AgenticRagService;
+import com.fhs.aiagent.rag.multiagent.MultiAgentRoutingMode;
 import com.fhs.aiagent.rag.AgentProgressListener;
 import com.fhs.aiagent.rag.AppRagCustomAdvisorFactory;
 import com.fhs.aiagent.rag.QueryRewriter;
@@ -189,6 +190,22 @@ public class LoveApp {
         log.info("streaming agentic rag content: {}, trajectoryId: {}",
                 result.answer(), result.trajectoryId());
         return result;
+    }
+
+    /**
+     * 执行不写入会话记忆和训练轨迹的隔离基准评测。
+     */
+    public AgenticRagResult doChatWithAgenticRagEvaluation(
+            String message,
+            String chatId,
+            MultiAgentRoutingMode routingMode) {
+        return agenticRagService.doAgenticRagWithTrace(
+                message,
+                chatId,
+                SYSTEM_PROMPT,
+                AgentProgressListener.NONE,
+                AgenticRagService.RunOptions.evaluation(routingMode)
+        );
     }
 
     // AI 调用工具能力

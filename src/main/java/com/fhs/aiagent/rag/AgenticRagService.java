@@ -4,6 +4,7 @@ import com.fhs.aiagent.rag.multiagent.AdaptiveMultiAgentOrchestrator;
 import com.fhs.aiagent.rag.multiagent.AgentRequest;
 import com.fhs.aiagent.rag.multiagent.MultiAgentAnswer;
 import com.fhs.aiagent.rag.multiagent.MultiAgentDecision;
+import com.fhs.aiagent.rag.multiagent.MultiAgentRoutingMode;
 import com.fhs.aiagent.rag.multiagent.SpecialistContribution;
 import com.fhs.aiagent.rl.AgentRewardCalculator;
 import com.fhs.aiagent.rl.AgentTrajectoryRecorder;
@@ -184,6 +185,30 @@ public class AgenticRagService {
     }
 
     /**
+     * 隔离评测选项。评测可固定路由，但不得写入用户会话和在线学习轨迹。
+     */
+    public record RunOptions(
+            MultiAgentRoutingMode routingMode,
+            boolean persistConversation,
+            boolean persistTrajectory
+    ) {
+
+        public RunOptions {
+            routingMode = routingMode == null
+                    ? MultiAgentRoutingMode.ADAPTIVE
+                    : routingMode;
+        }
+
+        public static RunOptions online() {
+            return new RunOptions(MultiAgentRoutingMode.ADAPTIVE, true, true);
+        }
+
+        public static RunOptions evaluation(MultiAgentRoutingMode routingMode) {
+            return new RunOptions(routingMode, false, false);
+        }
+    }
+
+    /**
      * 执行 Agentic RAG 全流程。
      *
      * @param question     用户问题
@@ -209,10 +234,26 @@ public class AgenticRagService {
                                                  String chatId,
                                                  String systemPrompt,
                                                  AgentProgressListener progressListener) {
+        return doAgenticRagWithTrace(
+                question,
+                chatId,
+                systemPrompt,
+                progressListener,
+                RunOptions.online()
+        );
+    }
+
+    public AgenticRagResult doAgenticRagWithTrace(
+            String question,
+            String chatId,
+            String systemPrompt,
+            AgentProgressListener progressListener,
+            RunOptions options) {
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question must not be blank");
         }
 
+        RunOptions runOptions = options == null ? RunOptions.online() : options;
         AgentProgressListener listener = progressListener == null
                 ? AgentProgressListener.NONE
                 : progressListener;
@@ -230,7 +271,8 @@ public class AgenticRagService {
             String conversationHistory = formatConversation(chatMemory.get(conversationId));
 
             Instant stepStartedAt = recorder.startStep();
-            MultiAgentDecision multiAgentDecision = multiAgentOrchestrator.route(question);
+            MultiAgentDecision multiAgentDecision = multiAgentOrchestrator.route(
+                    question, runOptions.routingMode());
             recorder.record(
                     AgentStepType.ROUTE,
                     stepStartedAt,
@@ -505,16 +547,20 @@ public class AgenticRagService {
             String finalAnswer = reviewAndRevise(
                     question, context, draftAnswer, recorder, telemetry, listener);
             AgentRunCancelledException.throwIfCancelled();
-            chatMemory.add(conversationId, List.of(
-                    new UserMessage(question),
-                    new AssistantMessage(finalAnswer)
-            ));
+            if (runOptions.persistConversation()) {
+                chatMemory.add(conversationId, List.of(
+                        new UserMessage(question),
+                        new AssistantMessage(finalAnswer)
+                ));
+            }
 
             AgentRunMetrics runMetrics = telemetry.snapshot();
             AgentTrajectory trajectory = recorder.complete(finalAnswer, runMetrics);
             RewardBreakdown reward = rewardCalculator.calculate(trajectory);
             trajectory = trajectory.withRewardAndFeedback(reward, null, null);
-            trajectoryRepository.save(trajectory);
+            if (runOptions.persistTrajectory()) {
+                trajectoryRepository.save(trajectory);
+            }
             return new AgenticRagResult(
                     finalAnswer,
                     trajectory.trajectoryId(),
@@ -522,7 +568,9 @@ public class AgenticRagService {
                     buildTrace(trajectory, contextDocs.values(), finalAnswer)
             );
         } catch (AgentRunCancelledException exception) {
-            persistCancelledTrajectory(recorder, exception, telemetry.snapshot());
+            if (runOptions.persistTrajectory()) {
+                persistCancelledTrajectory(recorder, exception, telemetry.snapshot());
+            }
             emit(listener, "RUN", "CANCELLED", "运行已取消",
                     "已停止后续 Agent 和模型调用", List.of(), Instant.now());
             throw exception;
@@ -530,12 +578,16 @@ public class AgenticRagService {
             if (AgentRunCancelledException.isCancellation(exception)) {
                 AgentRunCancelledException cancelled = new AgentRunCancelledException(
                         "Agent run was cancelled", exception);
-                persistCancelledTrajectory(recorder, cancelled, telemetry.snapshot());
+                if (runOptions.persistTrajectory()) {
+                    persistCancelledTrajectory(recorder, cancelled, telemetry.snapshot());
+                }
                 emit(listener, "RUN", "CANCELLED", "运行已取消",
                         "已停止后续 Agent 和模型调用", List.of(), Instant.now());
                 throw cancelled;
             }
-            persistFailedTrajectory(recorder, exception, telemetry.snapshot());
+            if (runOptions.persistTrajectory()) {
+                persistFailedTrajectory(recorder, exception, telemetry.snapshot());
+            }
             throw exception;
         }
     }

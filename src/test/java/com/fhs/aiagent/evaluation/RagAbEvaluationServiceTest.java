@@ -18,7 +18,8 @@ class RagAbEvaluationServiceTest {
     Path tempDirectory;
 
     @Test
-    void loadsVersionedBenchmarkAlternatesOrderAndPersistsPassingReport() {
+    void loadsVersionedBenchmarkAlternatesOrderAndPersistsPassingReport()
+            throws Exception {
         List<RagEvaluationVariant> executionOrder = new ArrayList<>();
         RagEvaluationVariantExecutor executor = (variant, evaluationCase, chatId) -> {
             executionOrder.add(variant);
@@ -35,9 +36,13 @@ class RagAbEvaluationServiceTest {
                 );
             }
             String answer = candidateAnswer(evaluationCase.id());
-            String mode = "simple-long-distance".equals(evaluationCase.id())
-                    ? "SINGLE_AGENT"
-                    : "ADAPTIVE_MULTI_AGENT";
+            String mode = switch (variant) {
+                case AGENTIC_SINGLE_AGENT -> "SINGLE_AGENT";
+                case AGENTIC_MULTI_AGENT -> "ADAPTIVE_MULTI_AGENT";
+                case AGENTIC_RAG_V5 ->
+                        evaluationCase.expectedExecutionMode();
+                case TRADITIONAL_RAG -> "";
+            };
             return new RagVariantExecution(
                     variant,
                     answer,
@@ -56,10 +61,12 @@ class RagAbEvaluationServiceTest {
                 new DefaultResourceLoader(),
                 "classpath:evaluation/love-rag-ab.jsonl",
                 tempDirectory.toString(),
-                50,
+                100,
+                30,
                 0.72,
                 0.02,
-                0.8
+                0.8,
+                1.10
         );
         List<RagAbEvaluationService.Progress> progress = new ArrayList<>();
 
@@ -70,10 +77,14 @@ class RagAbEvaluationServiceTest {
                 progress::add
         );
 
-        assertThat(service.loadCases()).hasSize(12);
+        assertThat(service.loadCases()).hasSize(36);
         assertThat(executionOrder).containsExactly(
                 RagEvaluationVariant.TRADITIONAL_RAG,
+                RagEvaluationVariant.AGENTIC_SINGLE_AGENT,
+                RagEvaluationVariant.AGENTIC_MULTI_AGENT,
                 RagEvaluationVariant.AGENTIC_RAG_V5,
+                RagEvaluationVariant.AGENTIC_SINGLE_AGENT,
+                RagEvaluationVariant.AGENTIC_MULTI_AGENT,
                 RagEvaluationVariant.AGENTIC_RAG_V5,
                 RagEvaluationVariant.TRADITIONAL_RAG
         );
@@ -84,10 +95,19 @@ class RagAbEvaluationServiceTest {
         assertThat(report.regressionGatePassed()).isTrue();
         assertThat(report.candidate().totalTokens()).isEqualTo(200);
         assertThat(report.candidate().estimatedCostCny()).isEqualTo(0.004);
+        assertThat(report.forcedSingle().totalTokens()).isEqualTo(200);
+        assertThat(report.forcedMulti().totalTokens()).isEqualTo(200);
         assertThat(report.baseline().usageMeasuredCases()).isZero();
         assertThat(report.candidate().usageMeasuredCases()).isEqualTo(2);
+        assertThat(report.usageComparable()).isTrue();
+        assertThat(report.adaptiveOracleCostRatio()).isEqualTo(1);
+        assertThat(report.benchmarkFingerprint()).hasSize(64);
+        assertThat(report.tagSummaries()).isNotEmpty();
         assertThat(progress).hasSize(4);
         assertThat(Files.exists(Path.of(report.reportPath()))).isTrue();
+        assertThat(Files.readString(Path.of(report.markdownReportPath())))
+                .contains("四路基准报告", "AGENTIC_SINGLE_AGENT",
+                        "AGENTIC_MULTI_AGENT", "Regression gate: **PASS**");
     }
 
     private String candidateAnswer(String caseId) {

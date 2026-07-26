@@ -168,7 +168,9 @@ agent:
     api-enabled: ${AGENT_EVALUATION_API_ENABLED:false}
     benchmark: ${AGENT_EVALUATION_BENCHMARK:classpath:evaluation/love-rag-ab.jsonl}
     report-directory: ${AGENT_EVALUATION_REPORT_DIRECTORY:tmp/evaluation}
-    maximum-cases: ${AGENT_EVALUATION_MAXIMUM_CASES:50}
+    maximum-cases: ${AGENT_EVALUATION_MAXIMUM_CASES:100}
+    minimum-benchmark-cases: ${AGENT_EVALUATION_MINIMUM_BENCHMARK_CASES:30}
     candidate-minimum-score: ${AGENT_EVALUATION_CANDIDATE_MINIMUM_SCORE:0.72}
     maximum-quality-regression: ${AGENT_EVALUATION_MAXIMUM_QUALITY_REGRESSION:0.02}
     minimum-route-accuracy: ${AGENT_EVALUATION_MINIMUM_ROUTE_ACCURACY:0.8}
+    maximum-adaptive-oracle-cost-ratio: ${AGENT_EVALUATION_MAXIMUM_ADAPTIVE_ORACLE_COST_RATIO:1.10}

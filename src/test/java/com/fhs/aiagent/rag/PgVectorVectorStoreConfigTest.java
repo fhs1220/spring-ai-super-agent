@@ -2,6 +2,7 @@ package com.fhs.aiagent.rag;
 
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 @SpringBootTest
+@Tag("integration")
 class PgVectorVectorStoreConfigTest {
     @Resource(name = "pgVectorVectorStore")
     private VectorStore pgVectorVectorStore;

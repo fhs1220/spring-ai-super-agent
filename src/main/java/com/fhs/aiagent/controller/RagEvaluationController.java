@@ -59,6 +59,11 @@ public class RagEvaluationController {
         return evaluationService.loadCases();
     }
 
+    @GetMapping("/benchmark/metadata")
+    public RagAbEvaluationService.BenchmarkMetadata benchmarkMetadata() {
+        return evaluationService.benchmarkMetadata();
+    }
+
     public record StartEvaluationRequest(Integer maximumCases) {
     }
 }

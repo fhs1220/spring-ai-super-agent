@@ -1,33 +1,43 @@
 # Cortex AI Agent 智能体系统
 
-一个基于 **Spring Boot + Spring AI + RAG + MCP + Vue 3** 构建的全栈 AI Agent 系统，实现多轮对话、知识库问答、工具调用与实时流式响应。
+[![Interview v1 CI](https://github.com/fhs1220/spring-ai-super-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/fhs1220/spring-ai-super-agent/actions/workflows/ci.yml)
 
-该项目展示了如何构建一个现代化 **LLM 驱动应用（AI Agent）**，支持知识检索增强（RAG）、工具调用（Tool Calling）以及实时 AI 对话。
+一个基于 **Java 21、Spring Boot、Spring AI、Vue 3** 的全栈 Agentic RAG 系统，重点展示
+自适应多 Agent、可训练执行轨迹、离线策略评测、灰度质量守卫和安全渐进式发布。
+
+## Interview v1.0 完成标准
+
+- Agentic RAG：规划、混合检索、验证、补充检索、生成、审查与修正闭环；
+- 自适应多 Agent：单 Agent 快速路径、5 个专业 Agent、并行综合、超时/重试/熔断/降级；
+- Agent RL：奖励与遥测轨迹、时间留出验证、冻结策略资产、OPE 与漂移监控；
+- 发布控制：`SHADOW → 5% → 10% → 25% → 50% → ACTIVE`、三重授权和可审计回退；
+- 36 条固定基准，四路对照传统 RAG、强制单 Agent、强制多 Agent和自适应路由；
+- Java 21 可复现测试、显式集成测试分层、Vue 生产构建、GitHub Actions
+  和单命令工程验收。
+
+真实模型指标不会写死或伪造。运行全量评测后，JSON 与 Markdown 报告会落在
+`tmp/evaluation/`。面试讲解顺序见
+[`docs/INTERVIEW_GUIDE.md`](docs/INTERVIEW_GUIDE.md)，评测设计见
+[`docs/EVALUATION.md`](docs/EVALUATION.md)。
 
 ---
 
 # 项目架构
 
-```
-Vue 3 Frontend
-      │
-      │ HTTP / SSE
-      ▼
-Spring Boot Backend
-      │
-      ├── Chat Memory（对话记忆）
-      │
-      ├── RAG 知识库检索
-      │       └── PGVector 向量数据库
-      │
-      ├── Tool Calling
-      │       ├── Web Search
-      │       ├── Web Scraping
-      │       ├── File Operations
-      │       └── Terminal Commands
-      │
-      └── MCP 工具调用
-              └── 外部 MCP Server（如图片搜索）
+```mermaid
+flowchart LR
+    UI["Vue 3 / SSE Trace"] --> API["Spring Boot API"]
+    API --> RAG["Agentic RAG\nPlan → Retrieve → Verify → Revise"]
+    RAG --> ROUTER["Complexity + Learned Router"]
+    ROUTER --> SINGLE["Single Agent"]
+    ROUTER --> MULTI["Parallel Specialist Agents"]
+    MULTI --> BOARD["Shared Evidence Blackboard"]
+    BOARD --> REVIEW["Synthesis + Review"]
+    SINGLE --> REVIEW
+    REVIEW --> TRAJ["Reward / Trace / Telemetry"]
+    TRAJ --> REGISTRY["Temporal Holdout Policy Registry"]
+    REGISTRY --> RELEASE["SHADOW → CANARY → ACTIVE"]
+    RELEASE --> GUARD["Quality Guard / OPE / Drift Rollback"]
 ```
 
 ---
@@ -280,19 +290,23 @@ POST /api/agent-routing-policy/rollback
 ### RAG A/B 自动化评测与回归门禁
 
 项目内置版本化 JSONL 基准集
-`src/main/resources/evaluation/love-rag-ab.jsonl`，当前包含 12 类简单、复合、格式约束、
-拒绝无必要追问和关系安全样本。评测会比较：
+`src/main/resources/evaluation/love-rag-ab.jsonl`，当前包含 36 条简单、复合、格式约束、
+拒绝无必要追问、安全、提示注入和证据不足样本。每条样本执行四路对照：
 
-- A：`TRADITIONAL_RAG`，原查询重写 + 单次知识库问答；
-- B：`AGENTIC_RAG_V5`，当前学习型路由 Agentic RAG / 多 Agent 策略。
+- `TRADITIONAL_RAG`：查询重写 + 单次知识库问答；
+- `AGENTIC_SINGLE_AGENT`：强制单 Agent 的 Agentic RAG；
+- `AGENTIC_MULTI_AGENT`：强制多 Agent 的 Agentic RAG；
+- `AGENTIC_RAG_V5`：线上同款自适应路由。
 
-每条样本使用隔离的 `chatId`，并按样本序号交替 A/B 执行顺序。确定性评分覆盖任务要点、
-直接回答、`[来源 n]` 引用、禁用表达、长度约束和 B 版本的路由准确率。报告包含胜/平/负、
-平均质量、通过率、延迟、Token、成本、失败数和关键回归，并写入 `tmp/evaluation/<runId>.json`。
+评测使用隔离 `chatId`，按样本序号轮换四路执行顺序。强制模式不会写 Chat Memory 或 Agent
+RL 轨迹，避免测试数据污染训练。确定性评分覆盖任务要点、直接回答、`[来源 n]` 引用、禁用
+表达、长度约束和自适应路由准确率。报告包含四路质量、通过率、延迟、Token、成本、失败数、
+标签切片、自适应/同路由强制基线成本比及关键回归，并同时写入
+`tmp/evaluation/<runId>.json` 与 `.md`。
 传统 RAG 尚无完整 Token 遥测，因此报告会以 `usageMeasuredCases=0` 明确标记，而不会把它
 误解释为零成本。
 
-评测会调用两套流程并产生模型费用，API 默认关闭。仅在本地受信任环境开启：
+评测会调用四种变体并产生模型费用，API 默认关闭。仅在本地受信任环境开启：
 
 ```bash
 export AGENT_EVALUATION_API_ENABLED=true
@@ -313,15 +327,32 @@ Content-Type: application/json
 GET /api/agent-evaluation/ab-runs/{runId}
 DELETE /api/agent-evaluation/ab-runs/{runId}
 GET /api/agent-evaluation/benchmark
+GET /api/agent-evaluation/benchmark/metadata
 ```
 
-默认回归门禁要求 B 平均质量至少 `0.72`、相对 A 回退不超过 `0.02`、路由准确率至少
-`0.80`、没有单条关键回归且 B 的执行失败数不高于 A。门槛可通过以下环境变量调整：
+默认回归门禁要求自适应候选平均质量至少 `0.72`、相对传统基线回退不超过 `0.02`、
+路由准确率至少 `0.80`、没有单条关键回归且候选执行失败数不高于传统基线。
+门槛可通过以下环境变量调整：
 
 - `AGENT_EVALUATION_CANDIDATE_MINIMUM_SCORE`
 - `AGENT_EVALUATION_MAXIMUM_QUALITY_REGRESSION`
 - `AGENT_EVALUATION_MINIMUM_ROUTE_ACCURACY`
 - `AGENT_EVALUATION_MAXIMUM_CASES`
+- `AGENT_EVALUATION_MINIMUM_BENCHMARK_CASES`
+- `AGENT_EVALUATION_MAXIMUM_ADAPTIVE_ORACLE_COST_RATIO`
+
+不调用模型、不会产生费用的完整工程验收：
+
+```bash
+bash verify-interview-v1.sh
+```
+
+默认测试层只包含不依赖真实模型、MCP、外部网络或 PGVector 的 89 项可复现测试；
+依赖外部服务的测试统一标记为 JUnit `integration`，应在相应服务和密钥就绪后显式执行：
+
+```bash
+./mvnw -DexcludedGroups= -Dgroups=integration test
+```
 
 ### Agent RL（第一阶段）
 
