@@ -11,6 +11,7 @@ import com.fhs.aiagent.rag.multiagent.RoutingPolicyQualityGuard;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyOffPolicyEvaluator;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyDriftMonitor;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyProgressiveDeliveryAdvisor;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyProgressiveDeliveryExecutor;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryService;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryState;
 import com.fhs.aiagent.rag.run.AgentRunStatus;
@@ -71,6 +72,9 @@ public class AiController {
     private final RoutingPolicyProgressiveDeliveryAdvisor
             routingPolicyProgressiveDeliveryAdvisor;
 
+    private final RoutingPolicyProgressiveDeliveryExecutor
+            routingPolicyProgressiveDeliveryExecutor;
+
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     private final Map<String, ActiveRun> activeRuns = new ConcurrentHashMap<>();
@@ -86,7 +90,9 @@ public class AiController {
                         RoutingPolicyOffPolicyEvaluator routingPolicyOffPolicyEvaluator,
                         RoutingPolicyDriftMonitor routingPolicyDriftMonitor,
                         RoutingPolicyProgressiveDeliveryAdvisor
-                                routingPolicyProgressiveDeliveryAdvisor) {
+                                routingPolicyProgressiveDeliveryAdvisor,
+                        RoutingPolicyProgressiveDeliveryExecutor
+                                routingPolicyProgressiveDeliveryExecutor) {
         this.loveApp = loveApp;
         this.agentRlService = agentRlService;
         this.bailianRlDatasetService = bailianRlDatasetService;
@@ -99,6 +105,8 @@ public class AiController {
         this.routingPolicyDriftMonitor = routingPolicyDriftMonitor;
         this.routingPolicyProgressiveDeliveryAdvisor =
                 routingPolicyProgressiveDeliveryAdvisor;
+        this.routingPolicyProgressiveDeliveryExecutor =
+                routingPolicyProgressiveDeliveryExecutor;
     }
 
     @PostMapping("/chat/agentic-rag")
@@ -253,6 +261,12 @@ public class AiController {
     public RoutingPolicyProgressiveDeliveryAdvisor.ProgressiveDeliveryReport
             routingPolicyProgressiveDelivery() {
         return routingPolicyProgressiveDeliveryAdvisor.recommend();
+    }
+
+    @GetMapping("/agents/routing-policy/progressive-delivery/automation")
+    public RoutingPolicyProgressiveDeliveryExecutor.AutomationStatus
+            routingPolicyProgressiveDeliveryAutomation() {
+        return routingPolicyProgressiveDeliveryExecutor.status();
     }
 
     @PreDestroy

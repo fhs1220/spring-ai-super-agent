@@ -8,6 +8,7 @@ import type {
   RoutingPolicyOffPolicyEvaluation,
   RoutingPolicyDriftReport,
   RoutingPolicyProgressiveDelivery,
+  RoutingPolicyProgressiveDeliveryAutomation,
   RoutingPolicyStatus,
 } from '../api'
 
@@ -20,6 +21,8 @@ const props = defineProps<{
   routingPolicyOffPolicyEvaluation: RoutingPolicyOffPolicyEvaluation | null
   routingPolicyDrift: RoutingPolicyDriftReport | null
   routingPolicyProgressiveDelivery: RoutingPolicyProgressiveDelivery | null
+  routingPolicyProgressiveDeliveryAutomation:
+    RoutingPolicyProgressiveDeliveryAutomation | null
   loading: boolean
   error: string
 }>()
@@ -127,6 +130,27 @@ const progressiveLabel = computed(() => {
   return props.routingPolicyProgressiveDelivery
     ? labels[props.routingPolicyProgressiveDelivery.state]
     : '加载中'
+})
+const automationLabel = computed(() => {
+  const automation = props.routingPolicyProgressiveDeliveryAutomation
+  if (!automation) return '加载中'
+  if (automation.emergencyStop) return '紧急停止'
+  if (!automation.executorConfigured) return '安全关闭'
+  if (!automation.control.automationEnabled) return '等待授权'
+  if (automation.control.paused) return '已暂停'
+  if (automation.recommendation.dryRun) return 'DRY RUN'
+  return automation.eligibleToExecute ? '自动执行就绪' : '等待门禁'
+})
+const lastExecutionLabel = computed(() => {
+  const outcome = props.routingPolicyProgressiveDeliveryAutomation
+    ?.lastExecution?.outcome
+  const labels = {
+    APPLIED: '晋级成功',
+    FAILED: '执行失败',
+    EMERGENCY_ROLLBACK: '紧急回退',
+    MANUAL_ROLLBACK: '人工回退',
+  }
+  return outcome ? labels[outcome] : '暂无真实变更'
 })
 const progressiveStages = computed(() => [
   { label: 'SHADOW', rate: 0 },
@@ -281,6 +305,59 @@ function shortVersion(value: string | undefined): string {
         {{
           routingPolicyProgressiveDelivery.blockers[0]
           ?? routingPolicyProgressiveDelivery.reason
+        }}
+      </p>
+      <div class="registry-line">
+        <span>自动发布</span>
+        <strong
+          :class="{
+            'artifact-validated':
+              routingPolicyProgressiveDeliveryAutomation?.eligibleToExecute,
+            'artifact-rejected':
+              routingPolicyProgressiveDeliveryAutomation?.emergencyStop
+              || routingPolicyProgressiveDeliveryAutomation
+                ?.lastExecution?.outcome === 'FAILED',
+          }"
+        >
+          {{ automationLabel }}
+        </strong>
+      </div>
+      <div class="artifact-meta">
+        <span>
+          主开关
+          {{
+            routingPolicyProgressiveDeliveryAutomation?.executorConfigured
+              ? 'ON'
+              : 'OFF'
+          }}
+        </span>
+        <span>
+          授权
+          {{
+            routingPolicyProgressiveDeliveryAutomation?.control.automationEnabled
+              ? 'ON'
+              : 'OFF'
+          }}
+        </span>
+        <span>
+          {{
+            routingPolicyProgressiveDeliveryAutomation?.control.paused
+              ? 'PAUSED'
+              : 'RUNNING'
+          }}
+        </span>
+        <span>最近 {{ lastExecutionLabel }}</span>
+      </div>
+      <p
+        v-if="
+          routingPolicyProgressiveDeliveryAutomation
+          && !routingPolicyProgressiveDeliveryAutomation.eligibleToExecute
+        "
+        class="delivery-reason"
+      >
+        {{
+          routingPolicyProgressiveDeliveryAutomation.blockers[0]
+          ?? routingPolicyProgressiveDeliveryAutomation.reason
         }}
       </p>
       <div

@@ -51,7 +51,7 @@ fi
 
 note "[1/3] 运行专项测试..."
 sh mvnw "${MVN_ARGS[@]}" \
-  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,RoutingPolicyRegistryServiceTest,RoutingPolicyTemporalHoldoutEvaluatorTest,RoutingPolicyProgressiveDeliveryAdvisorTest,RoutingPolicyOffPolicyEvaluatorTest,RoutingPolicyDriftMonitorTest,FileRoutingPolicyRegistryRepositoryTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
+  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,RoutingPolicyRegistryServiceTest,RoutingPolicyTemporalHoldoutEvaluatorTest,RoutingPolicyProgressiveDeliveryAdvisorTest,RoutingPolicyProgressiveDeliveryExecutorTest,RoutingPolicyOffPolicyEvaluatorTest,RoutingPolicyDriftMonitorTest,FileRoutingPolicyRegistryRepositoryTest,FileRoutingPolicyDeploymentRepositoryTest,FileProgressiveDeliveryAutomationRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
   test >> "$LOG" 2>&1
 TEST_EXIT=$?
 note "[1/3] 测试退出码: $TEST_EXIT"
@@ -69,6 +69,7 @@ fi
 SERVER_PORT="$VERIFY_PORT" \
   AGENT_RAG_ROUTING_DEPLOYMENT_STATE_FILE="$VERIFY_STATE_DIR/deployment.json" \
   AGENT_RAG_ROUTING_REGISTRY_STATE_FILE="$VERIFY_STATE_DIR/registry.json" \
+  AGENT_RAG_ROUTING_PROGRESSIVE_STATE_FILE="$VERIFY_STATE_DIR/progressive-delivery.json" \
   AGENT_RL_STORAGE_DIRECTORY="$VERIFY_STATE_DIR/trajectories" \
   AGENT_EVALUATION_API_ENABLED=true SPRING_AI_MCP_CLIENT_ENABLED=false \
   sh mvnw -o "${MVN_ARGS[@]}" \
@@ -108,6 +109,9 @@ echo "drift-body: $DRIFT_BODY" >> "$LOG"
 PROGRESSIVE_BODY=$(curl -sf \
   "$BASE_URL/ai/love_app/agents/routing-policy/progressive-delivery")
 echo "progressive-body: $PROGRESSIVE_BODY" >> "$LOG"
+AUTOMATION_BODY=$(curl -sf \
+  "$BASE_URL/ai/love_app/agents/routing-policy/progressive-delivery/automation")
+echo "automation-body: $AUTOMATION_BODY" >> "$LOG"
 MGMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   "$BASE_URL/agent-routing-policy/deployments")
 note "management-api http code (期望 404): $MGMT_CODE"
@@ -135,11 +139,16 @@ echo "$PROGRESSIVE_BODY" | grep -q '"state":"WAITING_FOR_ARTIFACT"' \
   && echo "$PROGRESSIVE_BODY" | grep -q '"dryRun":true' \
   && PROGRESSIVE_OK=1 || PROGRESSIVE_OK=0
 note "渐进式发布顾问 DRY RUN: $([ $PROGRESSIVE_OK -eq 1 ] && echo OK || echo FAIL)"
+echo "$AUTOMATION_BODY" | grep -q '"executorConfigured":false' \
+  && echo "$AUTOMATION_BODY" | grep -q '"automationEnabled":false' \
+  && echo "$AUTOMATION_BODY" | grep -q '"dryRun":true' \
+  && AUTOMATION_OK=1 || AUTOMATION_OK=0
+note "自动发布默认安全关闭: $([ $AUTOMATION_OK -eq 1 ] && echo OK || echo FAIL)"
 
 if [ $SHADOW_OK -eq 1 ] && [ $GUARD_OK -eq 1 ] \
   && [ $REGISTRY_OK -eq 1 ] && [ $SCHEMA_OK -eq 1 ] \
   && [ $HOLDOUT_OK -eq 1 ] && [ $OPE_OK -eq 1 ] && [ $DRIFT_OK -eq 1 ] \
-  && [ $PROGRESSIVE_OK -eq 1 ] \
+  && [ $PROGRESSIVE_OK -eq 1 ] && [ $AUTOMATION_OK -eq 1 ] \
   && [ "$MGMT_CODE" = "404" ]; then
   note "RESULT: ALL_PASSED"
   exit 0

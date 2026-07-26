@@ -5,6 +5,8 @@ import com.fhs.aiagent.rag.multiagent.RoutingPolicyDeploymentState;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyMode;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyOffPolicyEvaluator;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyQualityGuard;
+import com.fhs.aiagent.rag.multiagent.ProgressiveDeliveryAutomationState;
+import com.fhs.aiagent.rag.multiagent.RoutingPolicyProgressiveDeliveryExecutor;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryCoordinator;
 import com.fhs.aiagent.rag.multiagent.RoutingPolicyRegistryService;
 import com.fhs.aiagent.rag.multiagent.TrajectoryAwareRoutingPolicy;
@@ -38,18 +40,24 @@ public class RoutingPolicyController {
 
     private final RoutingPolicyOffPolicyEvaluator offPolicyEvaluator;
 
+    private final RoutingPolicyProgressiveDeliveryExecutor
+            progressiveDeliveryExecutor;
+
     public RoutingPolicyController(RoutingPolicyDeploymentService deploymentService,
                                    TrajectoryAwareRoutingPolicy routingPolicy,
                                    RoutingPolicyQualityGuard qualityGuard,
                                    RoutingPolicyRegistryService registryService,
                                    RoutingPolicyRegistryCoordinator registryCoordinator,
-                                   RoutingPolicyOffPolicyEvaluator offPolicyEvaluator) {
+                                   RoutingPolicyOffPolicyEvaluator offPolicyEvaluator,
+                                   RoutingPolicyProgressiveDeliveryExecutor
+                                           progressiveDeliveryExecutor) {
         this.deploymentService = deploymentService;
         this.routingPolicy = routingPolicy;
         this.qualityGuard = qualityGuard;
         this.registryService = registryService;
         this.registryCoordinator = registryCoordinator;
         this.offPolicyEvaluator = offPolicyEvaluator;
+        this.progressiveDeliveryExecutor = progressiveDeliveryExecutor;
     }
 
     @GetMapping("/deployments")
@@ -126,6 +134,47 @@ public class RoutingPolicyController {
         }
     }
 
+    @GetMapping("/progressive-delivery/automation")
+    public RoutingPolicyProgressiveDeliveryExecutor.AutomationStatus
+            progressiveDeliveryAutomation() {
+        return progressiveDeliveryExecutor.status();
+    }
+
+    @PostMapping("/progressive-delivery/control")
+    public ProgressiveDeliveryAutomationState updateProgressiveDeliveryControl(
+            @RequestBody ProgressiveDeliveryControlRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "request is required");
+        }
+        try {
+            return progressiveDeliveryExecutor.updateControl(
+                    request.automationEnabled(),
+                    request.paused(),
+                    request.rollbackToShadow(),
+                    request.reason()
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, exception.getMessage());
+        }
+    }
+
+    @PostMapping("/progressive-delivery/run")
+    public RoutingPolicyProgressiveDeliveryExecutor.ExecutionResult
+            runProgressiveDelivery(
+                    @RequestBody(required = false)
+                    ProgressiveDeliveryRunRequest request) {
+        return progressiveDeliveryExecutor.runOnce(
+                request == null || request.trigger() == null
+                        ? "management-api"
+                        : request.trigger()
+        );
+    }
+
     public record DeploymentRequest(
             RoutingPolicyMode mode,
             Double canaryRate,
@@ -135,5 +184,16 @@ public class RoutingPolicyController {
     }
 
     public record RollbackRequest(String reason) {
+    }
+
+    public record ProgressiveDeliveryControlRequest(
+            Boolean automationEnabled,
+            Boolean paused,
+            boolean rollbackToShadow,
+            String reason
+    ) {
+    }
+
+    public record ProgressiveDeliveryRunRequest(String trigger) {
     }
 }

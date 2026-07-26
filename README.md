@@ -169,7 +169,12 @@ SINGLE/MULTI 双动作支持度、重要性权重、有效样本量和奖励提�
 `SHADOW → 5% → 10% → 25% → 50% → ACTIVE`。每次扩大灰度都会创建新的部署版本，
 并从零收集该阶段的灰度/对照证据；默认还需等待 30 分钟冷却期。前四个灰度阶段要求在线
 质量守卫健康，最终晋升 ACTIVE 还要求 OPE 通过。顾问默认处于 `DRY RUN`，只输出下一阶段、
-门禁状态和阻塞原因，不会自动改变真实流量；实际发布仍需显式调用受保护的管理接口。
+门禁状态和阻塞原因，不会改变真实流量。
+
+自动发布执行器能够按固定阶段定时晋级，并持久化控制状态和有界审计历史。为防止误发布，
+真实执行必须同时满足三道授权：`DRY RUN=false`、部署级 `AUTO APPLY=true`、受保护管理接口
+中的持久化自动执行开关为 `true`。执行前还会比较建议所基于的部署版本，旧建议不会覆盖新
+部署。紧急停止会把 CANARY/ACTIVE 自动回退到 SHADOW；暂停时也可选择立即回退。
 
 查看不包含用户问题的策略状态：
 
@@ -180,7 +185,27 @@ GET /api/ai/love_app/agents/routing-policy/registry
 GET /api/ai/love_app/agents/routing-policy/off-policy-evaluation
 GET /api/ai/love_app/agents/routing-policy/drift
 GET /api/ai/love_app/agents/routing-policy/progressive-delivery
+GET /api/ai/love_app/agents/routing-policy/progressive-delivery/automation
 ```
+
+管理接口仍由 `AGENT_RAG_ROUTING_MANAGEMENT_API_ENABLED=true` 单独保护。启用自动发布后，
+再显式写入持久化授权：
+
+```http
+POST /api/agent-routing-policy/progressive-delivery/control
+Content-Type: application/json
+
+{
+  "automationEnabled": true,
+  "paused": false,
+  "rollbackToShadow": false,
+  "reason": "approved rollout"
+}
+```
+
+可用 `POST /api/agent-routing-policy/progressive-delivery/run` 立即执行一次门禁评估；它不会
+绕过任何开关。若需停止，优先将持久化控制设为 `paused=true`；生产紧急停止可设置
+`AGENT_RAG_ROUTING_PROGRESSIVE_EMERGENCY_STOP=true`，应用下一次调度会自动降级。
 
 主要配置：
 
@@ -207,6 +232,12 @@ GET /api/ai/love_app/agents/routing-policy/progressive-delivery
 - `AGENT_RAG_ROUTING_PROGRESSIVE_DRY_RUN`（默认 `true`）
 - `AGENT_RAG_ROUTING_PROGRESSIVE_STAGES`（默认 `0.05,0.10,0.25,0.50`）
 - `AGENT_RAG_ROUTING_PROGRESSIVE_COOLDOWN_MINUTES`（默认 `30`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_AUTO_APPLY_ENABLED`（默认 `false`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_AUTOMATION_DEFAULT`（默认 `false`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_EMERGENCY_STOP`（默认 `false`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_STATE_FILE`
+- `AGENT_RAG_ROUTING_PROGRESSIVE_INTERVAL_MS`（默认 `60000`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_MAX_AUDIT_HISTORY`（默认 `100`）
 - `AGENT_RAG_ROUTING_OPE_MINIMUM_SAMPLES_PER_ACTION`（默认 `20`）
 - `AGENT_RAG_ROUTING_OPE_MINIMUM_EFFECTIVE_SAMPLE_SIZE`（默认 `20`）
 - `AGENT_RAG_ROUTING_OPE_MAXIMUM_IMPORTANCE_WEIGHT`（默认 `20`）

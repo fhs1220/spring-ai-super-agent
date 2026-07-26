@@ -357,6 +357,47 @@ export interface RoutingPolicyProgressiveDelivery {
   reason: string
 }
 
+export type ProgressiveDeliveryExecutionOutcome =
+  | 'APPLIED'
+  | 'FAILED'
+  | 'EMERGENCY_ROLLBACK'
+  | 'MANUAL_ROLLBACK'
+
+export interface ProgressiveDeliveryExecutionAudit {
+  executionId: string
+  trigger: string
+  sourceDeploymentVersion: string
+  resultingDeploymentVersion: string
+  sourceMode: RoutingPolicyMode
+  sourceTrafficRate: number
+  targetMode: RoutingPolicyMode
+  targetTrafficRate: number
+  policyArtifactVersion: string
+  outcome: ProgressiveDeliveryExecutionOutcome
+  executedAt: string
+  reason: string
+}
+
+export interface ProgressiveDeliveryAutomationControl {
+  automationEnabled: boolean
+  paused: boolean
+  updatedAt: string
+  reason: string
+  history: ProgressiveDeliveryExecutionAudit[]
+}
+
+export interface RoutingPolicyProgressiveDeliveryAutomation {
+  executorConfigured: boolean
+  emergencyStop: boolean
+  control: ProgressiveDeliveryAutomationControl
+  recommendation: RoutingPolicyProgressiveDelivery
+  eligibleToExecute: boolean
+  lastExecution: ProgressiveDeliveryExecutionAudit | null
+  blockers: string[]
+  evaluatedAt: string
+  reason: string
+}
+
 export interface RoutingModeStats {
   sampleCount: number
   successfulCount: number
@@ -589,6 +630,14 @@ export async function fetchRoutingPolicyProgressiveDelivery():
   Promise<RoutingPolicyProgressiveDelivery> {
   const response = await http.get<RoutingPolicyProgressiveDelivery>(
     '/ai/love_app/agents/routing-policy/progressive-delivery',
+  )
+  return response.data
+}
+
+export async function fetchRoutingPolicyProgressiveDeliveryAutomation():
+  Promise<RoutingPolicyProgressiveDeliveryAutomation> {
+  const response = await http.get<RoutingPolicyProgressiveDeliveryAutomation>(
+    '/ai/love_app/agents/routing-policy/progressive-delivery/automation',
   )
   return response.data
 }
