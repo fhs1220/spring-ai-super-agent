@@ -113,6 +113,12 @@ agent:
         validation-ratio: ${AGENT_RAG_ROUTING_HOLDOUT_VALIDATION_RATIO:0.25}
         minimum-samples-per-mode: ${AGENT_RAG_ROUTING_HOLDOUT_MINIMUM_SAMPLES_PER_MODE:4}
         minimum-utility-lift-lower-bound: ${AGENT_RAG_ROUTING_HOLDOUT_MINIMUM_LIFT_LCB:0.0}
+      progressive-delivery:
+        # 默认只输出发布建议；任何真实流量变更仍需调用受保护的管理接口。
+        enabled: ${AGENT_RAG_ROUTING_PROGRESSIVE_ENABLED:true}
+        dry-run: ${AGENT_RAG_ROUTING_PROGRESSIVE_DRY_RUN:true}
+        canary-stages: ${AGENT_RAG_ROUTING_PROGRESSIVE_STAGES:0.05,0.10,0.25,0.50}
+        cooldown-minutes: ${AGENT_RAG_ROUTING_PROGRESSIVE_COOLDOWN_MINUTES:30}
       off-policy:
         minimum-samples-per-action: ${AGENT_RAG_ROUTING_OPE_MINIMUM_SAMPLES_PER_ACTION:20}
         minimum-effective-sample-size: ${AGENT_RAG_ROUTING_OPE_MINIMUM_EFFECTIVE_SAMPLE_SIZE:20}

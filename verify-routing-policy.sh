@@ -51,7 +51,7 @@ fi
 
 note "[1/3] 运行专项测试..."
 sh mvnw "${MVN_ARGS[@]}" \
-  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,RoutingPolicyRegistryServiceTest,RoutingPolicyTemporalHoldoutEvaluatorTest,RoutingPolicyOffPolicyEvaluatorTest,RoutingPolicyDriftMonitorTest,FileRoutingPolicyRegistryRepositoryTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
+  -Dtest=TrajectoryAwareRoutingPolicyTest,RoutingPolicyDeploymentServiceTest,RoutingPolicyQualityGuardTest,RoutingPolicyRegistryServiceTest,RoutingPolicyTemporalHoldoutEvaluatorTest,RoutingPolicyProgressiveDeliveryAdvisorTest,RoutingPolicyOffPolicyEvaluatorTest,RoutingPolicyDriftMonitorTest,FileRoutingPolicyRegistryRepositoryTest,FileRoutingPolicyDeploymentRepositoryTest,AdaptiveMultiAgentOrchestratorTest,AgenticRagServiceTest \
   test >> "$LOG" 2>&1
 TEST_EXIT=$?
 note "[1/3] 测试退出码: $TEST_EXIT"
@@ -105,6 +105,9 @@ OPE_BODY=$(curl -sf \
 echo "off-policy-body: $OPE_BODY" >> "$LOG"
 DRIFT_BODY=$(curl -sf "$BASE_URL/ai/love_app/agents/routing-policy/drift")
 echo "drift-body: $DRIFT_BODY" >> "$LOG"
+PROGRESSIVE_BODY=$(curl -sf \
+  "$BASE_URL/ai/love_app/agents/routing-policy/progressive-delivery")
+echo "progressive-body: $PROGRESSIVE_BODY" >> "$LOG"
 MGMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   "$BASE_URL/agent-routing-policy/deployments")
 note "management-api http code (期望 404): $MGMT_CODE"
@@ -128,10 +131,15 @@ note "离线策略评测冷启动: $([ $OPE_OK -eq 1 ] && echo OK || echo FAIL)"
 echo "$DRIFT_BODY" | grep -q '"state":"INACTIVE"' \
   && DRIFT_OK=1 || DRIFT_OK=0
 note "ACTIVE 漂移监控待命: $([ $DRIFT_OK -eq 1 ] && echo OK || echo FAIL)"
+echo "$PROGRESSIVE_BODY" | grep -q '"state":"WAITING_FOR_ARTIFACT"' \
+  && echo "$PROGRESSIVE_BODY" | grep -q '"dryRun":true' \
+  && PROGRESSIVE_OK=1 || PROGRESSIVE_OK=0
+note "渐进式发布顾问 DRY RUN: $([ $PROGRESSIVE_OK -eq 1 ] && echo OK || echo FAIL)"
 
 if [ $SHADOW_OK -eq 1 ] && [ $GUARD_OK -eq 1 ] \
   && [ $REGISTRY_OK -eq 1 ] && [ $SCHEMA_OK -eq 1 ] \
   && [ $HOLDOUT_OK -eq 1 ] && [ $OPE_OK -eq 1 ] && [ $DRIFT_OK -eq 1 ] \
+  && [ $PROGRESSIVE_OK -eq 1 ] \
   && [ "$MGMT_CODE" = "404" ]; then
   note "RESULT: ALL_PASSED"
   exit 0

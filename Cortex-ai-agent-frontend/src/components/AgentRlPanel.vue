@@ -7,6 +7,7 @@ import type {
   RoutingPolicyRegistry,
   RoutingPolicyOffPolicyEvaluation,
   RoutingPolicyDriftReport,
+  RoutingPolicyProgressiveDelivery,
   RoutingPolicyStatus,
 } from '../api'
 
@@ -18,6 +19,7 @@ const props = defineProps<{
   routingPolicyRegistry: RoutingPolicyRegistry | null
   routingPolicyOffPolicyEvaluation: RoutingPolicyOffPolicyEvaluation | null
   routingPolicyDrift: RoutingPolicyDriftReport | null
+  routingPolicyProgressiveDelivery: RoutingPolicyProgressiveDelivery | null
   loading: boolean
   error: string
 }>()
@@ -111,6 +113,38 @@ const driftLabel = computed(() => {
     : '加载中'
 })
 
+const progressiveLabel = computed(() => {
+  const labels = {
+    DISABLED: '发布顾问关闭',
+    WAITING_FOR_ARTIFACT: '等待候选资产',
+    COOLDOWN: '阶段冷却中',
+    COLLECTING: '阶段采样中',
+    READY: '可以晋级',
+    HOLD: '暂停晋级',
+    COMPLETE: '发布完成',
+    ERROR: '建议异常',
+  }
+  return props.routingPolicyProgressiveDelivery
+    ? labels[props.routingPolicyProgressiveDelivery.state]
+    : '加载中'
+})
+const progressiveStages = computed(() => [
+  { label: 'SHADOW', rate: 0 },
+  ...(props.routingPolicyProgressiveDelivery?.canaryStages ?? [])
+    .map((rate) => ({ label: percent(rate), rate })),
+  { label: 'ACTIVE', rate: 1 },
+])
+const currentProgressiveStage = computed(() => {
+  const delivery = props.routingPolicyProgressiveDelivery
+  if (!delivery || delivery.currentMode === 'OFF' || delivery.currentMode === 'SHADOW') {
+    return 0
+  }
+  if (delivery.currentMode === 'ACTIVE') {
+    return progressiveStages.value.length - 1
+  }
+  return Math.max(1, delivery.currentStageIndex + 1)
+})
+
 const latestArtifact = computed(() => props.routingPolicyRegistry?.artifacts[0] ?? null)
 const contextualRuleCount = computed(
   () => Object.keys(latestArtifact.value?.contextualRules ?? {}).length,
@@ -194,6 +228,61 @@ function shortVersion(value: string | undefined): string {
         </span>
         <span v-else>观察 {{ routingPolicy?.observedTrajectoryCount ?? 0 }}</span>
       </div>
+      <div class="registry-line">
+        <span>渐进式发布</span>
+        <strong
+          :class="{
+            'artifact-validated': routingPolicyProgressiveDelivery?.state === 'READY'
+              || routingPolicyProgressiveDelivery?.state === 'COMPLETE',
+            'artifact-rejected': routingPolicyProgressiveDelivery?.state === 'HOLD'
+              || routingPolicyProgressiveDelivery?.state === 'ERROR',
+          }"
+        >
+          {{ progressiveLabel }}
+          {{ routingPolicyProgressiveDelivery?.dryRun ? '· DRY RUN' : '' }}
+        </strong>
+      </div>
+      <div class="delivery-stages" aria-label="渐进式发布阶段">
+        <span
+          v-for="(stage, index) in progressiveStages"
+          :key="`${stage.label}-${stage.rate}`"
+          :class="{
+            passed: index < currentProgressiveStage,
+            current: index === currentProgressiveStage,
+          }"
+        >
+          {{ stage.label }}
+        </span>
+      </div>
+      <div class="artifact-meta">
+        <span>
+          当前 {{ percent(routingPolicyProgressiveDelivery?.currentTrafficRate) }}
+        </span>
+        <span>
+          建议
+          {{ routingPolicyProgressiveDelivery?.recommendedMode ?? '—' }}
+          {{ percent(routingPolicyProgressiveDelivery?.recommendedTrafficRate) }}
+        </span>
+        <span v-if="routingPolicyProgressiveDelivery?.currentMode === 'CANARY'">
+          灰度 {{ routingPolicyProgressiveDelivery.canarySamples }}
+          / {{ routingPolicyProgressiveDelivery.minimumCanarySamples }}
+          · 对照 {{ routingPolicyProgressiveDelivery.controlSamples }}
+          / {{ routingPolicyProgressiveDelivery.minimumControlSamples }}
+        </span>
+      </div>
+      <p
+        v-if="
+          routingPolicyProgressiveDelivery
+          && routingPolicyProgressiveDelivery.state !== 'READY'
+          && routingPolicyProgressiveDelivery.state !== 'COMPLETE'
+        "
+        class="delivery-reason"
+      >
+        {{
+          routingPolicyProgressiveDelivery.blockers[0]
+          ?? routingPolicyProgressiveDelivery.reason
+        }}
+      </p>
       <div
         class="guard-line"
         :class="`guard-${routingPolicyQualityGuard?.state.toLowerCase() ?? 'loading'}`"
@@ -616,6 +705,38 @@ h2 {
 }
 .registry-line strong.artifact-rejected {
   color: #fca5a5;
+}
+.delivery-stages {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+.delivery-stages span {
+  flex: 1;
+  overflow: hidden;
+  padding: 5px 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font: 0.48rem/1 var(--mono);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-stages span.passed {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: rgba(45, 212, 191, 0.05);
+}
+.delivery-stages span.current {
+  border-color: rgba(245, 199, 107, 0.55);
+  color: #f5c76b;
+  background: rgba(245, 199, 107, 0.08);
+}
+.delivery-reason {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 0.62rem;
 }
 .artifact-line {
   margin-top: 7px;

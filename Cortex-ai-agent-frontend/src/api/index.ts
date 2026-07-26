@@ -318,6 +318,45 @@ export interface RoutingPolicyDriftReport {
   reason: string
 }
 
+export type ProgressiveDeliveryState =
+  | 'DISABLED'
+  | 'WAITING_FOR_ARTIFACT'
+  | 'COOLDOWN'
+  | 'COLLECTING'
+  | 'READY'
+  | 'HOLD'
+  | 'COMPLETE'
+  | 'ERROR'
+
+export interface RoutingPolicyProgressiveDelivery {
+  enabled: boolean
+  dryRun: boolean
+  state: ProgressiveDeliveryState
+  deploymentVersion: string
+  currentMode: RoutingPolicyMode
+  currentTrafficRate: number
+  currentStageIndex: number
+  canaryStages: number[]
+  recommendedMode: RoutingPolicyMode
+  recommendedTrafficRate: number
+  recommendedStageIndex: number
+  policyArtifactVersion: string
+  temporalHoldoutPassed: boolean
+  cooldownPassed: boolean
+  cooldownUntil: string
+  qualityGuardState: RoutingPolicyGuardState
+  canarySamples: number
+  controlSamples: number
+  minimumCanarySamples: number
+  minimumControlSamples: number
+  offPolicyState: OffPolicyEvaluationState
+  offPolicyHealthy: boolean
+  readyToAdvance: boolean
+  blockers: string[]
+  evaluatedAt: string
+  reason: string
+}
+
 export interface RoutingModeStats {
   sampleCount: number
   successfulCount: number
@@ -542,6 +581,14 @@ export async function fetchRoutingPolicyDrift():
   Promise<RoutingPolicyDriftReport> {
   const response = await http.get<RoutingPolicyDriftReport>(
     '/ai/love_app/agents/routing-policy/drift',
+  )
+  return response.data
+}
+
+export async function fetchRoutingPolicyProgressiveDelivery():
+  Promise<RoutingPolicyProgressiveDelivery> {
+  const response = await http.get<RoutingPolicyProgressiveDelivery>(
+    '/ai/love_app/agents/routing-policy/progressive-delivery',
   )
   return response.data
 }

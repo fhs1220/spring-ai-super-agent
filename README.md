@@ -165,6 +165,12 @@ SINGLE/MULTI 双动作支持度、重要性权重、有效样本量和奖励提�
 没有行为概率时不会被误用于反事实评测；评测样本不足或置信下界显示奖励回退时，
 `ACTIVE` 晋升会被拒绝。
 
+渐进式发布顾问把发布路径固定为
+`SHADOW → 5% → 10% → 25% → 50% → ACTIVE`。每次扩大灰度都会创建新的部署版本，
+并从零收集该阶段的灰度/对照证据；默认还需等待 30 分钟冷却期。前四个灰度阶段要求在线
+质量守卫健康，最终晋升 ACTIVE 还要求 OPE 通过。顾问默认处于 `DRY RUN`，只输出下一阶段、
+门禁状态和阻塞原因，不会自动改变真实流量；实际发布仍需显式调用受保护的管理接口。
+
 查看不包含用户问题的策略状态：
 
 ```http
@@ -173,6 +179,7 @@ GET /api/ai/love_app/agents/routing-policy/quality-guard
 GET /api/ai/love_app/agents/routing-policy/registry
 GET /api/ai/love_app/agents/routing-policy/off-policy-evaluation
 GET /api/ai/love_app/agents/routing-policy/drift
+GET /api/ai/love_app/agents/routing-policy/progressive-delivery
 ```
 
 主要配置：
@@ -196,6 +203,10 @@ GET /api/ai/love_app/agents/routing-policy/drift
 - `AGENT_RAG_ROUTING_HOLDOUT_VALIDATION_RATIO`（默认 `0.25`）
 - `AGENT_RAG_ROUTING_HOLDOUT_MINIMUM_SAMPLES_PER_MODE`（默认 `4`）
 - `AGENT_RAG_ROUTING_HOLDOUT_MINIMUM_LIFT_LCB`（默认 `0.0`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_ENABLED`（默认 `true`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_DRY_RUN`（默认 `true`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_STAGES`（默认 `0.05,0.10,0.25,0.50`）
+- `AGENT_RAG_ROUTING_PROGRESSIVE_COOLDOWN_MINUTES`（默认 `30`）
 - `AGENT_RAG_ROUTING_OPE_MINIMUM_SAMPLES_PER_ACTION`（默认 `20`）
 - `AGENT_RAG_ROUTING_OPE_MINIMUM_EFFECTIVE_SAMPLE_SIZE`（默认 `20`）
 - `AGENT_RAG_ROUTING_OPE_MAXIMUM_IMPORTANCE_WEIGHT`（默认 `20`）

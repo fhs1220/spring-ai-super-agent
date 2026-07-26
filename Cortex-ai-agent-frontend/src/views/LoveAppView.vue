@@ -12,6 +12,7 @@ import {
   fetchRoutingPolicyRegistry,
   fetchRoutingPolicyOffPolicyEvaluation,
   fetchRoutingPolicyDrift,
+  fetchRoutingPolicyProgressiveDelivery,
   generateChatId,
   streamAgenticRag,
   submitAgentRlFeedback,
@@ -25,6 +26,7 @@ import {
   type RoutingPolicyRegistry,
   type RoutingPolicyOffPolicyEvaluation,
   type RoutingPolicyDriftReport,
+  type RoutingPolicyProgressiveDelivery,
 } from '../api'
 
 interface Message {
@@ -62,6 +64,8 @@ const routingPolicyRegistry = ref<RoutingPolicyRegistry | null>(null)
 const routingPolicyOffPolicyEvaluation =
   ref<RoutingPolicyOffPolicyEvaluation | null>(null)
 const routingPolicyDrift = ref<RoutingPolicyDriftReport | null>(null)
+const routingPolicyProgressiveDelivery =
+  ref<RoutingPolicyProgressiveDelivery | null>(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
 const activeRun = shallowRef<ActiveRun | null>(null)
@@ -164,6 +168,7 @@ async function loadDashboard() {
     routingPolicyRegistryResult,
     routingPolicyOffPolicyEvaluationResult,
     routingPolicyDriftResult,
+    routingPolicyProgressiveDeliveryResult,
   ] = await Promise.allSettled([
     fetchAgentRlMetrics(),
     fetchDatasetReadiness(),
@@ -172,6 +177,7 @@ async function loadDashboard() {
     fetchRoutingPolicyRegistry(),
     fetchRoutingPolicyOffPolicyEvaluation(),
     fetchRoutingPolicyDrift(),
+    fetchRoutingPolicyProgressiveDelivery(),
   ])
 
   if (metricsResult.status === 'fulfilled') {
@@ -196,6 +202,10 @@ async function loadDashboard() {
   if (routingPolicyDriftResult.status === 'fulfilled') {
     routingPolicyDrift.value = routingPolicyDriftResult.value
   }
+  if (routingPolicyProgressiveDeliveryResult.status === 'fulfilled') {
+    routingPolicyProgressiveDelivery.value =
+      routingPolicyProgressiveDeliveryResult.value
+  }
   if (
     metricsResult.status === 'rejected'
     || readinessResult.status === 'rejected'
@@ -204,6 +214,7 @@ async function loadDashboard() {
     || routingPolicyRegistryResult.status === 'rejected'
     || routingPolicyOffPolicyEvaluationResult.status === 'rejected'
     || routingPolicyDriftResult.status === 'rejected'
+    || routingPolicyProgressiveDeliveryResult.status === 'rejected'
   ) {
     dashboardError.value = '指标暂时不可用，请确认后端服务已启动'
   }
@@ -521,6 +532,7 @@ function back() {
       :routing-policy-registry="routingPolicyRegistry"
       :routing-policy-off-policy-evaluation="routingPolicyOffPolicyEvaluation"
       :routing-policy-drift="routingPolicyDrift"
+      :routing-policy-progressive-delivery="routingPolicyProgressiveDelivery"
       :loading="dashboardLoading"
       :error="dashboardError"
       @refresh="loadDashboard"
