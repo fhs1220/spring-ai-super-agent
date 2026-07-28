@@ -20,7 +20,9 @@
 [`docs/INTERVIEW_GUIDE.md`](docs/INTERVIEW_GUIDE.md)，评测设计见
 [`docs/EVALUATION.md`](docs/EVALUATION.md)，训练数据的离线生成、Benchmark 防污染和
 双重授权回放见
-[`docs/TRAINING_DATA_PIPELINE.md`](docs/TRAINING_DATA_PIPELINE.md)。
+[`docs/TRAINING_DATA_PIPELINE.md`](docs/TRAINING_DATA_PIPELINE.md)，首次真实 RLVR v3
+试回放的量化证据见
+[`docs/RLVR_V3_PILOT_REPORT.md`](docs/RLVR_V3_PILOT_REPORT.md)。
 
 ---
 
