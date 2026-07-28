@@ -10,6 +10,7 @@ from typing import Any
 
 
 REWARD_SCHEMA_VERSION = "human-light-rlvr-v2"
+BASELINE_STATIC_REWARD = "BASELINE_STATIC_REWARD"
 
 REWARD_METRIC_WEIGHTS: dict[str, float] = {
     "reference_quality": 0.10,
@@ -124,6 +125,7 @@ def score_rollout(
     context: str,
     metrics: dict[str, Any] | None,
     extra: dict[str, Any] | None,
+    alignment_arm: str = "FULL_TRAJECTORY_GUIDED",
 ) -> RewardScore:
     answer = str(answer or "").strip()
     question = str(question or "").strip()
@@ -139,11 +141,12 @@ def score_rollout(
     violations: list[str] = []
     if not answer:
         violations.append("empty_answer")
-    if len(answer) < minimum_chars:
+    if alignment_arm != BASELINE_STATIC_REWARD and len(answer) < minimum_chars:
         violations.append("answer_too_short")
-    if len(answer) > maximum_chars:
+    if alignment_arm != BASELINE_STATIC_REWARD and len(answer) > maximum_chars:
         violations.append("answer_too_long")
-    if _looks_like_internal_trace(answer):
+    if (alignment_arm != BASELINE_STATIC_REWARD
+            and _looks_like_internal_trace(answer)):
         violations.append("internal_trace_exposed")
     if violations:
         return RewardScore(
@@ -182,12 +185,20 @@ def score_rollout(
         "efficiency": efficiency,
         "anti_hacking_quality": anti_hacking_quality,
     }
-    total = sum(
-        REWARD_METRIC_WEIGHTS[name] * scored_metrics[name]
-        for name in REWARD_METRIC_WEIGHTS
-    )
-    # Reward hacking is a multiplicative safety brake, not merely another bonus.
-    total *= 0.5 + 0.5 * anti_hacking_quality
+    if alignment_arm == BASELINE_STATIC_REWARD:
+        # Deliberately simple legacy baseline: no RLVR contract gates,
+        # retrieval-process reward or anti-hacking brake.
+        total = (
+            0.55 * reference_quality
+            + 0.45 * task_completion_quality
+        )
+    else:
+        total = sum(
+            REWARD_METRIC_WEIGHTS[name] * scored_metrics[name]
+            for name in REWARD_METRIC_WEIGHTS
+        )
+        # Reward hacking is a multiplicative safety brake, not merely another bonus.
+        total *= 0.5 + 0.5 * anti_hacking_quality
     if citation_required and citation_quality == 0:
         violations.append("missing_or_invalid_citation")
     if task_completion_quality < 0.6:

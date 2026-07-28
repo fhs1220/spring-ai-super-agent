@@ -161,6 +161,13 @@ agent:
       expected-batch-size: ${AGENT_RL_BAILIAN_EXPECTED_BATCH_SIZE:64}
       # HUMAN_ONLY 可退回旧的人审模式；默认使用 RLVR + 多 AI Judge 自动审批。
       approval-mode: ${AGENT_RL_BAILIAN_APPROVAL_MODE:AUTOMATED_ALIGNMENT}
+      # 三组训练数据必须真实不同：纯 RLVR、AI Judge 筛选、奖励轨迹筛选。
+      dataset-profile: ${AGENT_RL_BAILIAN_DATASET_PROFILE:FULL_TRAJECTORY_GUIDED}
+      trajectory-selection:
+        minimum-rounds: ${AGENT_RL_BAILIAN_TRAJECTORY_MINIMUM_ROUNDS:2}
+        top-ratio: ${AGENT_RL_BAILIAN_TRAJECTORY_TOP_RATIO:0.3}
+        similarity-threshold: ${AGENT_RL_BAILIAN_TRAJECTORY_SIMILARITY_THRESHOLD:0.8}
+        minimum-confidence: ${AGENT_RL_BAILIAN_TRAJECTORY_MINIMUM_CONFIDENCE:0.72}
     alignment:
       storage-directory: ${AGENT_RL_ALIGNMENT_STORAGE_DIRECTORY:tmp/agent-rl/alignment-assessments}
       minimum-judge-count: ${AGENT_RL_ALIGNMENT_MINIMUM_JUDGE_COUNT:4}

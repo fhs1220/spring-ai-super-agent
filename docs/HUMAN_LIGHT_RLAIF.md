@@ -120,6 +120,19 @@ Content-Type: application/json
 | C：RLAIF | 是 | 是 | 否 |
 | D：完整方案 | 是 | 是 | 是 |
 
+训练数据和 Reward 必须真实区分：
+
+- `RLVR_ONLY` 只应用确定性奖励和去重/质量下限，不要求 AI Judge；
+- `RLVR_RLAIF` 在其上要求多 Judge 高置信一致批准；
+- `FULL_TRAJECTORY_GUIDED` 继续要求同任务至少两轮奖励变化，并根据同任务组人工锚点的
+  奖励趋势相似度执行选择；
+- 静态基线与 `RLVR_ONLY` 可以使用相同原始样本，以单独测量 Reward 函数变化，但必须各自
+  训练成不同模型资产。
+
+四份百炼配置位于 `bailian-agent-rl/experiments/configs/`。云端 Reward Runtime 会读取
+`AGENT_RL_ALIGNMENT_ARM`：静态基线只使用参考质量和任务完成度，其他三臂使用完整 RLVR
+硬门禁及 anti-hacking brake。RLAIF 和 trajectory-guided 的增量来自数据筛选。
+
 正式实验先创建不可变的四臂清单。模型资产和训练配置使用 64 位 SHA-256 指纹；四个模型
 资产指纹必须互不相同，因此不能把同一个模型重复运行四次后换名字冒充消融：
 
@@ -134,7 +147,7 @@ Content-Type: application/json
       "modelVersion": "baseline-model",
       "modelArtifactFingerprint": "<64-hex-sha256>",
       "trainingConfigFingerprint": "<64-hex-sha256>",
-      "rewardSchemaVersion": "static-v1",
+      "rewardSchemaVersion": "static-reward-v1",
       "sourceDeployment": "bailian-baseline"
     },
     {
@@ -142,7 +155,7 @@ Content-Type: application/json
       "modelVersion": "rlvr-model",
       "modelArtifactFingerprint": "<different-64-hex-sha256>",
       "trainingConfigFingerprint": "<64-hex-sha256>",
-      "rewardSchemaVersion": "rlvr-v2",
+      "rewardSchemaVersion": "human-light-rlvr-v2",
       "sourceDeployment": "bailian-rlvr"
     },
     {
@@ -150,7 +163,7 @@ Content-Type: application/json
       "modelVersion": "rlaif-model",
       "modelArtifactFingerprint": "<different-64-hex-sha256>",
       "trainingConfigFingerprint": "<64-hex-sha256>",
-      "rewardSchemaVersion": "rlvr-rlaif-v2",
+      "rewardSchemaVersion": "human-light-rlvr-v2",
       "sourceDeployment": "bailian-rlaif"
     },
     {
@@ -182,6 +195,10 @@ POST /api/agent-evaluation/alignment-experiments/{experimentId}/finalize
 编排器会拒绝身份不匹配、复用同一 `runId`、模型资产重复、benchmark 版本/指纹或样本数
 不一致的证据。创建、挂接和最终报告均支持幂等重试；清单和结果持久化到
 `tmp/evaluation/alignment-experiments` 与 `tmp/evaluation/alignment-ablation`。
+
+百炼产物完成后使用 `experiment_manifest.py` 计算训练配置、数据集、Reward/Rollout 代码
+及不可变云产物描述符的指纹。`run_experiment.py` 默认只打印操作计划，只有 `--execute`
+才会写入本地实验状态；它不会启动任何付费训练或评测。
 
 报告还会按照 `caseId` 对四组运行做逐样本配对统计。默认使用由 benchmark 指纹和实验臂
 派生的固定随机种子执行 10,000 次 percentile bootstrap，输出：

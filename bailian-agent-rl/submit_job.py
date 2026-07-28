@@ -18,6 +18,13 @@ from typing import Any
 
 SUPPORTED_MODELS = {"qwen3.5-9b", "qwen3.5-35b-a3b"}
 REWARD_SCHEMA_VERSION = "human-light-rlvr-v2"
+STATIC_REWARD_SCHEMA_VERSION = "static-reward-v1"
+ALIGNMENT_ARMS = {
+    "BASELINE_STATIC_REWARD",
+    "RLVR_ONLY",
+    "RLVR_RLAIF",
+    "FULL_TRAJECTORY_GUIDED",
+}
 REWARD_METRICS = {
     "reference_quality",
     "grounding_quality",
@@ -131,9 +138,19 @@ def validate_config(config: dict[str, Any]) -> None:
     batch_size = config["hyper_parameters"].get("batch_size")
     if not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError("hyper_parameters.batch_size must be a positive integer")
-    if config.get("reward_schema_version") != REWARD_SCHEMA_VERSION:
+    alignment_arm = config.get("alignment_arm")
+    if alignment_arm not in ALIGNMENT_ARMS:
         raise ValueError(
-            f"reward_schema_version must be {REWARD_SCHEMA_VERSION}"
+            f"alignment_arm must be one of {sorted(ALIGNMENT_ARMS)}"
+        )
+    expected_schema = (
+        STATIC_REWARD_SCHEMA_VERSION
+        if alignment_arm == "BASELINE_STATIC_REWARD"
+        else REWARD_SCHEMA_VERSION
+    )
+    if config.get("reward_schema_version") != expected_schema:
+        raise ValueError(
+            f"reward_schema_version for {alignment_arm} must be {expected_schema}"
         )
     reward_weights = config.get("reward_metric_weights")
     if not isinstance(reward_weights, dict):
@@ -202,6 +219,11 @@ def runtime_config(runtime_type: str, config: dict[str, Any], runtime_class: Any
         values["env"] = {
             "AGENT_RL_RETRIEVAL_URL": os.environ["AGENT_RL_RETRIEVAL_URL"],
             "AGENT_RL_RETRIEVAL_TOKEN": os.environ["AGENT_RL_RETRIEVAL_TOKEN"],
+        }
+    elif runtime_type == "reward":
+        values["env"] = {
+            **values.get("env", {}),
+            "AGENT_RL_ALIGNMENT_ARM": config["alignment_arm"],
         }
     return runtime_class(**values)
 
@@ -281,6 +303,7 @@ async def main() -> int:
                 {
                     "mode": "execute" if args.execute else "dry-run",
                     "model": config["model"],
+                    "alignment_arm": config["alignment_arm"],
                     "training_samples": len(training),
                     "validation_samples": len(validation),
                     "batch_size": config["hyper_parameters"]["batch_size"],

@@ -147,6 +147,20 @@ class RewardScoringTest(unittest.TestCase):
         self.assertEqual(0.0, score.total)
         self.assertIn("internal_trace_exposed", score.violations)
 
+    def test_static_baseline_does_not_apply_rlvr_contract_hard_gate(self) -> None:
+        score = score_rollout(
+            answer="先暂停争吵并复盘。",
+            question="给一个建议。",
+            solution="先暂停争吵并复盘。",
+            context="",
+            metrics={},
+            extra={"verification_contract": {"minimum_answer_chars": 80}},
+            alignment_arm="BASELINE_STATIC_REWARD",
+        )
+
+        self.assertTrue(score.hard_gate_passed)
+        self.assertGreater(score.total, 0)
+
     def test_reward_schema_is_versioned_and_weights_sum_to_one(self) -> None:
         self.assertEqual("human-light-rlvr-v2", REWARD_SCHEMA_VERSION)
         self.assertAlmostEqual(1.0, sum(REWARD_METRIC_WEIGHTS.values()))

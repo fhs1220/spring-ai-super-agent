@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "bailian-alignment-experiment-v1",
+  "componentFiles": [
+    "functions/reward/reward.py",
+    "functions/reward/scoring.py",
+    "functions/rollout/rollout.py",
+    "submit_job.py"
+  ],
+  "arms": [
+    {
+      "arm": "BASELINE_STATIC_REWARD",
+      "modelVersion": "baseline-model-version",
+      "provider": "aliyun-bailian",
+      "modelArtifactId": "<immutable-model-artifact-id>",
+      "trainingJobId": "<training-or-baseline-provenance-id>",
+      "checkpointId": "<optional-checkpoint-id>",
+      "sourceDeployment": "<deployment-id-or-endpoint>",
+      "rewardSchemaVersion": "static-reward-v1",
+      "trainingConfig": "experiments/configs/baseline-static-reward.json",
+      "trainingDataset": "<static-baseline-train-jsonl>",
+      "validationDataset": "<shared-validation-jsonl>"
+    },
+    {
+      "arm": "RLVR_ONLY",
+      "modelVersion": "rlvr-model-version",
+      "provider": "aliyun-bailian",
+      "modelArtifactId": "<immutable-model-artifact-id>",
+      "trainingJobId": "<training-job-id>",
+      "checkpointId": "<optional-checkpoint-id>",
+      "sourceDeployment": "<deployment-id-or-endpoint>",
+      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "trainingConfig": "experiments/configs/rlvr-only.json",
+      "trainingDataset": "<rlvr-train-jsonl>",
+      "validationDataset": "<shared-validation-jsonl>"
+    },
+    {
+      "arm": "RLVR_RLAIF",
+      "modelVersion": "rlvr-rlaif-model-version",
+      "provider": "aliyun-bailian",
+      "modelArtifactId": "<immutable-model-artifact-id>",
+      "trainingJobId": "<training-job-id>",
+      "checkpointId": "<optional-checkpoint-id>",
+      "sourceDeployment": "<deployment-id-or-endpoint>",
+      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "trainingConfig": "experiments/configs/rlvr-rlaif.json",
+      "trainingDataset": "<rlaif-train-jsonl>",
+      "validationDataset": "<shared-validation-jsonl>"
+    },
+    {
+      "arm": "FULL_TRAJECTORY_GUIDED",
+      "modelVersion": "full-model-version",
+      "provider": "aliyun-bailian",
+      "modelArtifactId": "<immutable-model-artifact-id>",
+      "trainingJobId": "<training-job-id>",
+      "checkpointId": "<optional-checkpoint-id>",
+      "sourceDeployment": "<deployment-id-or-endpoint>",
+      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "trainingConfig": "experiments/configs/full-trajectory-guided.json",
+      "trainingDataset": "<trajectory-guided-train-jsonl>",
+      "validationDataset": "<shared-validation-jsonl>"
+    }
+  ]
+}

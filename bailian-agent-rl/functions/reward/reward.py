@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from dashscope.finetune.reinforcement import (
@@ -18,7 +19,9 @@ class AgenticRagRewardProcessor(AbstractRewardProcessor):
     """Applies verifiable instruction, evidence, safety and anti-gaming rewards."""
 
     def setup(self) -> None:
-        pass
+        self.alignment_arm = os.environ.get(
+            "AGENT_RL_ALIGNMENT_ARM", "FULL_TRAJECTORY_GUIDED"
+        )
 
     async def process(self, input: RewardInput) -> RewardOutput:
         output = input.agent_output
@@ -37,6 +40,7 @@ class AgenticRagRewardProcessor(AbstractRewardProcessor):
             context=context,
             metrics=metrics,
             extra=extra,
+            alignment_arm=self.alignment_arm,
         )
         return _result(score.total, score.metrics)
 

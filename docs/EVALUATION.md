@@ -36,6 +36,11 @@ RLAIF/RLVR 四臂消融报告不是只比较四个均值。它会按 `caseId` �
 `runId` 或模型资产跨臂复用；全部证据齐备后才允许 `finalize`。实验清单使用文件原子写入，
 损坏文件会隔离备份，实验及报告 ID 均为确定性指纹，支持安全重试。
 
+`bailian-agent-rl/experiment_manifest.py` 负责从四个真实百炼产物生成上述请求，并把训练
+配置、训练/验证数据及云端 Reward/Rollout 代码纳入来源指纹。三种数据 Profile
+`RLVR_ONLY`、`RLVR_RLAIF`、`FULL_TRAJECTORY_GUIDED` 在 Java 导出阶段分别执行“仅硬规则”、
+“硬规则 + AI Judge”和“硬规则 + AI Judge + 多轮奖励趋势”筛选。
+
 ## 两层门禁
 
 无模型费用的 CI 门禁运行 100+ 项可复现测试、基准目录校验和前端构建。真实模型、MCP、

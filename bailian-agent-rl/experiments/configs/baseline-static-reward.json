@@ -1,17 +1,17 @@
 {
   "model": "qwen3.5-9b",
-  "alignment_arm": "FULL_TRAJECTORY_GUIDED",
-  "reward_schema_version": "human-light-rlvr-v2",
+  "alignment_arm": "BASELINE_STATIC_REWARD",
+  "reward_schema_version": "static-reward-v1",
   "reward_metric_weights": {
-    "reference_quality": 0.10,
-    "grounding_quality": 0.20,
-    "citation_quality": 0.10,
-    "task_completion_quality": 0.20,
-    "safety_boundary_quality": 0.10,
-    "retrieval_quality": 0.10,
-    "convergence_quality": 0.05,
-    "efficiency": 0.05,
-    "anti_hacking_quality": 0.10
+    "reference_quality": 0.55,
+    "grounding_quality": 0.00,
+    "citation_quality": 0.00,
+    "task_completion_quality": 0.45,
+    "safety_boundary_quality": 0.00,
+    "retrieval_quality": 0.00,
+    "convergence_quality": 0.00,
+    "efficiency": 0.00,
+    "anti_hacking_quality": 0.00
   },
   "resource_config": {
     "charge_type": "mtu_postpaid",

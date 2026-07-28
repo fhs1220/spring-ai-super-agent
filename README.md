@@ -614,12 +614,52 @@ python submit_job.py \
 训练任务会产生 MTU 和函数计算费用。默认配置使用 `qwen3.5-9b`、1 个 MTU4、
 1 个 epoch，配置文件为 `bailian-agent-rl/config.example.json`。
 
+正式消融不能把同一个配置提交四次。仓库提供四份独立配置：
+
+- `experiments/configs/baseline-static-reward.json`：传统静态参考/任务完成 Reward；
+- `experiments/configs/rlvr-only.json`：确定性 RLVR，训练集不经过 AI Judge；
+- `experiments/configs/rlvr-rlaif.json`：RLVR + 高置信多 Judge 数据；
+- `experiments/configs/full-trajectory-guided.json`：RLVR + RLAIF + 奖励轨迹筛选数据。
+
+导出数据集时可在 `POST /api/agent-rl/bailian/datasets` 请求中使用
+`datasetProfile=RLVR_ONLY|RLVR_RLAIF|FULL_TRAJECTORY_GUIDED`。完整方案只有在同任务存在至少
+两轮奖励轨迹、同组少量人工锚点并通过 AI Judge 时才会选中；Readiness 会返回选择数、
+不可评分数和选择率。
+
 查询任务状态或日志：
 
 ```bash
 python job_status.py ft-xxxx
 python job_status.py ft-xxxx --logs 100
 ```
+
+四个任务完成并部署后，复制 `experiment-arms.example.json`，填写百炼返回的不可变模型产物
+ID、训练任务 ID、Checkpoint、部署 ID 和各数据包路径，然后离线生成审计材料：
+
+```bash
+python experiment_manifest.py \
+  --spec experiment-arms.json \
+  --output-dir ../tmp/evaluation/bailian-four-arm
+```
+
+生成器会校验配置中的实验臂和 Reward Schema，计算配置、训练/验证数据、Reward/Rollout
+代码及百炼产物来源的 SHA-256，并输出完整清单、Java API 请求、四组运行身份变量和证据模板。
+
+先做无写入预演，确认操作列表后再显式执行：
+
+```bash
+python run_experiment.py \
+  --manifest ../tmp/evaluation/bailian-four-arm/artifact-manifest.json \
+  --evidence ../tmp/evaluation/bailian-four-arm/evidence-template.json
+
+python run_experiment.py \
+  --manifest ../tmp/evaluation/bailian-four-arm/artifact-manifest.json \
+  --evidence ../tmp/evaluation/bailian-four-arm/evidence.json \
+  --finalize \
+  --execute
+```
+
+该编排器不会创建云训练任务或启动模型评测，只挂接已经完成的证据并生成统计报告。
 
 ---
 

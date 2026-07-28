@@ -124,6 +124,83 @@ class BailianRlDatasetServiceTest {
                 .asBoolean()).isTrue();
     }
 
+    @Test
+    void rlvrOnlyProfileDoesNotPretendAiJudgeFilteringWasApplied() {
+        InMemoryAgentTrajectoryRepository repository =
+                new InMemoryAgentTrajectoryRepository();
+        for (int index = 1; index <= 5; index++) {
+            repository.save(trajectory(index, null));
+        }
+        BailianRlDatasetService service = new BailianRlDatasetService(
+                repository,
+                new ObjectMapper().findAndRegisterModules(),
+                tempDirectory.toString(),
+                0.7,
+                0.2,
+                3
+        );
+
+        BailianRlDatasetService.DatasetReadiness readiness = service.readiness(
+                new BailianRlDatasetService.DatasetExportOptions(
+                        0.7,
+                        0.2,
+                        3,
+                        BailianRlDatasetService.TrainingApprovalMode
+                                .AUTOMATED_ALIGNMENT,
+                        BailianRlDatasetService.TrainingDatasetProfile.RLVR_ONLY
+                ));
+
+        assertThat(readiness.eligibleTrajectoryCount()).isEqualTo(5);
+        assertThat(readiness.datasetProfile())
+                .isEqualTo(
+                        BailianRlDatasetService.TrainingDatasetProfile.RLVR_ONLY);
+        assertThat(readiness.automatedApprovedCount()).isZero();
+    }
+
+    @Test
+    void fullProfileAppliesTrajectoryTrendSelectionAfterAiApproval() {
+        InMemoryAgentTrajectoryRepository repository =
+                new InMemoryAgentTrajectoryRepository();
+        InMemoryAlignmentAssessmentRepository assessments =
+                new InMemoryAlignmentAssessmentRepository();
+        List<AgentTrajectory> trajectories = List.of(
+                trajectory("anchor-1", "锚点问题", 0.4, 5, 1),
+                trajectory("anchor-2", "锚点问题", 0.8, 5, 2),
+                trajectory("candidate-1", "候选问题", 0.3, null, 3),
+                trajectory("candidate-2", "候选问题", 0.7, null, 4)
+        );
+        trajectories.forEach(trajectory -> {
+            repository.save(trajectory);
+            assessments.save(approvedAssessment(trajectory));
+        });
+        BailianRlDatasetService service = new BailianRlDatasetService(
+                repository,
+                assessments,
+                new ObjectMapper().findAndRegisterModules(),
+                tempDirectory.toString(),
+                0,
+                0.5,
+                1,
+                "AUTOMATED_ALIGNMENT"
+        );
+
+        BailianRlDatasetService.DatasetReadiness readiness = service.readiness(
+                new BailianRlDatasetService.DatasetExportOptions(
+                        0,
+                        0.5,
+                        1,
+                        BailianRlDatasetService.TrainingApprovalMode
+                                .AUTOMATED_ALIGNMENT,
+                        BailianRlDatasetService.TrainingDatasetProfile
+                                .FULL_TRAJECTORY_GUIDED
+                ));
+
+        assertThat(readiness.eligibleTrajectoryCount()).isEqualTo(2);
+        assertThat(readiness.trajectorySelectedCount()).isEqualTo(1);
+        assertThat(readiness.trajectoryUnscorableCount()).isZero();
+        assertThat(readiness.trajectorySelectionRate()).isEqualTo(1);
+    }
+
     private AutomatedAlignmentAssessment approvedAssessment(AgentTrajectory trajectory) {
         return new AutomatedAlignmentAssessment(
                 trajectory.trajectoryId(),
@@ -161,6 +238,33 @@ class BailianRlDatasetServiceTest {
                 new RewardBreakdown(0.9, 1, 1, 1, 1, 1, 1, rating == null ? 0 : 1),
                 rating,
                 rating == null ? null : "已审核",
+                null,
+                null
+        );
+    }
+
+    private AgentTrajectory trajectory(String id,
+                                       String question,
+                                       double reward,
+                                       Integer rating,
+                                       int seconds) {
+        Instant now = Instant.parse("2026-07-23T00:00:00Z")
+                .plusSeconds(seconds);
+        return new AgentTrajectory(
+                id,
+                "chat-" + id,
+                "policy-" + seconds,
+                "qwen-plus",
+                question,
+                now,
+                now,
+                "COMPLETED",
+                List.of(),
+                List.of("doc-" + id),
+                "答案 " + id,
+                new RewardBreakdown(reward, 1, 1, 1, 1, 1, 1, 0),
+                rating,
+                rating == null ? null : "人工锚点",
                 null,
                 null
         );

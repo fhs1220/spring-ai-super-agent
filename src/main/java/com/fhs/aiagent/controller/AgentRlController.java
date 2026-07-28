@@ -120,12 +120,38 @@ public class AgentRlController {
         if (request == null) {
             return bailianRlDatasetService.exportDefault();
         }
+        BailianRlDatasetService.TrainingApprovalMode approvalMode =
+                approvalMode(request);
         return bailianRlDatasetService.export(new BailianRlDatasetService.DatasetExportOptions(
                 request.minimumReward() == null ? 0.7 : request.minimumReward(),
                 request.validationRatio() == null ? 0.2 : request.validationRatio(),
                 request.expectedBatchSize() == null ? 64 : request.expectedBatchSize(),
-                approvalMode(request)
+                approvalMode,
+                datasetProfile(request, approvalMode)
         ));
+    }
+
+    private BailianRlDatasetService.TrainingDatasetProfile datasetProfile(
+            BailianDatasetRequest request,
+            BailianRlDatasetService.TrainingApprovalMode approvalMode) {
+        if (request.datasetProfile() == null
+                || request.datasetProfile().isBlank()) {
+            return approvalMode
+                    == BailianRlDatasetService.TrainingApprovalMode.HUMAN_ONLY
+                    ? BailianRlDatasetService.TrainingDatasetProfile.HUMAN_APPROVED
+                    : BailianRlDatasetService.TrainingDatasetProfile
+                    .FULL_TRAJECTORY_GUIDED;
+        }
+        try {
+            return BailianRlDatasetService.TrainingDatasetProfile.valueOf(
+                    request.datasetProfile().trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(
+                    "datasetProfile must be HUMAN_APPROVED, RLVR_ONLY, "
+                            + "RLVR_RLAIF or FULL_TRAJECTORY_GUIDED",
+                    exception
+            );
+        }
     }
 
     private BailianRlDatasetService.TrainingApprovalMode approvalMode(
@@ -163,7 +189,8 @@ public class AgentRlController {
             Double validationRatio,
             Integer expectedBatchSize,
             Boolean requireHumanApproval,
-            String approvalMode
+            String approvalMode,
+            String datasetProfile
     ) {
     }
 }

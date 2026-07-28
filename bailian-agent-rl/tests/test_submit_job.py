@@ -19,6 +19,7 @@ class SubmitJobPreflightTest(unittest.TestCase):
     def test_validates_bailian_dataset_without_cloud_sdk(self) -> None:
         config = {
             "model": "qwen3.5-9b",
+            "alignment_arm": "FULL_TRAJECTORY_GUIDED",
             "reward_schema_version": submit_job.REWARD_SCHEMA_VERSION,
             "reward_metric_weights": reward_weights(),
             "resource_config": {"charge_type": "mtu_postpaid"},
@@ -53,6 +54,7 @@ class SubmitJobPreflightTest(unittest.TestCase):
         weights["reference_quality"] = 0.50
         config = {
             "model": "qwen3.5-9b",
+            "alignment_arm": "FULL_TRAJECTORY_GUIDED",
             "reward_schema_version": submit_job.REWARD_SCHEMA_VERSION,
             "reward_metric_weights": weights,
             "resource_config": {"charge_type": "mtu_postpaid"},
