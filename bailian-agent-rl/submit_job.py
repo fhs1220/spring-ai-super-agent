@@ -17,6 +17,18 @@ from typing import Any
 
 
 SUPPORTED_MODELS = {"qwen3.5-9b", "qwen3.5-35b-a3b"}
+REWARD_SCHEMA_VERSION = "human-light-rlvr-v2"
+REWARD_METRICS = {
+    "reference_quality",
+    "grounding_quality",
+    "citation_quality",
+    "task_completion_quality",
+    "safety_boundary_quality",
+    "retrieval_quality",
+    "convergence_quality",
+    "efficiency",
+    "anti_hacking_quality",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,6 +98,16 @@ def validate_sample(sample: Any, path: Path, line_number: int) -> None:
     solution = rollout_extra.get("solution")
     if not isinstance(solution, str) or not solution.strip():
         raise ValueError(f"{prefix} rollout_extra.solution must not be blank")
+    reward_schema = rollout_extra.get("reward_schema_version")
+    if reward_schema is not None and reward_schema != REWARD_SCHEMA_VERSION:
+        raise ValueError(
+            f"{prefix} reward_schema_version must be {REWARD_SCHEMA_VERSION}"
+        )
+    verification_contract = rollout_extra.get("verification_contract")
+    if verification_contract is not None and not isinstance(
+        verification_contract, dict
+    ):
+        raise ValueError(f"{prefix} verification_contract must be an object")
 
 
 def first_user_question(sample: dict[str, Any]) -> str:
@@ -109,6 +131,25 @@ def validate_config(config: dict[str, Any]) -> None:
     batch_size = config["hyper_parameters"].get("batch_size")
     if not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError("hyper_parameters.batch_size must be a positive integer")
+    if config.get("reward_schema_version") != REWARD_SCHEMA_VERSION:
+        raise ValueError(
+            f"reward_schema_version must be {REWARD_SCHEMA_VERSION}"
+        )
+    reward_weights = config.get("reward_metric_weights")
+    if not isinstance(reward_weights, dict):
+        raise ValueError("reward_metric_weights must be an object")
+    if set(reward_weights) != REWARD_METRICS:
+        raise ValueError(
+            "reward_metric_weights must contain exactly: "
+            + ", ".join(sorted(REWARD_METRICS))
+        )
+    if any(
+        not isinstance(value, (int, float)) or value < 0
+        for value in reward_weights.values()
+    ):
+        raise ValueError("reward_metric_weights values must be non-negative numbers")
+    if abs(sum(float(value) for value in reward_weights.values()) - 1.0) > 1e-9:
+        raise ValueError("reward_metric_weights must sum to 1.0")
 
 
 def validate_package(
@@ -213,13 +254,7 @@ async def submit(
             RewardFunctionComponent(
                 name="cortex-agentic-rag-reward",
                 weight=1.0,
-                reward_metric_weight={
-                    "reference_quality": 0.35,
-                    "grounding_quality": 0.30,
-                    "retrieval_quality": 0.20,
-                    "convergence_quality": 0.10,
-                    "efficiency": 0.05,
-                },
+                reward_metric_weight=config["reward_metric_weights"],
                 timeout=120,
                 fcmodel=FunctionComponentModel(
                     classpath="functions.reward.reward.AgenticRagRewardProcessor"
@@ -249,6 +284,8 @@ async def main() -> int:
                     "training_samples": len(training),
                     "validation_samples": len(validation),
                     "batch_size": config["hyper_parameters"]["batch_size"],
+                    "reward_schema_version": config["reward_schema_version"],
+                    "reward_metric_weights": config["reward_metric_weights"],
                     "estimated_training_rollouts_per_step": (
                         config["hyper_parameters"]["batch_size"]
                         * config["hyper_parameters"]["n_rollouts"]

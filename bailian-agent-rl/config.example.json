@@ -1,5 +1,17 @@
 {
   "model": "qwen3.5-9b",
+  "reward_schema_version": "human-light-rlvr-v2",
+  "reward_metric_weights": {
+    "reference_quality": 0.10,
+    "grounding_quality": 0.20,
+    "citation_quality": 0.10,
+    "task_completion_quality": 0.20,
+    "safety_boundary_quality": 0.10,
+    "retrieval_quality": 0.10,
+    "convergence_quality": 0.05,
+    "efficiency": 0.05,
+    "anti_hacking_quality": 0.10
+  },
   "resource_config": {
     "charge_type": "mtu_postpaid",
     "mtu_spec_code": "MTU4",

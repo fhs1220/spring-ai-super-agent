@@ -19,6 +19,8 @@ class SubmitJobPreflightTest(unittest.TestCase):
     def test_validates_bailian_dataset_without_cloud_sdk(self) -> None:
         config = {
             "model": "qwen3.5-9b",
+            "reward_schema_version": submit_job.REWARD_SCHEMA_VERSION,
+            "reward_metric_weights": reward_weights(),
             "resource_config": {"charge_type": "mtu_postpaid"},
             "hyper_parameters": {"batch_size": 2},
             "function_runtime": {"rollout": {}, "reward": {}},
@@ -46,11 +48,40 @@ class SubmitJobPreflightTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "overlap"):
             submit_job.validate_package(config, training, loaded)
 
+    def test_rejects_reward_weights_that_do_not_sum_to_one(self) -> None:
+        weights = reward_weights()
+        weights["reference_quality"] = 0.50
+        config = {
+            "model": "qwen3.5-9b",
+            "reward_schema_version": submit_job.REWARD_SCHEMA_VERSION,
+            "reward_metric_weights": weights,
+            "resource_config": {"charge_type": "mtu_postpaid"},
+            "hyper_parameters": {"batch_size": 2},
+            "function_runtime": {"rollout": {}, "reward": {}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "sum to 1.0"):
+            submit_job.validate_config(config)
+
 
 def sample(question: str) -> dict:
     return {
         "messages": [{"role": "user", "content": question}],
         "rollout_extra": {"solution": "参考答案"},
+    }
+
+
+def reward_weights() -> dict[str, float]:
+    return {
+        "reference_quality": 0.10,
+        "grounding_quality": 0.20,
+        "citation_quality": 0.10,
+        "task_completion_quality": 0.20,
+        "safety_boundary_quality": 0.10,
+        "retrieval_quality": 0.10,
+        "convergence_quality": 0.05,
+        "efficiency": 0.05,
+        "anti_hacking_quality": 0.10,
     }
 
 

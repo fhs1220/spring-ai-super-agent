@@ -1,6 +1,8 @@
 package com.fhs.aiagent.controller;
 
 import com.fhs.aiagent.evaluation.RagAbEvaluationJobService;
+import com.fhs.aiagent.evaluation.AlignmentAblationReport;
+import com.fhs.aiagent.evaluation.AlignmentAblationReportService;
 import com.fhs.aiagent.evaluation.RagEvaluationCase;
 import com.fhs.aiagent.evaluation.RagAbEvaluationService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -24,10 +26,15 @@ public class RagEvaluationController {
 
     private final RagAbEvaluationService evaluationService;
 
+    private final AlignmentAblationReportService alignmentAblationReportService;
+
     public RagEvaluationController(RagAbEvaluationJobService jobService,
-                                   RagAbEvaluationService evaluationService) {
+                                   RagAbEvaluationService evaluationService,
+                                   AlignmentAblationReportService
+                                           alignmentAblationReportService) {
         this.jobService = jobService;
         this.evaluationService = evaluationService;
+        this.alignmentAblationReportService = alignmentAblationReportService;
     }
 
     @PostMapping("/ab-runs")
@@ -64,6 +71,26 @@ public class RagEvaluationController {
         return evaluationService.benchmarkMetadata();
     }
 
+    @PostMapping("/alignment-ablation-reports")
+    public AlignmentAblationReport createAlignmentAblationReport(
+            @RequestBody AlignmentAblationRequest request) {
+        if (request == null || request.arms() == null) {
+            throw new IllegalArgumentException("arms are required");
+        }
+        return alignmentAblationReportService.create(request.arms());
+    }
+
+    @GetMapping("/alignment-ablation-reports/{reportId}")
+    public AlignmentAblationReport alignmentAblationReport(
+            @PathVariable String reportId) {
+        return alignmentAblationReportService.get(reportId);
+    }
+
     public record StartEvaluationRequest(Integer maximumCases) {
+    }
+
+    public record AlignmentAblationRequest(
+            List<AlignmentAblationReport.ArmInput> arms
+    ) {
     }
 }

@@ -3,6 +3,10 @@ package com.fhs.aiagent.rl.bailian;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fhs.aiagent.rl.InMemoryAgentTrajectoryRepository;
+import com.fhs.aiagent.rl.alignment.AutomatedAlignmentAssessment;
+import com.fhs.aiagent.rl.alignment.InMemoryAlignmentAssessmentRepository;
+import com.fhs.aiagent.rl.alignment.SupervisionLabel;
+import com.fhs.aiagent.rl.alignment.TrainingDecision;
 import com.fhs.aiagent.rl.model.AgentTrajectory;
 import com.fhs.aiagent.rl.model.RewardBreakdown;
 import org.junit.jupiter.api.Test;
@@ -72,6 +76,72 @@ class BailianRlDatasetServiceTest {
         assertThat(result.readyForCloudSubmission()).isFalse();
         assertThat(result.eligibleCount()).isZero();
         assertThat(result.warnings()).anyMatch(warning -> warning.contains("人工审核"));
+    }
+
+    @Test
+    void exportsHighConfidenceAiApprovedDataWithoutHumanRatings() throws Exception {
+        InMemoryAgentTrajectoryRepository repository = new InMemoryAgentTrajectoryRepository();
+        InMemoryAlignmentAssessmentRepository assessments =
+                new InMemoryAlignmentAssessmentRepository();
+        for (int index = 1; index <= 5; index++) {
+            AgentTrajectory trajectory = trajectory(index, null);
+            repository.save(trajectory);
+            assessments.save(approvedAssessment(trajectory));
+        }
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        BailianRlDatasetService service = new BailianRlDatasetService(
+                repository,
+                assessments,
+                objectMapper,
+                tempDirectory.toString(),
+                0.7,
+                0.2,
+                3,
+                "AUTOMATED_ALIGNMENT"
+        );
+
+        BailianRlDatasetService.DatasetExportResult result = service.exportDefault();
+        BailianRlDatasetService.DatasetReadiness readiness = service.readinessDefault();
+
+        assertThat(result.eligibleCount()).isEqualTo(5);
+        assertThat(result.readyForCloudSubmission()).isTrue();
+        assertThat(readiness.approvalMode())
+                .isEqualTo(BailianRlDatasetService.TrainingApprovalMode.AUTOMATED_ALIGNMENT);
+        assertThat(readiness.automatedApprovedCount()).isEqualTo(5);
+        assertThat(readiness.humanApprovedCount()).isZero();
+        String firstLine = Files.readAllLines(Path.of(result.trainingFile())).get(0);
+        JsonNode sample = objectMapper.readTree(firstLine);
+        assertThat(sample.at("/rollout_extra/human_rating").isNull()).isTrue();
+        assertThat(sample.at("/rollout_extra/alignment_label").asText())
+                .isEqualTo("PSEUDO_LABELED");
+        assertThat(sample.at("/rollout_extra/alignment_confidence").asDouble())
+                .isEqualTo(0.92);
+        assertThat(sample.at("/rollout_extra/judge_agreement").asDouble())
+                .isEqualTo(0.9);
+        assertThat(sample.at("/rollout_extra/reward_schema_version").asText())
+                .isEqualTo("human-light-rlvr-v2");
+        assertThat(sample.at("/rollout_extra/verification_contract/citation_required")
+                .asBoolean()).isTrue();
+    }
+
+    private AutomatedAlignmentAssessment approvedAssessment(AgentTrajectory trajectory) {
+        return new AutomatedAlignmentAssessment(
+                trajectory.trajectoryId(),
+                "fingerprint-" + trajectory.trajectoryId(),
+                trajectory.policyVersion(),
+                Instant.parse("2026-07-28T00:00:00Z"),
+                SupervisionLabel.PSEUDO_LABELED,
+                TrainingDecision.POSITIVE,
+                0.9,
+                0.88,
+                0.89,
+                0.92,
+                0.9,
+                4,
+                List.of(),
+                List.of("自动评审通过"),
+                false
+        );
     }
 
     private AgentTrajectory trajectory(int index, Integer rating) {

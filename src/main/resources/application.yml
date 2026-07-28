@@ -159,6 +159,24 @@ agent:
       minimum-reward: ${AGENT_RL_BAILIAN_MINIMUM_REWARD:0.7}
       validation-ratio: ${AGENT_RL_BAILIAN_VALIDATION_RATIO:0.2}
       expected-batch-size: ${AGENT_RL_BAILIAN_EXPECTED_BATCH_SIZE:64}
+      # HUMAN_ONLY 可退回旧的人审模式；默认使用 RLVR + 多 AI Judge 自动审批。
+      approval-mode: ${AGENT_RL_BAILIAN_APPROVAL_MODE:AUTOMATED_ALIGNMENT}
+    alignment:
+      storage-directory: ${AGENT_RL_ALIGNMENT_STORAGE_DIRECTORY:tmp/agent-rl/alignment-assessments}
+      minimum-judge-count: ${AGENT_RL_ALIGNMENT_MINIMUM_JUDGE_COUNT:4}
+      minimum-agreement: ${AGENT_RL_ALIGNMENT_MINIMUM_AGREEMENT:0.7}
+      minimum-confidence: ${AGENT_RL_ALIGNMENT_MINIMUM_CONFIDENCE:0.72}
+      positive-reward-threshold: ${AGENT_RL_ALIGNMENT_POSITIVE_REWARD_THRESHOLD:0.75}
+      negative-reward-threshold: ${AGENT_RL_ALIGNMENT_NEGATIVE_REWARD_THRESHOLD:0.35}
+      minimum-grounding-reward: ${AGENT_RL_ALIGNMENT_MINIMUM_GROUNDING_REWARD:0.7}
+      # 自动评审会产生模型调用费用，只有显式开启后才定时处理新轨迹。
+      auto-evaluate-enabled: ${AGENT_RL_ALIGNMENT_AUTO_EVALUATE_ENABLED:false}
+      auto-evaluate-batch-size: ${AGENT_RL_ALIGNMENT_AUTO_EVALUATE_BATCH_SIZE:10}
+      auto-evaluate-interval-ms: ${AGENT_RL_ALIGNMENT_AUTO_EVALUATE_INTERVAL_MS:300000}
+      auto-evaluate-initial-delay-ms: ${AGENT_RL_ALIGNMENT_AUTO_EVALUATE_INITIAL_DELAY_MS:60000}
+      ablation:
+        maximum-quality-regression: ${AGENT_RL_ALIGNMENT_ABLATION_MAXIMUM_QUALITY_REGRESSION:0.02}
+        maximum-cost-ratio: ${AGENT_RL_ALIGNMENT_ABLATION_MAXIMUM_COST_RATIO:1.25}
     environment:
       # 供百炼云端 Rollout 调用；必须部署到云端可访问地址，并配置独立强令牌。
       api-enabled: ${AGENT_RL_ENVIRONMENT_API_ENABLED:false}

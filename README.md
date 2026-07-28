@@ -428,6 +428,12 @@ Accept: text/event-stream
 - `POST /api/agent-rl/feedback`：提交 1～5 分用户反馈并重算奖励
 - `GET /api/agent-rl/metrics`：查看平均奖励、忠实率、延迟和用户评分
 - `GET /api/agent-rl/export?minimumReward=0.7`：导出 JSONL 训练数据
+- `POST /api/agent-rl/alignment/assessments/{trajectoryId}`：多 AI Judge 自动评审一条轨迹
+- `POST /api/agent-rl/alignment/assessments?limit=10`：批量评审尚未打分的轨迹
+- `GET /api/agent-rl/alignment/assessments/{trajectoryId}`：查看自动评审和训练决策
+- `GET /api/agent-rl/alignment/metrics`：查看伪标签覆盖率、分歧率和自动批准率
+- `POST /api/agent-evaluation/alignment-ablation-reports`：汇总四组独立评测运行
+- `GET /api/agent-evaluation/alignment-ablation-reports/{reportId}`：读取消融量化报告
 
 前端的评分闭环使用下列聚合/反馈接口，无需开放完整轨迹管理 API：
 
@@ -435,23 +441,45 @@ Accept: text/event-stream
 - `GET /api/ai/love_app/agent-rl/metrics`：读取不含用户内容的聚合指标
 - `GET /api/ai/love_app/agent-rl/readiness`：读取百炼数据集就绪状态
 
-### 阿里云百炼 Agentic RL（第二阶段）
+### Human-light RLAIF + 阿里云百炼 Agentic RL
 
 项目已提供一套不依赖本机 NVIDIA GPU 的百炼云端训练链路：
 
 1. Java 服务记录 Agentic RAG 轨迹与多维奖励；
-2. 只选择高奖励且获得 4～5 星人工反馈的轨迹，生成百炼
-   `messages + rollout_extra` 格式的训练集和验证集；
+2. 使用 RLVR 硬门禁和四个 rubric AI Judge 自动评分，只选择高置信一致的轨迹，
+   生成百炼 `messages + rollout_extra` 格式的训练集和验证集；
 3. 百炼 Rollout 中执行“规划 → 远程检索 → 验证 → 补充检索 → 回答”；
-4. Reward 函数综合参考答案质量、上下文忠实度、检索质量、证据充分度、任务完成度和效率；
+4. `human-light-rlvr-v2` Reward 综合指令完成、真实引用、证据支持、安全边界、
+   检索收敛、效率和反奖励投机，参考答案相似度仅占 10%；
 5. 使用 Qwen 9B 在百炼云端执行 GSPO，Mac 只负责数据准备与任务提交。
 
 云端训练代码位于 `bailian-agent-rl/`。提交脚本默认是 dry-run，只有同时传入
 `--execute` 并设置 `BAILIAN_RL_ALLOW_BILLING=true` 才会创建付费任务。
 
-#### 1. 收集人工反馈
+完整设计、半监督标签、TRAPO-inspired 轨迹筛选和量化消融方案见
+[`docs/HUMAN_LIGHT_RLAIF.md`](docs/HUMAN_LIGHT_RLAIF.md)。
 
-先调用 Agentic RAG 获得 `trajectoryId`，再提交用户评分：
+#### 1. 自动 AI 评审
+
+管理 API 开启后，可手动触发一批待评审轨迹：
+
+```http
+POST /api/agent-rl/alignment/assessments?limit=10
+```
+
+需要持续自动处理时显式开启：
+
+```bash
+export AGENT_RL_ALIGNMENT_AUTO_EVALUATE_ENABLED=true
+```
+
+该开关默认关闭，因为四个 Judge 都会产生模型调用费用。默认百炼导出模式为
+`AUTOMATED_ALIGNMENT`；如需回退到原有纯人工审批模式，设置
+`AGENT_RL_BAILIAN_APPROVAL_MODE=HUMAN_ONLY`。
+
+#### 2. 可选人工反馈
+
+人工反馈不再是每条训练数据的必需条件，但仍可作为高置信 anchor 和抽检信号：
 
 ```http
 POST /api/agent-rl/feedback
@@ -464,7 +492,7 @@ Content-Type: application/json
 }
 ```
 
-#### 2. 导出百炼数据集
+#### 3. 导出百炼数据集
 
 管理 API 默认关闭。仅在本地或受信任网络中设置
 `AGENT_RL_API_ENABLED=true`，然后调用：
@@ -478,10 +506,12 @@ Content-Type: application/json
 
 返回值包含 `rl-train.jsonl`、`rl-validation.jsonl` 和 `manifest.json` 的路径。
 `readyForCloudSubmission=false` 时不要提交训练；默认要求训练集数量严格大于
-`batch_size=64`，并且验证集非空。若只是检查格式，可显式设置
-`requireHumanApproval=false`，但这种自生成答案不应直接用于正式 RL。
+`batch_size=64`，并且验证集非空。默认只接受
+`PSEUDO_LABELED + POSITIVE` 或显式人工批准的数据，不允许只依赖总 Reward 阈值绕过
+审批。请求体可使用 `approvalMode=HUMAN_ONLY` 或
+`approvalMode=AUTOMATED_ALIGNMENT`。
 
-#### 3. 部署只读检索环境
+#### 4. 部署只读检索环境
 
 百炼 Rollout 在云端运行，无法访问 Mac 的 `localhost`。需要把当前 Spring Boot
 服务部署到一个百炼可访问的 HTTPS 地址，并设置：
@@ -501,7 +531,7 @@ X-Agent-RL-Token: <token>
 该接口只返回文档 ID、来源和截断后的正文，不返回完整 metadata。生产环境还应配置
 TLS、访问日志、限流和网络白名单。
 
-#### 4. 本地预检
+#### 5. 本地预检
 
 百炼 RL SDK 需要 Python 3.10 及以上。进入训练目录，创建独立环境：
 
@@ -523,7 +553,7 @@ python submit_job.py \
 
 预检只验证模型、配置、JSONL、样本数量和训练/验证集隔离，不会连接云端，也不会计费。
 
-#### 5. 创建云端训练任务
+#### 6. 创建云端训练任务
 
 先在百炼控制台完成 RL 服务授权，并准备 API Key。Rollout 需要访问已部署的检索服务：
 

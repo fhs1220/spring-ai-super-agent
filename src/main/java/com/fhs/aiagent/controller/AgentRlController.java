@@ -1,6 +1,8 @@
 package com.fhs.aiagent.controller;
 
 import com.fhs.aiagent.rl.AgentRlService;
+import com.fhs.aiagent.rl.alignment.AiJudgePanelService;
+import com.fhs.aiagent.rl.alignment.AutomatedAlignmentAssessment;
 import com.fhs.aiagent.rl.bailian.BailianRlDatasetService;
 import com.fhs.aiagent.rl.model.AgentTrajectory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,10 +25,14 @@ public class AgentRlController {
 
     private final BailianRlDatasetService bailianRlDatasetService;
 
+    private final AiJudgePanelService aiJudgePanelService;
+
     public AgentRlController(AgentRlService agentRlService,
-                             BailianRlDatasetService bailianRlDatasetService) {
+                             BailianRlDatasetService bailianRlDatasetService,
+                             AiJudgePanelService aiJudgePanelService) {
         this.agentRlService = agentRlService;
         this.bailianRlDatasetService = bailianRlDatasetService;
+        this.aiJudgePanelService = aiJudgePanelService;
     }
 
     @GetMapping("/trajectories/{trajectoryId}")
@@ -50,6 +56,27 @@ public class AgentRlController {
         return agentRlService.metrics();
     }
 
+    @PostMapping("/alignment/assessments/{trajectoryId}")
+    public AutomatedAlignmentAssessment assess(@PathVariable String trajectoryId) {
+        return aiJudgePanelService.assess(trajectoryId);
+    }
+
+    @GetMapping("/alignment/assessments/{trajectoryId}")
+    public AutomatedAlignmentAssessment assessment(@PathVariable String trajectoryId) {
+        return aiJudgePanelService.get(trajectoryId);
+    }
+
+    @PostMapping("/alignment/assessments")
+    public AiJudgePanelService.BatchAssessmentResult assessPending(
+            @RequestParam(defaultValue = "10") int limit) {
+        return aiJudgePanelService.assessPending(limit);
+    }
+
+    @GetMapping("/alignment/metrics")
+    public AiJudgePanelService.AlignmentMetrics alignmentMetrics() {
+        return aiJudgePanelService.metrics();
+    }
+
     @GetMapping(value = "/export", produces = "application/x-ndjson")
     public String export(@RequestParam(defaultValue = "0") double minimumReward) {
         return agentRlService.exportJsonLines(minimumReward);
@@ -65,8 +92,28 @@ public class AgentRlController {
                 request.minimumReward() == null ? 0.7 : request.minimumReward(),
                 request.validationRatio() == null ? 0.2 : request.validationRatio(),
                 request.expectedBatchSize() == null ? 64 : request.expectedBatchSize(),
-                request.requireHumanApproval() == null || request.requireHumanApproval()
+                approvalMode(request)
         ));
+    }
+
+    private BailianRlDatasetService.TrainingApprovalMode approvalMode(
+            BailianDatasetRequest request) {
+        if (request.approvalMode() != null && !request.approvalMode().isBlank()) {
+            try {
+                return BailianRlDatasetService.TrainingApprovalMode.valueOf(
+                        request.approvalMode().trim().toUpperCase());
+            } catch (IllegalArgumentException exception) {
+                throw new IllegalArgumentException(
+                        "approvalMode must be HUMAN_ONLY or AUTOMATED_ALIGNMENT",
+                        exception);
+            }
+        }
+        if (request.requireHumanApproval() != null) {
+            return request.requireHumanApproval()
+                    ? BailianRlDatasetService.TrainingApprovalMode.HUMAN_ONLY
+                    : BailianRlDatasetService.TrainingApprovalMode.AUTOMATED_ALIGNMENT;
+        }
+        return BailianRlDatasetService.TrainingApprovalMode.AUTOMATED_ALIGNMENT;
     }
 
     public record FeedbackRequest(String trajectoryId, int rating, String comment) {
@@ -76,7 +123,8 @@ public class AgentRlController {
             Double minimumReward,
             Double validationRatio,
             Integer expectedBatchSize,
-            Boolean requireHumanApproval
+            Boolean requireHumanApproval,
+            String approvalMode
     ) {
     }
 }
