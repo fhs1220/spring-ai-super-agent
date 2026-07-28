@@ -88,6 +88,10 @@ def validate_sample(sample: Any, path: Path, line_number: int) -> None:
     prefix = f"{path}:{line_number}"
     if not isinstance(sample, dict):
         raise ValueError(f"{prefix} must contain a JSON object")
+    if sample.get("dataset_role") == "trajectory_seed_only":
+        raise ValueError(
+            f"{prefix} is a trajectory seed, not a completed model rollout"
+        )
     messages = sample.get("messages")
     if not isinstance(messages, list) or not messages:
         raise ValueError(f"{prefix} messages must be a non-empty array")

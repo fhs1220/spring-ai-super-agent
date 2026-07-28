@@ -18,7 +18,9 @@
 真实模型指标不会写死或伪造。运行全量评测后，JSON 与 Markdown 报告会落在
 `tmp/evaluation/`。面试讲解顺序见
 [`docs/INTERVIEW_GUIDE.md`](docs/INTERVIEW_GUIDE.md)，评测设计见
-[`docs/EVALUATION.md`](docs/EVALUATION.md)。
+[`docs/EVALUATION.md`](docs/EVALUATION.md)，训练数据的离线生成、Benchmark 防污染和
+双重授权回放见
+[`docs/TRAINING_DATA_PIPELINE.md`](docs/TRAINING_DATA_PIPELINE.md)。
 
 ---
 

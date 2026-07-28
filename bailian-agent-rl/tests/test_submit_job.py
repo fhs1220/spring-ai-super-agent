@@ -65,6 +65,13 @@ class SubmitJobPreflightTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sum to 1.0"):
             submit_job.validate_config(config)
 
+    def test_rejects_trajectory_seed_as_completed_rollout(self) -> None:
+        value = sample("待回放问题")
+        value["dataset_role"] = "trajectory_seed_only"
+
+        with self.assertRaisesRegex(ValueError, "not a completed model rollout"):
+            submit_job.validate_sample(value, Path("seeds.jsonl"), 1)
+
 
 def sample(question: str) -> dict:
     return {
