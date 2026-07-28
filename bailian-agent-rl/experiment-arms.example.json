@@ -28,7 +28,7 @@
       "trainingJobId": "<training-job-id>",
       "checkpointId": "<optional-checkpoint-id>",
       "sourceDeployment": "<deployment-id-or-endpoint>",
-      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "rewardSchemaVersion": "human-light-rlvr-v3",
       "trainingConfig": "experiments/configs/rlvr-only.json",
       "trainingDataset": "<rlvr-train-jsonl>",
       "validationDataset": "<shared-validation-jsonl>"
@@ -41,7 +41,7 @@
       "trainingJobId": "<training-job-id>",
       "checkpointId": "<optional-checkpoint-id>",
       "sourceDeployment": "<deployment-id-or-endpoint>",
-      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "rewardSchemaVersion": "human-light-rlvr-v3",
       "trainingConfig": "experiments/configs/rlvr-rlaif.json",
       "trainingDataset": "<rlaif-train-jsonl>",
       "validationDataset": "<shared-validation-jsonl>"
@@ -54,7 +54,7 @@
       "trainingJobId": "<training-job-id>",
       "checkpointId": "<optional-checkpoint-id>",
       "sourceDeployment": "<deployment-id-or-endpoint>",
-      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "rewardSchemaVersion": "human-light-rlvr-v3",
       "trainingConfig": "experiments/configs/full-trajectory-guided.json",
       "trainingDataset": "<trajectory-guided-train-jsonl>",
       "validationDataset": "<shared-validation-jsonl>"

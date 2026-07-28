@@ -97,7 +97,7 @@ public class RagAbEvaluationService {
             String modelArtifactFingerprint,
             @Value("${agent.evaluation.training-config-fingerprint:UNSPECIFIED}")
             String trainingConfigFingerprint,
-            @Value("${agent.evaluation.reward-schema-version:human-light-rlvr-v2}")
+            @Value("${agent.evaluation.reward-schema-version:human-light-rlvr-v3}")
             String rewardSchemaVersion,
             @Value("${agent.evaluation.source-deployment:local}")
             String sourceDeployment) {

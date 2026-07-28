@@ -1,7 +1,7 @@
 {
   "model": "qwen3.5-9b",
   "alignment_arm": "FULL_TRAJECTORY_GUIDED",
-  "reward_schema_version": "human-light-rlvr-v2",
+  "reward_schema_version": "human-light-rlvr-v3",
   "reward_metric_weights": {
     "reference_quality": 0.10,
     "grounding_quality": 0.20,

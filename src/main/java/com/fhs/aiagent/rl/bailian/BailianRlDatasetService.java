@@ -434,7 +434,7 @@ public class BailianRlDatasetService {
         rolloutExtra.put("source_reward_dimensions", trajectory.reward());
         rolloutExtra.put("retrieved_document_ids", trajectory.retrievedDocumentIds());
         rolloutExtra.put("human_rating", trajectory.userRating());
-        rolloutExtra.put("reward_schema_version", "human-light-rlvr-v2");
+        rolloutExtra.put("reward_schema_version", "human-light-rlvr-v3");
         rolloutExtra.put("verification_contract", Map.of(
                 "minimum_answer_chars", 80,
                 "maximum_answer_chars", 6000,

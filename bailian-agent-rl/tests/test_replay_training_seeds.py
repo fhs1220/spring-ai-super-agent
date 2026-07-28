@@ -63,6 +63,50 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "AGENT_RL_API_ENABLED=true"):
                 replay.preflight_server("http://127.0.0.1:8123/api", 10)
 
+    def test_adds_auditable_execution_summary(self) -> None:
+        summary = {
+            "results": [
+                {
+                    "reward": 0.9,
+                    "rlvr": {
+                        "total": 0.7,
+                        "hard_gate_passed": True,
+                        "violations": [],
+                    },
+                    "execution_mode": "SINGLE_AGENT",
+                    "telemetry": {
+                        "model_call_count": 4,
+                        "total_tokens": 1000,
+                        "estimated_cost_cny": 0.01,
+                        "timeout_count": 0,
+                    },
+                },
+                {
+                    "reward": 0.8,
+                    "rlvr": {
+                        "total": 0.6,
+                        "hard_gate_passed": True,
+                        "violations": ["instruction_contract_incomplete"],
+                    },
+                    "execution_mode": "ADAPTIVE_MULTI_AGENT",
+                    "telemetry": {
+                        "model_call_count": 7,
+                        "total_tokens": 2000,
+                        "estimated_cost_cny": 0.02,
+                        "timeout_count": 1,
+                    },
+                },
+            ]
+        }
+
+        replay.add_execution_summary(summary)
+
+        self.assertEqual(11, summary["underlying_model_call_count"])
+        self.assertEqual(3000, summary["observed_telemetry"]["total_tokens"])
+        self.assertEqual(0.03, summary["observed_telemetry"]["estimated_cost_cny"])
+        self.assertEqual(0.65, summary["rlvr_summary"]["average"])
+        self.assertEqual(1, summary["rlvr_summary"]["violation_count"])
+
 
 def seed(seed_hash: str, question: str) -> dict:
     return {

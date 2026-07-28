@@ -73,9 +73,9 @@ Content-Type: application/json
 
 这属于适配托管云训练的 TRAPO-inspired 离线 curriculum，不声称逐行复现 veRL Trainer。
 
-## 云端 RLVR v2
+## 云端 RLVR v3
 
-百炼 Reward schema 固定为 `human-light-rlvr-v2`。参考答案 token-F1 权重由旧版 35%
+百炼 Reward schema 固定为 `human-light-rlvr-v3`。参考答案 token-F1 权重由旧版 35%
 降低为 10%，防止模型通过复述参考答案刷分。当前九维奖励为：
 
 | Reward 维度 | 权重 |
@@ -91,8 +91,9 @@ Content-Type: application/json
 | 反奖励投机 | 0.10 |
 
 反奖励投机会识别内部评分字段、要求高分、重复行、近乎逐字复制参考答案和暴露内部检索
-轨迹，并通过乘法刹车降低总奖励。Rollout 会保存原问题和本轮文档 ID，最终答案只能引用
-真实存在的 `[1]`、`[2]` 片段编号。
+轨迹，并通过乘法刹车降低总奖励。v3 会逐项验证 `required_concepts`、禁止语句、
+最少行动项、禁止追问与合理假设标注，同时兼容真实答案中的 `[1]` 和 `[来源 1]`
+引用格式。Rollout 会保存原问题和本轮文档 ID，最终答案只能引用真实存在的片段编号。
 
 ## 量化指标
 
@@ -155,7 +156,7 @@ Content-Type: application/json
       "modelVersion": "rlvr-model",
       "modelArtifactFingerprint": "<different-64-hex-sha256>",
       "trainingConfigFingerprint": "<64-hex-sha256>",
-      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "rewardSchemaVersion": "human-light-rlvr-v3",
       "sourceDeployment": "bailian-rlvr"
     },
     {
@@ -163,7 +164,7 @@ Content-Type: application/json
       "modelVersion": "rlaif-model",
       "modelArtifactFingerprint": "<different-64-hex-sha256>",
       "trainingConfigFingerprint": "<64-hex-sha256>",
-      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "rewardSchemaVersion": "human-light-rlvr-v3",
       "sourceDeployment": "bailian-rlaif"
     },
     {
@@ -171,7 +172,7 @@ Content-Type: application/json
       "modelVersion": "full-model",
       "modelArtifactFingerprint": "<different-64-hex-sha256>",
       "trainingConfigFingerprint": "<64-hex-sha256>",
-      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "rewardSchemaVersion": "human-light-rlvr-v3",
       "sourceDeployment": "bailian-full"
     }
   ]

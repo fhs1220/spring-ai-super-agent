@@ -17,7 +17,7 @@ from typing import Any
 
 
 SUPPORTED_MODELS = {"qwen3.5-9b", "qwen3.5-35b-a3b"}
-REWARD_SCHEMA_VERSION = "human-light-rlvr-v2"
+REWARD_SCHEMA_VERSION = "human-light-rlvr-v3"
 STATIC_REWARD_SCHEMA_VERSION = "static-reward-v1"
 ALIGNMENT_ARMS = {
     "BASELINE_STATIC_REWARD",

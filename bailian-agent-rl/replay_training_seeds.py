@@ -21,6 +21,13 @@ from pathlib import Path
 from typing import Any
 
 
+SCRIPT_ROOT = Path(__file__).resolve().parent
+if str(SCRIPT_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_ROOT))
+
+from functions.reward.scoring import score_rollout  # noqa: E402
+
+
 SEED_SCHEMA_VERSION = "agent-rl-trajectory-seed-v1"
 REPLAY_SCHEMA_VERSION = "agent-rl-seed-replay-v1"
 DATASET_ROLE = "trajectory_seed_only"
@@ -216,6 +223,7 @@ def preflight_server(api_root: str, timeout: int) -> None:
 
 def execute_item(
     item: dict[str, Any],
+    seed: dict[str, Any],
     api_root: str,
     timeout: int,
 ) -> dict[str, Any]:
@@ -245,6 +253,73 @@ def execute_item(
         + urllib.parse.quote(trajectory_id, safe="")
     )
     trajectory = request_json(trajectory_url, timeout)
+    steps = (
+        trajectory.get("steps")
+        if isinstance(trajectory.get("steps"), list)
+        else []
+    )
+    rollout_extra = seed["rollout_extra"]
+    telemetry = (
+        trajectory.get("telemetry")
+        if isinstance(trajectory.get("telemetry"), dict)
+        else {}
+    )
+    route_step = next(
+        (
+            step
+            for step in steps
+            if isinstance(step, dict) and step.get("type") == "ROUTE"
+        ),
+        {},
+    )
+    plan_step = next(
+        (
+            step
+            for step in steps
+            if isinstance(step, dict) and step.get("type") == "PLAN"
+        ),
+        {},
+    )
+    retrieved_document_ids = trajectory.get("retrievedDocumentIds")
+    retrieved_document_ids = (
+        retrieved_document_ids
+        if isinstance(retrieved_document_ids, list)
+        else []
+    )
+    metrics = {
+        "retrieved_document_count": len(retrieved_document_ids),
+        "retrieval_call_count": sum(
+            1
+            for step in steps
+            if isinstance(step, dict)
+            and step.get("type") in {"RETRIEVE", "FOLLOW_UP"}
+        ),
+        "planned_query_count": (
+            plan_step.get("output", {}).get("queryCount", 0)
+            if isinstance(plan_step.get("output"), dict)
+            else 0
+        ),
+        "follow_up_rounds": sum(
+            1
+            for step in steps
+            if isinstance(step, dict) and step.get("type") == "FOLLOW_UP"
+        ),
+    }
+    answer = str(trajectory.get("finalAnswer") or "")
+    solution = str(rollout_extra.get("solution") or "")
+    rlvr_score = score_rollout(
+        answer=answer,
+        question=item["question"],
+        solution=solution,
+        context=solution,
+        metrics=metrics,
+        extra=rollout_extra,
+    )
+    route_output = (
+        route_step.get("output")
+        if isinstance(route_step.get("output"), dict)
+        else {}
+    )
     return {
         "seed_id": item["seed_id"],
         "round": item["round"],
@@ -257,6 +332,21 @@ def execute_item(
             if isinstance(trajectory.get("reward"), dict)
             else None
         ),
+        "rlvr": {
+            "schema_version": "human-light-rlvr-v3",
+            "total": rlvr_score.total,
+            "metrics": rlvr_score.metrics,
+            "hard_gate_passed": rlvr_score.hard_gate_passed,
+            "violations": list(rlvr_score.violations),
+            "context_source": "seed_reference_solution",
+        },
+        "execution_mode": route_output.get("mode"),
+        "telemetry": {
+            "model_call_count": telemetry.get("modelCallCount"),
+            "total_tokens": telemetry.get("totalTokens"),
+            "estimated_cost_cny": telemetry.get("estimatedCostCny"),
+            "timeout_count": telemetry.get("timeoutCount"),
+        },
     }
 
 
@@ -268,6 +358,75 @@ def write_manifest(path: Path, value: dict[str, Any]) -> None:
         encoding="utf-8",
     )
     temporary.replace(path)
+
+
+def add_execution_summary(summary: dict[str, Any]) -> None:
+    results = summary["results"]
+    online_rewards = [
+        float(result["reward"])
+        for result in results
+        if isinstance(result.get("reward"), (int, float))
+    ]
+    rlvr_scores = [
+        float(result["rlvr"]["total"])
+        for result in results
+        if isinstance(result.get("rlvr"), dict)
+        and isinstance(result["rlvr"].get("total"), (int, float))
+    ]
+    telemetry = [
+        result["telemetry"]
+        for result in results
+        if isinstance(result.get("telemetry"), dict)
+    ]
+    modes: dict[str, int] = {}
+    for result in results:
+        mode = str(result.get("execution_mode") or "UNKNOWN")
+        modes[mode] = modes.get(mode, 0) + 1
+    summary["underlying_model_call_count"] = sum(
+        int(value.get("model_call_count") or 0) for value in telemetry
+    )
+    summary["observed_telemetry"] = {
+        "total_tokens": sum(
+            int(value.get("total_tokens") or 0) for value in telemetry
+        ),
+        "estimated_cost_cny": round(
+            sum(
+                float(value.get("estimated_cost_cny") or 0.0)
+                for value in telemetry
+            ),
+            8,
+        ),
+        "timeout_count": sum(
+            int(value.get("timeout_count") or 0) for value in telemetry
+        ),
+    }
+    summary["execution_modes"] = modes
+    summary["online_reward_summary"] = number_summary(online_rewards)
+    summary["rlvr_summary"] = {
+        **number_summary(rlvr_scores),
+        "hard_gate_passed": sum(
+            1
+            for result in results
+            if isinstance(result.get("rlvr"), dict)
+            and result["rlvr"].get("hard_gate_passed") is True
+        ),
+        "violation_count": sum(
+            len(result["rlvr"].get("violations", []))
+            for result in results
+            if isinstance(result.get("rlvr"), dict)
+        ),
+        "context_source": "seed_reference_solution",
+    }
+
+
+def number_summary(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"average": None, "minimum": None, "maximum": None}
+    return {
+        "average": round(sum(values) / len(values), 6),
+        "minimum": round(min(values), 6),
+        "maximum": round(max(values), 6),
+    }
 
 
 def main() -> int:
@@ -304,8 +463,14 @@ def main() -> int:
         if args.output is None:
             raise ValueError("--execute requires --output for resumable evidence")
         preflight_server(args.api_root, args.timeout_seconds)
+        seeds_by_id = {seed["seed_id"]: seed for seed in seeds}
         for item in plan:
-            result = execute_item(item, args.api_root, args.timeout_seconds)
+            result = execute_item(
+                item,
+                seeds_by_id[item["seed_id"]],
+                args.api_root,
+                args.timeout_seconds,
+            )
             summary["results"].append(result)
             summary["completed_agent_runs"] = len(summary["results"])
             write_manifest(args.output, summary)
@@ -316,6 +481,7 @@ def main() -> int:
                     "stopped after the first mismatched trajectory"
                 )
         summary["completed"] = True
+        add_execution_summary(summary)
         write_manifest(args.output, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0

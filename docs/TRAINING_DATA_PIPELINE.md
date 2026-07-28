@@ -16,7 +16,9 @@
 
 2. **真实 Agent 轨迹**
    - 用本地 Spring Boot 的 durable SSE 接口逐条回放题目；
-   - 回答、阶段 Trace、检索来源、奖励、遥测和 `policyVersion` 均由真实运行产生；
+- 回答、阶段 Trace、检索来源、奖励、遥测和 `policyVersion` 均由真实运行产生；
+- 回放清单同时记录在线轨迹奖励、契约级 RLVR 分数、模型调用数、Token、估算费用、
+  超时和单/多 Agent 执行模式；
    - 同一题默认回放 2 轮，为轨迹引导筛选提供同题多轮证据；
    - 首条轨迹会核对服务端真实 `policyVersion`，不一致立即停止。
 

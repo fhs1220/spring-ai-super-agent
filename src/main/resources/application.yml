@@ -214,5 +214,5 @@ agent:
     model-version: ${AGENT_EVALUATION_MODEL_VERSION:qwen-plus}
     model-artifact-fingerprint: ${AGENT_EVALUATION_MODEL_ARTIFACT_FINGERPRINT:UNSPECIFIED}
     training-config-fingerprint: ${AGENT_EVALUATION_TRAINING_CONFIG_FINGERPRINT:UNSPECIFIED}
-    reward-schema-version: ${AGENT_EVALUATION_REWARD_SCHEMA_VERSION:human-light-rlvr-v2}
+    reward-schema-version: ${AGENT_EVALUATION_REWARD_SCHEMA_VERSION:human-light-rlvr-v3}
     source-deployment: ${AGENT_EVALUATION_SOURCE_DEPLOYMENT:local}

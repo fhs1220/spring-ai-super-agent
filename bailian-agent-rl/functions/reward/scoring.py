@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-REWARD_SCHEMA_VERSION = "human-light-rlvr-v2"
+REWARD_SCHEMA_VERSION = "human-light-rlvr-v3"
 BASELINE_STATIC_REWARD = "BASELINE_STATIC_REWARD"
 
 REWARD_METRIC_WEIGHTS: dict[str, float] = {
@@ -166,7 +166,7 @@ def score_rollout(
     )
     citation_quality = _citation_score(answer, int(document_count), citation_required)
     task_completion_quality = _task_completion_score(
-        answer, question, minimum_chars, maximum_chars
+        answer, question, minimum_chars, maximum_chars, contract
     )
     safety_boundary_quality = _safety_boundary_score(answer, question, context)
     retrieval_quality = _retrieval_score(document_count)
@@ -219,6 +219,7 @@ def _task_completion_score(
     question: str,
     minimum_chars: int,
     maximum_chars: int,
+    contract: dict[str, Any],
 ) -> float:
     checks = [1.0 if minimum_chars <= len(answer) <= maximum_chars else 0.0]
     if any(marker in question for marker in _NO_FOLLOW_UP_MARKERS):
@@ -240,6 +241,54 @@ def _task_completion_score(
         if start in question and end in question:
             checks.append(1.0 if start in answer and end in answer else 0.0)
             break
+
+    required_concepts = contract.get("required_concepts")
+    if isinstance(required_concepts, list):
+        for expression in required_concepts:
+            if not isinstance(expression, str) or not expression.strip():
+                continue
+            alternatives = [
+                value.strip()
+                for value in expression.split("|")
+                if value.strip()
+            ]
+            checks.append(
+                1.0 if any(value in answer for value in alternatives) else 0.0
+            )
+
+    forbidden_phrases = contract.get("forbidden_phrases")
+    if isinstance(forbidden_phrases, list):
+        for phrase in forbidden_phrases:
+            if isinstance(phrase, str) and phrase:
+                checks.append(0.0 if phrase in answer else 1.0)
+
+    if contract.get("no_follow_up") is True:
+        checks.append(
+            0.0
+            if any(marker in answer for marker in _FOLLOW_UP_REQUESTS)
+            else 1.0
+        )
+
+    minimum_action_items = _bounded_int(
+        contract.get("minimum_action_items"),
+        0,
+        0,
+        20,
+    )
+    if minimum_action_items > 0:
+        checks.append(
+            min(1.0, _observed_list_count(answer) / minimum_action_items)
+        )
+
+    if contract.get("must_mark_assumptions") is True:
+        checks.append(
+            1.0
+            if any(
+                marker in answer
+                for marker in ("假设", "基于目前", "基于现有", "信息不足")
+            )
+            else 0.0
+        )
     return _mean(checks)
 
 
@@ -257,7 +306,10 @@ def _safety_boundary_score(answer: str, question: str, context: str) -> float:
 
 
 def _citation_score(answer: str, document_count: int, required: bool) -> float:
-    citations = [int(value) for value in re.findall(r"\[(\d{1,3})\]", answer)]
+    citations = [
+        int(value)
+        for value in re.findall(r"\[(?:来源\s*)?(\d{1,3})\]", answer)
+    ]
     if not citations:
         return 0.0 if required else 1.0
     valid = sum(1 <= citation <= document_count for citation in citations)

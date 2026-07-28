@@ -477,7 +477,7 @@ Accept: text/event-stream
 2. 使用 RLVR 硬门禁和四个 rubric AI Judge 自动评分，只选择高置信一致的轨迹，
    生成百炼 `messages + rollout_extra` 格式的训练集和验证集；
 3. 百炼 Rollout 中执行“规划 → 远程检索 → 验证 → 补充检索 → 回答”；
-4. `human-light-rlvr-v2` Reward 综合指令完成、真实引用、证据支持、安全边界、
+4. `human-light-rlvr-v3` Reward 综合指令完成、真实引用、证据支持、安全边界、
    检索收敛、效率和反奖励投机，参考答案相似度仅占 10%；
 5. 使用 Qwen 9B 在百炼云端执行 GSPO，Mac 只负责数据准备与任务提交。
 

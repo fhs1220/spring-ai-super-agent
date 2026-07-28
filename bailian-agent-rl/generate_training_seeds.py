@@ -322,7 +322,7 @@ def make_seed(
         "messages": [{"role": "user", "content": question}],
         "rollout_extra": {
             "solution": unit.answer,
-            "reward_schema_version": "human-light-rlvr-v2",
+            "reward_schema_version": "human-light-rlvr-v3",
             "verification_contract": contract,
             "source_provenance": [
                 {

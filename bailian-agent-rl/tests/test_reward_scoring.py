@@ -109,6 +109,56 @@ class RewardScoringTest(unittest.TestCase):
         self.assertLess(score.metrics["task_completion_quality"], 0.6)
         self.assertIn("instruction_contract_incomplete", score.violations)
 
+    def test_enforces_generated_contract_and_source_citation_format(self) -> None:
+        answer = (
+            "基于目前信息，先作出一个合理假设：双方今晚都有十五分钟。\n"
+            "1. 今天先暂停并整理自己的感受。[来源 1]\n"
+            "2. 双方共同倾听并表达需求。[来源 1]\n"
+            "3. 今晚检查行动结果并复盘。[来源 1]"
+        )
+        contract = {
+            "minimum_answer_chars": 80,
+            "maximum_answer_chars": 1000,
+            "citation_required": True,
+            "required_concepts": [
+                "暂停|冷静",
+                "倾听|理解",
+                "共同|双方",
+                "今天|立即",
+                "检查|复盘",
+            ],
+            "forbidden_phrases": ["请你详细描述"],
+            "no_follow_up": True,
+            "must_mark_assumptions": True,
+            "minimum_action_items": 3,
+        }
+
+        score = score_rollout(
+            answer=answer,
+            question="不要追问，直接给三项今天执行的行动。",
+            solution="先暂停，倾听双方感受，共同复盘。",
+            context="[1] 先暂停，倾听双方感受，共同复盘。",
+            metrics={"retrieved_document_count": 1},
+            extra={"verification_contract": contract},
+        )
+
+        self.assertEqual(1.0, score.metrics["citation_quality"])
+        self.assertEqual(1.0, score.metrics["task_completion_quality"])
+
+        incomplete = score_rollout(
+            answer=answer.replace("基于目前信息，先作出一个合理假设：", ""),
+            question="不要追问，直接给三项今天执行的行动。",
+            solution="先暂停，倾听双方感受，共同复盘。",
+            context="[1] 先暂停，倾听双方感受，共同复盘。",
+            metrics={"retrieved_document_count": 1},
+            extra={"verification_contract": contract},
+        )
+
+        self.assertLess(
+            incomplete.metrics["task_completion_quality"],
+            score.metrics["task_completion_quality"],
+        )
+
     def test_rejects_invalid_citation_and_unsafe_advice(self) -> None:
         answer = (
             "你应该继续忍耐并独自对抗，不要告诉任何人。"
@@ -162,7 +212,7 @@ class RewardScoringTest(unittest.TestCase):
         self.assertGreater(score.total, 0)
 
     def test_reward_schema_is_versioned_and_weights_sum_to_one(self) -> None:
-        self.assertEqual("human-light-rlvr-v2", REWARD_SCHEMA_VERSION)
+        self.assertEqual("human-light-rlvr-v3", REWARD_SCHEMA_VERSION)
         self.assertAlmostEqual(1.0, sum(REWARD_METRIC_WEIGHTS.values()))
         self.assertEqual(0.10, REWARD_METRIC_WEIGHTS["reference_quality"])
 

@@ -119,7 +119,7 @@ class BailianRlDatasetServiceTest {
         assertThat(sample.at("/rollout_extra/judge_agreement").asDouble())
                 .isEqualTo(0.9);
         assertThat(sample.at("/rollout_extra/reward_schema_version").asText())
-                .isEqualTo("human-light-rlvr-v2");
+                .isEqualTo("human-light-rlvr-v3");
         assertThat(sample.at("/rollout_extra/verification_contract/citation_required")
                 .asBoolean()).isTrue();
     }
