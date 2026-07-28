@@ -10,6 +10,7 @@ public record RagAbReport(
         String runId,
         String benchmarkVersion,
         String benchmarkFingerprint,
+        RuntimeIdentity runtimeIdentity,
         Instant startedAt,
         Instant completedAt,
         int caseCount,
@@ -32,9 +33,75 @@ public record RagAbReport(
 ) {
 
     public RagAbReport {
+        runtimeIdentity = runtimeIdentity == null
+                ? RuntimeIdentity.unspecified()
+                : runtimeIdentity;
         gateFailures = gateFailures == null ? List.of() : List.copyOf(gateFailures);
         tagSummaries = tagSummaries == null ? List.of() : List.copyOf(tagSummaries);
         cases = cases == null ? List.of() : List.copyOf(cases);
+    }
+
+    /**
+     * 绑定一次评测实际使用的模型资产和训练配置，防止事后把同一模型
+     * 重命名成不同消融组。
+     */
+    public record RuntimeIdentity(
+            String modelVersion,
+            String modelArtifactFingerprint,
+            String trainingConfigFingerprint,
+            String rewardSchemaVersion,
+            String sourceDeployment
+    ) {
+        public RuntimeIdentity {
+            modelVersion = normalize(modelVersion);
+            modelArtifactFingerprint =
+                    normalizeFingerprint(modelArtifactFingerprint);
+            trainingConfigFingerprint =
+                    normalizeFingerprint(trainingConfigFingerprint);
+            rewardSchemaVersion = normalize(rewardSchemaVersion);
+            sourceDeployment = normalize(sourceDeployment);
+        }
+
+        public static RuntimeIdentity unspecified() {
+            return new RuntimeIdentity(
+                    "UNSPECIFIED",
+                    "UNSPECIFIED",
+                    "UNSPECIFIED",
+                    "UNSPECIFIED",
+                    "UNSPECIFIED"
+            );
+        }
+
+        public boolean isVerifiable() {
+            return hasText(modelVersion)
+                    && isSha256(modelArtifactFingerprint)
+                    && isSha256(trainingConfigFingerprint)
+                    && hasText(rewardSchemaVersion)
+                    && hasText(sourceDeployment);
+        }
+
+        private static boolean isSha256(String value) {
+            return value != null && value.matches("[a-fA-F0-9]{64}");
+        }
+
+        private static boolean hasText(String value) {
+            return value != null
+                    && !value.isBlank()
+                    && !"UNSPECIFIED".equalsIgnoreCase(value);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank()
+                    ? "UNSPECIFIED"
+                    : value.trim();
+        }
+
+        private static String normalizeFingerprint(String value) {
+            String normalized = normalize(value);
+            return isSha256(normalized)
+                    ? normalized.toLowerCase()
+                    : normalized;
+        }
     }
 
     public record VariantSummary(

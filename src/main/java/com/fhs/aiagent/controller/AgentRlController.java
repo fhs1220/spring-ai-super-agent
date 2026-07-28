@@ -1,6 +1,7 @@
 package com.fhs.aiagent.controller;
 
 import com.fhs.aiagent.rl.AgentRlService;
+import com.fhs.aiagent.rl.alignment.AlignmentAutomationService;
 import com.fhs.aiagent.rl.alignment.AiJudgePanelService;
 import com.fhs.aiagent.rl.alignment.AutomatedAlignmentAssessment;
 import com.fhs.aiagent.rl.bailian.BailianRlDatasetService;
@@ -27,12 +28,17 @@ public class AgentRlController {
 
     private final AiJudgePanelService aiJudgePanelService;
 
+    private final AlignmentAutomationService alignmentAutomationService;
+
     public AgentRlController(AgentRlService agentRlService,
                              BailianRlDatasetService bailianRlDatasetService,
-                             AiJudgePanelService aiJudgePanelService) {
+                             AiJudgePanelService aiJudgePanelService,
+                             AlignmentAutomationService
+                                     alignmentAutomationService) {
         this.agentRlService = agentRlService;
         this.bailianRlDatasetService = bailianRlDatasetService;
         this.aiJudgePanelService = aiJudgePanelService;
+        this.alignmentAutomationService = alignmentAutomationService;
     }
 
     @GetMapping("/trajectories/{trajectoryId}")
@@ -67,14 +73,40 @@ public class AgentRlController {
     }
 
     @PostMapping("/alignment/assessments")
-    public AiJudgePanelService.BatchAssessmentResult assessPending(
+    public AlignmentAutomationService.AutomationRunResult assessPending(
             @RequestParam(defaultValue = "10") int limit) {
-        return aiJudgePanelService.assessPending(limit);
+        return alignmentAutomationService.runManual(limit);
     }
 
     @GetMapping("/alignment/metrics")
     public AiJudgePanelService.AlignmentMetrics alignmentMetrics() {
         return aiJudgePanelService.metrics();
+    }
+
+    @GetMapping("/alignment/automation")
+    public AlignmentAutomationService.AutomationStatus alignmentAutomation() {
+        return alignmentAutomationService.status();
+    }
+
+    @PostMapping("/alignment/automation/run")
+    public AlignmentAutomationService.AutomationRunResult
+    runAlignmentAutomation(
+            @RequestParam(defaultValue = "10") int limit) {
+        return alignmentAutomationService.runManual(limit);
+    }
+
+    @PostMapping("/alignment/automation/control")
+    public AlignmentAutomationService.AutomationStatus
+    controlAlignmentAutomation(
+            @RequestBody AlignmentAutomationControlRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("control request is required");
+        }
+        return alignmentAutomationService.updateControl(
+                request.paused(),
+                request.resetFailureCircuit(),
+                request.reason()
+        );
     }
 
     @GetMapping(value = "/export", produces = "application/x-ndjson")
@@ -117,6 +149,13 @@ public class AgentRlController {
     }
 
     public record FeedbackRequest(String trajectoryId, int rating, String comment) {
+    }
+
+    public record AlignmentAutomationControlRequest(
+            boolean paused,
+            boolean resetFailureCircuit,
+            String reason
+    ) {
     }
 
     public record BailianDatasetRequest(

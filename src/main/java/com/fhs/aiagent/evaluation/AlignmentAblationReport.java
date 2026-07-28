@@ -15,6 +15,7 @@ public record AlignmentAblationReport(
         double fullCostRatioVsBaseline,
         boolean benchmarkComparable,
         boolean costComparable,
+        boolean statisticalGatePassed,
         boolean releaseGatePassed,
         List<String> gateFailures,
         String reportPath,
@@ -53,7 +54,36 @@ public record AlignmentAblationReport(
             boolean originalRegressionGatePassed,
             double qualityDeltaVsBaseline,
             double passRateDeltaVsBaseline,
-            double costRatioVsBaseline
+            double costRatioVsBaseline,
+            PairedQualityComparison pairedQualityVsBaseline
     ) {
+    }
+
+    public record PairedQualityComparison(
+            boolean comparable,
+            String unavailableReason,
+            int sampleCount,
+            double meanDelta,
+            double medianDelta,
+            double standardDeviation,
+            double lowerConfidenceBound,
+            double upperConfidenceBound,
+            double standardizedEffect,
+            int wins,
+            int ties,
+            int losses,
+            double twoSidedSignTestPValue,
+            double probabilityOfImprovement,
+            boolean statisticallySignificant,
+            double nonInferiorityMargin,
+            boolean nonInferiorityPassed,
+            boolean enoughSamples,
+            int bootstrapIterations,
+            double confidenceLevel,
+            long bootstrapSeed
+    ) {
+        public PairedQualityComparison {
+            unavailableReason = unavailableReason == null ? "" : unavailableReason;
+        }
     }
 }

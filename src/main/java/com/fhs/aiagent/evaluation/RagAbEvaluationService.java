@@ -69,6 +69,8 @@ public class RagAbEvaluationService {
 
     private final double maximumAdaptiveOracleCostRatio;
 
+    private final RagAbReport.RuntimeIdentity runtimeIdentity;
+
     public RagAbEvaluationService(
             RagEvaluationVariantExecutor variantExecutor,
             RagAnswerScorer scorer,
@@ -88,7 +90,17 @@ public class RagAbEvaluationService {
             @Value("${agent.evaluation.minimum-route-accuracy:0.8}")
             double minimumRouteAccuracy,
             @Value("${agent.evaluation.maximum-adaptive-oracle-cost-ratio:1.10}")
-            double maximumAdaptiveOracleCostRatio) {
+            double maximumAdaptiveOracleCostRatio,
+            @Value("${agent.evaluation.model-version:qwen-plus}")
+            String modelVersion,
+            @Value("${agent.evaluation.model-artifact-fingerprint:UNSPECIFIED}")
+            String modelArtifactFingerprint,
+            @Value("${agent.evaluation.training-config-fingerprint:UNSPECIFIED}")
+            String trainingConfigFingerprint,
+            @Value("${agent.evaluation.reward-schema-version:human-light-rlvr-v2}")
+            String rewardSchemaVersion,
+            @Value("${agent.evaluation.source-deployment:local}")
+            String sourceDeployment) {
         this.variantExecutor = Objects.requireNonNull(
                 variantExecutor, "variantExecutor");
         this.scorer = Objects.requireNonNull(scorer, "scorer");
@@ -102,6 +114,13 @@ public class RagAbEvaluationService {
         this.minimumRouteAccuracy = clamp(minimumRouteAccuracy);
         this.maximumAdaptiveOracleCostRatio =
                 Math.max(0, maximumAdaptiveOracleCostRatio);
+        this.runtimeIdentity = new RagAbReport.RuntimeIdentity(
+                modelVersion,
+                modelArtifactFingerprint,
+                trainingConfigFingerprint,
+                rewardSchemaVersion,
+                sourceDeployment
+        );
     }
 
     public RagAbReport evaluate(
@@ -197,6 +216,7 @@ public class RagAbEvaluationService {
                 runId,
                 BENCHMARK_VERSION,
                 benchmarkFingerprint,
+                runtimeIdentity,
                 startedAt,
                 Instant.now(),
                 comparisons.size(),
@@ -563,6 +583,16 @@ public class RagAbEvaluationService {
                 .append("- Run: `").append(report.runId()).append("`\n")
                 .append("- Benchmark: `").append(report.benchmarkVersion())
                 .append("` / `").append(report.benchmarkFingerprint()).append("`\n")
+                .append("- Model asset: `")
+                .append(report.runtimeIdentity().modelVersion())
+                .append("` / `")
+                .append(report.runtimeIdentity().modelArtifactFingerprint())
+                .append("`\n")
+                .append("- Training config: `")
+                .append(report.runtimeIdentity().trainingConfigFingerprint())
+                .append("` / reward schema `")
+                .append(report.runtimeIdentity().rewardSchemaVersion())
+                .append("`\n")
                 .append("- Cases: ").append(report.caseCount()).append("\n")
                 .append("- Regression gate: **")
                 .append(report.regressionGatePassed() ? "PASS" : "FAIL")

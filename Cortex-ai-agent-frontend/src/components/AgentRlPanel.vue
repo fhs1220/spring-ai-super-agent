@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type {
   AgentRlMetrics,
+  AlignmentAutomationStatus,
   DatasetReadiness,
   RoutingPolicyQualityGuard,
   RoutingPolicyRegistry,
@@ -15,6 +16,7 @@ import type {
 const props = defineProps<{
   metrics: AgentRlMetrics | null
   readiness: DatasetReadiness | null
+  alignmentAutomation: AlignmentAutomationStatus | null
   routingPolicy: RoutingPolicyStatus | null
   routingPolicyQualityGuard: RoutingPolicyQualityGuard | null
   routingPolicyRegistry: RoutingPolicyRegistry | null
@@ -40,6 +42,21 @@ const eligibleTarget = computed(() => {
 const progress = computed(() => {
   if (!props.readiness) return 0
   return Math.min(100, Math.round((props.readiness.eligibleTrajectoryCount / eligibleTarget.value) * 100))
+})
+
+const alignmentAutomationLabel = computed(() => {
+  const labels = {
+    RUNNING: '评分中',
+    PAUSED: '已暂停',
+    COOLDOWN: '故障冷却',
+    DAILY_LIMIT: '今日额度用完',
+    IDLE: '暂无待评分',
+    MANUAL_ONLY: '仅手动',
+    READY: '自动评分就绪',
+  }
+  return props.alignmentAutomation
+    ? labels[props.alignmentAutomation.mode]
+    : '加载中'
 })
 
 function score(value: number | undefined): string {
@@ -218,6 +235,44 @@ function shortVersion(value: string | undefined): string {
     </div>
 
     <div v-if="error" class="panel-error">{{ error }}</div>
+
+    <section class="alignment-card">
+      <div class="alignment-heading">
+        <span>AI 自动评分</span>
+        <strong
+          :class="{
+            ready: alignmentAutomation?.mode === 'READY',
+            warning:
+              alignmentAutomation?.mode === 'COOLDOWN'
+              || alignmentAutomation?.mode === 'DAILY_LIMIT',
+          }"
+        >
+          {{ alignmentAutomationLabel }}
+        </strong>
+      </div>
+      <div class="alignment-meta">
+        <span>待评分 {{ alignmentAutomation?.pendingTrajectoryCount ?? 0 }}</span>
+        <span>已评分 {{ alignmentAutomation?.assessmentCount ?? 0 }}</span>
+        <span>
+          今日 {{ alignmentAutomation?.control.assessedToday ?? 0 }}
+          / {{ alignmentAutomation?.dailyTrajectoryLimit ?? '—' }}
+        </span>
+        <span>
+          Judge 调用估算
+          {{ alignmentAutomation?.estimatedJudgeCallsToday ?? 0 }}
+        </span>
+      </div>
+      <p v-if="alignmentAutomation?.control.lastError" class="alignment-error">
+        {{ alignmentAutomation.control.lastError }}
+      </p>
+      <p v-else>
+        {{
+          alignmentAutomation?.schedulerConfigured
+            ? `每批最多 ${alignmentAutomation.batchSize} 条，连续失败自动冷却`
+            : '自动调度默认关闭，可通过受保护接口手动评分'
+        }}
+      </p>
+    </section>
 
     <section class="policy-card">
       <div class="policy-heading">
@@ -672,6 +727,51 @@ h2 {
   color: #fca5a5;
   background: rgba(127, 29, 29, 0.16);
   font-size: 0.75rem;
+}
+.alignment-card {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(135deg, rgba(96, 165, 250, 0.06), transparent 58%),
+    var(--surface);
+}
+.alignment-heading,
+.alignment-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.alignment-heading span {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+.alignment-heading strong {
+  color: var(--text-heading);
+  font: 600 0.57rem/1 var(--mono);
+}
+.alignment-heading strong.ready {
+  color: var(--accent);
+}
+.alignment-heading strong.warning {
+  color: #f5c76b;
+}
+.alignment-meta {
+  flex-wrap: wrap;
+  margin-top: 9px;
+  color: var(--text-muted);
+  font: 0.52rem/1.25 var(--mono);
+}
+.alignment-card p {
+  margin: 9px 0 0;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+.alignment-card p.alignment-error {
+  color: #fca5a5;
 }
 .policy-card {
   margin-bottom: 12px;

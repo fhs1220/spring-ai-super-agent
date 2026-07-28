@@ -38,12 +38,14 @@ class AiJudgePanelServiceTest {
                 new AutomatedAlignmentEvaluator(4, 0.7, 0.72, 0.75, 0.35, 0.7)
         );
 
+        assertThat(service.workload().pendingTrajectoryCount()).isEqualTo(1);
         AutomatedAlignmentAssessment result = service.assess("trajectory-1");
 
         assertThat(calls).hasValue(4);
         assertThat(result.approvedPositive()).isTrue();
         assertThat(assessments.findByTrajectoryId("trajectory-1")).contains(result);
         assertThat(service.metrics().autoApprovalRate()).isEqualTo(1.0);
+        assertThat(service.workload().pendingTrajectoryCount()).isZero();
     }
 
     private AgentTrajectory trajectory() {

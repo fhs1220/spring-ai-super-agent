@@ -8,13 +8,19 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.UUID;
+import java.util.Set;
 
 @Service
 public class AlignmentAblationReportService {
@@ -29,6 +35,17 @@ public class AlignmentAblationReportService {
 
     private final double maximumCostRatio;
 
+    private final int bootstrapIterations;
+
+    private final double bootstrapConfidenceLevel;
+
+    private final int minimumPairedCases;
+
+    private final double pairedWinDelta;
+
+    private final PairedBootstrapAnalyzer pairedBootstrapAnalyzer =
+            new PairedBootstrapAnalyzer();
+
     public AlignmentAblationReportService(
             RagAbEvaluationJobService evaluationJobService,
             ObjectMapper objectMapper,
@@ -37,7 +54,15 @@ public class AlignmentAblationReportService {
             @Value("${agent.rl.alignment.ablation.maximum-quality-regression:0.02}")
             double maximumQualityRegression,
             @Value("${agent.rl.alignment.ablation.maximum-cost-ratio:1.25}")
-            double maximumCostRatio) {
+            double maximumCostRatio,
+            @Value("${agent.rl.alignment.ablation.bootstrap-iterations:10000}")
+            int bootstrapIterations,
+            @Value("${agent.rl.alignment.ablation.confidence-level:0.95}")
+            double bootstrapConfidenceLevel,
+            @Value("${agent.rl.alignment.ablation.minimum-paired-cases:30}")
+            int minimumPairedCases,
+            @Value("${agent.rl.alignment.ablation.paired-win-delta:0.03}")
+            double pairedWinDelta) {
         this.evaluationJobService = evaluationJobService;
         this.objectMapper = objectMapper;
         this.reportDirectory = Path.of(reportDirectory)
@@ -46,12 +71,61 @@ public class AlignmentAblationReportService {
                 .resolve("alignment-ablation");
         this.maximumQualityRegression = Math.max(0, maximumQualityRegression);
         this.maximumCostRatio = Math.max(0, maximumCostRatio);
+        this.bootstrapIterations = Math.max(100, bootstrapIterations);
+        this.bootstrapConfidenceLevel = Math.max(
+                0.5, Math.min(0.999, bootstrapConfidenceLevel));
+        this.minimumPairedCases = Math.max(2, minimumPairedCases);
+        this.pairedWinDelta = Math.max(0, pairedWinDelta);
     }
 
     public AlignmentAblationReport create(
             List<AlignmentAblationReport.ArmInput> inputs) {
         Map<AlignmentAblationReport.ExperimentArm, ArmRun> runs =
                 resolveRuns(inputs);
+        return createResolved(runs);
+    }
+
+    public AlignmentAblationReport createFromEvidence(
+            List<EvidenceInput> evidenceInputs) {
+        if (evidenceInputs == null
+                || evidenceInputs.size()
+                != AlignmentAblationReport.ExperimentArm.values().length) {
+            throw new IllegalArgumentException(
+                    "Exactly four distinct experiment arms are required");
+        }
+        Map<AlignmentAblationReport.ExperimentArm, ArmRun> runs =
+                new EnumMap<>(AlignmentAblationReport.ExperimentArm.class);
+        for (EvidenceInput evidence : evidenceInputs) {
+            if (evidence == null
+                    || evidence.input() == null
+                    || evidence.report() == null) {
+                throw new IllegalArgumentException(
+                        "Each experiment arm requires persisted evidence");
+            }
+            AlignmentAblationReport.ArmInput input = evidence.input();
+            if (input.arm() == null
+                    || !hasText(input.evaluationRunId())
+                    || !hasText(input.modelVersion())
+                    || !input.evaluationRunId().equals(
+                            evidence.report().runId())) {
+                throw new IllegalArgumentException(
+                        "Persisted evidence does not match its arm input");
+            }
+            if (runs.putIfAbsent(
+                    input.arm(), new ArmRun(input, evidence.report())) != null) {
+                throw new IllegalArgumentException(
+                        "Duplicate experiment arm: " + input.arm());
+            }
+        }
+        if (runs.size() != AlignmentAblationReport.ExperimentArm.values().length) {
+            throw new IllegalArgumentException("All four experiment arms are required");
+        }
+        validateRuntimeIdentities(runs);
+        return createResolved(Map.copyOf(runs));
+    }
+
+    private AlignmentAblationReport createResolved(
+            Map<AlignmentAblationReport.ExperimentArm, ArmRun> runs) {
         ArmRun baseline = runs.get(
                 AlignmentAblationReport.ExperimentArm.BASELINE_STATIC_REWARD);
         ArmRun full = runs.get(
@@ -68,6 +142,12 @@ public class AlignmentAblationReportService {
                         .map(arm -> metrics(
                                 runs.get(arm), baseline, costComparable))
                         .toList();
+        AlignmentAblationReport.ArmMetrics fullMetrics = metrics.stream()
+                .filter(metric -> metric.arm()
+                        == AlignmentAblationReport.ExperimentArm
+                        .FULL_TRAJECTORY_GUIDED)
+                .findFirst()
+                .orElseThrow();
         double qualityDelta = round(
                 full.report().candidate().averageScore()
                         - baseline.report().candidate().averageScore());
@@ -80,11 +160,24 @@ public class AlignmentAblationReportService {
                         baseline.report().candidate().estimatedCostCny())
                 : 0;
         List<String> gateFailures = gateFailures(
-                full.report(), qualityDelta, costComparable, costRatio);
+                full.report(),
+                fullMetrics.pairedQualityVsBaseline(),
+                qualityDelta,
+                costComparable,
+                costRatio
+        );
+        boolean statisticalGatePassed =
+                fullMetrics.pairedQualityVsBaseline().comparable()
+                        && fullMetrics.pairedQualityVsBaseline().enoughSamples()
+                        && fullMetrics.pairedQualityVsBaseline()
+                        .nonInferiorityPassed();
 
-        String reportId = "alignment-ablation-" + UUID.randomUUID();
+        String reportId = reportId(runs);
         Path jsonPath = reportDirectory.resolve(reportId + ".json");
         Path markdownPath = reportDirectory.resolve(reportId + ".md");
+        if (Files.isRegularFile(jsonPath)) {
+            return get(reportId);
+        }
         AlignmentAblationReport report = new AlignmentAblationReport(
                 reportId,
                 baseline.report().benchmarkVersion(),
@@ -97,6 +190,7 @@ public class AlignmentAblationReportService {
                 costRatio,
                 true,
                 costComparable,
+                statisticalGatePassed,
                 gateFailures.isEmpty(),
                 gateFailures,
                 jsonPath.toString(),
@@ -155,7 +249,58 @@ public class AlignmentAblationReportService {
         if (runs.size() != AlignmentAblationReport.ExperimentArm.values().length) {
             throw new IllegalArgumentException("All four experiment arms are required");
         }
+        validateRuntimeIdentities(runs);
         return Map.copyOf(runs);
+    }
+
+    private void validateRuntimeIdentities(
+            Map<AlignmentAblationReport.ExperimentArm, ArmRun> runs) {
+        Set<String> modelArtifacts = new HashSet<>();
+        Set<String> evaluationRuns = new HashSet<>();
+        for (ArmRun run : runs.values()) {
+            RagAbReport.RuntimeIdentity identity =
+                    run.report().runtimeIdentity();
+            if (!identity.isVerifiable()) {
+                throw new IllegalArgumentException(
+                        "Evaluation run has no verifiable runtime identity: "
+                                + run.input().evaluationRunId());
+            }
+            if (!identity.modelVersion().equals(run.input().modelVersion())) {
+                throw new IllegalArgumentException(
+                        "Declared modelVersion does not match evaluation evidence: "
+                                + run.input().arm());
+            }
+            if (!modelArtifacts.add(
+                    identity.modelArtifactFingerprint().toLowerCase())) {
+                throw new IllegalArgumentException(
+                        "Each experiment arm must use a distinct model artifact");
+            }
+            if (!evaluationRuns.add(run.input().evaluationRunId())) {
+                throw new IllegalArgumentException(
+                        "The same evaluation run cannot be reused across arms");
+            }
+        }
+    }
+
+    private String reportId(
+            Map<AlignmentAblationReport.ExperimentArm, ArmRun> runs) {
+        StringBuilder canonical = new StringBuilder();
+        java.util.Arrays.stream(AlignmentAblationReport.ExperimentArm.values())
+                .forEach(arm -> {
+                    ArmRun run = runs.get(arm);
+                    canonical.append(arm.name()).append('|')
+                            .append(run.input().evaluationRunId()).append('|')
+                            .append(run.input().modelVersion()).append('|')
+                            .append(run.report().benchmarkFingerprint()).append('\n');
+                });
+        try {
+            String fingerprint = HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(
+                            canonical.toString().getBytes(StandardCharsets.UTF_8)));
+            return "alignment-ablation-" + fingerprint.substring(0, 16);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private void validateComparability(List<ArmRun> runs) {
@@ -198,11 +343,14 @@ public class AlignmentAblationReportService {
                         ? ratio(
                                 candidate.estimatedCostCny(),
                                 baselineCandidate.estimatedCostCny())
-                        : 0
+                        : 0,
+                pairedComparison(run, baseline)
         );
     }
 
     private List<String> gateFailures(RagAbReport full,
+                                      AlignmentAblationReport.PairedQualityComparison
+                                              paired,
                                       double qualityDelta,
                                       boolean costComparable,
                                       double costRatio) {
@@ -221,7 +369,81 @@ public class AlignmentAblationReportService {
             failures.add("完整方案成本为基线 %.4f 倍，超过 %.4f"
                     .formatted(costRatio, maximumCostRatio));
         }
+        if (!paired.comparable()) {
+            failures.add("完整方案缺少可配对的逐样本统计证据："
+                    + paired.unavailableReason());
+        } else if (!paired.enoughSamples()) {
+            failures.add("完整方案配对样本数 %d 低于统计门槛 %d"
+                    .formatted(paired.sampleCount(), minimumPairedCases));
+        } else if (!paired.nonInferiorityPassed()) {
+            failures.add(
+                    "完整方案质量差值 %.0f%% 置信区间下界 %.4f 低于非劣界 -%.4f"
+                            .formatted(
+                                    paired.confidenceLevel() * 100,
+                                    paired.lowerConfidenceBound(),
+                                    paired.nonInferiorityMargin()
+                            ));
+        }
         return List.copyOf(failures);
+    }
+
+    private AlignmentAblationReport.PairedQualityComparison pairedComparison(
+            ArmRun run,
+            ArmRun baseline) {
+        String seedKey = baseline.report().benchmarkFingerprint()
+                + ":" + run.input().arm().name();
+        Map<String, Double> baselineScores =
+                candidateScoresByCaseId(baseline.report());
+        Map<String, Double> candidateScores =
+                candidateScoresByCaseId(run.report());
+        if (baselineScores.size() != baseline.report().caseCount()
+                || candidateScores.size() != run.report().caseCount()) {
+            return pairedBootstrapAnalyzer.unavailable(
+                    seedKey,
+                    bootstrapIterations,
+                    bootstrapConfidenceLevel,
+                    maximumQualityRegression,
+                    "报告未包含完整逐样本结果"
+            );
+        }
+        if (!baselineScores.keySet().equals(candidateScores.keySet())) {
+            return pairedBootstrapAnalyzer.unavailable(
+                    seedKey,
+                    bootstrapIterations,
+                    bootstrapConfidenceLevel,
+                    maximumQualityRegression,
+                    "四组运行的 caseId 集合不一致"
+            );
+        }
+        List<String> caseIds = baselineScores.keySet().stream()
+                .sorted()
+                .toList();
+        return pairedBootstrapAnalyzer.analyze(
+                seedKey,
+                caseIds.stream().map(baselineScores::get).toList(),
+                caseIds.stream().map(candidateScores::get).toList(),
+                bootstrapIterations,
+                bootstrapConfidenceLevel,
+                pairedWinDelta,
+                maximumQualityRegression,
+                minimumPairedCases
+        );
+    }
+
+    private Map<String, Double> candidateScoresByCaseId(RagAbReport report) {
+        Map<String, Double> scores = new LinkedHashMap<>();
+        report.cases().stream()
+                .sorted(Comparator.comparing(RagAbReport.CaseComparison::caseId))
+                .forEach(comparison -> {
+                    if (scores.putIfAbsent(
+                            comparison.caseId(),
+                            comparison.candidate().score().total()) != null) {
+                        throw new IllegalArgumentException(
+                                "Duplicate caseId in evaluation report: "
+                                        + comparison.caseId());
+                    }
+                });
+        return Map.copyOf(scores);
     }
 
     private void persist(AlignmentAblationReport report,
@@ -252,19 +474,28 @@ public class AlignmentAblationReportService {
                 .append("- Cases: ").append(report.caseCount()).append("\n")
                 .append("- Release gate: **")
                 .append(report.releaseGatePassed() ? "PASS" : "FAIL")
+                .append("**\n")
+                .append("- Statistical gate: **")
+                .append(report.statisticalGatePassed() ? "PASS" : "FAIL")
                 .append("**\n\n")
-                .append("| Arm | Model | Quality | Δ quality | Pass rate | Δ pass | Cost | Cost ratio | Failures |\n")
-                .append("|---|---|---:|---:|---:|---:|---:|---:|---:|\n");
+                .append("| Arm | Model | Quality | Δ quality | 95% CI | W/T/L | Sign p | P(Δ>0) | Non-inferior | Cost ratio |\n")
+                .append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n");
         report.arms().forEach(arm -> markdown
                 .append("| ").append(arm.arm())
                 .append(" | ").append(arm.modelVersion())
                 .append(" | ").append(arm.averageQuality())
                 .append(" | ").append(arm.qualityDeltaVsBaseline())
-                .append(" | ").append(arm.passRate())
-                .append(" | ").append(arm.passRateDeltaVsBaseline())
-                .append(" | ").append(arm.estimatedCostCny())
+                .append(" | ").append(confidenceInterval(
+                        arm.pairedQualityVsBaseline()))
+                .append(" | ").append(winTieLoss(
+                        arm.pairedQualityVsBaseline()))
+                .append(" | ").append(
+                        arm.pairedQualityVsBaseline().twoSidedSignTestPValue())
+                .append(" | ").append(
+                        arm.pairedQualityVsBaseline().probabilityOfImprovement())
+                .append(" | ").append(
+                        arm.pairedQualityVsBaseline().nonInferiorityPassed())
                 .append(" | ").append(arm.costRatioVsBaseline())
-                .append(" | ").append(arm.failureCount())
                 .append(" |\n"));
         if (!report.gateFailures().isEmpty()) {
             markdown.append("\n## Gate failures\n\n");
@@ -272,6 +503,29 @@ public class AlignmentAblationReportService {
                     failure -> markdown.append("- ").append(failure).append("\n"));
         }
         return markdown.toString();
+    }
+
+    private String confidenceInterval(
+            AlignmentAblationReport.PairedQualityComparison comparison) {
+        if (!comparison.comparable()) {
+            return "N/A";
+        }
+        return "[%.4f, %.4f]".formatted(
+                comparison.lowerConfidenceBound(),
+                comparison.upperConfidenceBound()
+        );
+    }
+
+    private String winTieLoss(
+            AlignmentAblationReport.PairedQualityComparison comparison) {
+        if (!comparison.comparable()) {
+            return "N/A";
+        }
+        return "%d/%d/%d".formatted(
+                comparison.wins(),
+                comparison.ties(),
+                comparison.losses()
+        );
     }
 
     private double ratio(double value, double baseline) {
@@ -291,6 +545,12 @@ public class AlignmentAblationReportService {
     }
 
     private record ArmRun(
+            AlignmentAblationReport.ArmInput input,
+            RagAbReport report
+    ) {
+    }
+
+    public record EvidenceInput(
             AlignmentAblationReport.ArmInput input,
             RagAbReport report
     ) {

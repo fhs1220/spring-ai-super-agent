@@ -6,6 +6,7 @@ import AgentRlPanel from '../components/AgentRlPanel.vue'
 import {
   cancelAgenticRag,
   fetchAgentRlMetrics,
+  fetchAlignmentAutomationStatus,
   fetchDatasetReadiness,
   fetchRoutingPolicyStatus,
   fetchRoutingPolicyQualityGuard,
@@ -20,6 +21,7 @@ import {
   type AgentProgressEvent,
   type AgentTrace,
   type AgentRlMetrics,
+  type AlignmentAutomationStatus,
   type DatasetReadiness,
   type RewardBreakdown,
   type RoutingPolicyStatus,
@@ -60,6 +62,7 @@ const loading = ref(false)
 const chatList = ref<HTMLElement | null>(null)
 const metrics = ref<AgentRlMetrics | null>(null)
 const readiness = ref<DatasetReadiness | null>(null)
+const alignmentAutomation = ref<AlignmentAutomationStatus | null>(null)
 const routingPolicy = ref<RoutingPolicyStatus | null>(null)
 const routingPolicyQualityGuard = ref<RoutingPolicyQualityGuard | null>(null)
 const routingPolicyRegistry = ref<RoutingPolicyRegistry | null>(null)
@@ -167,6 +170,7 @@ async function loadDashboard() {
   const [
     metricsResult,
     readinessResult,
+    alignmentAutomationResult,
     routingPolicyResult,
     routingPolicyQualityGuardResult,
     routingPolicyRegistryResult,
@@ -177,6 +181,7 @@ async function loadDashboard() {
   ] = await Promise.allSettled([
     fetchAgentRlMetrics(),
     fetchDatasetReadiness(),
+    fetchAlignmentAutomationStatus(),
     fetchRoutingPolicyStatus(),
     fetchRoutingPolicyQualityGuard(),
     fetchRoutingPolicyRegistry(),
@@ -191,6 +196,9 @@ async function loadDashboard() {
   }
   if (readinessResult.status === 'fulfilled') {
     readiness.value = readinessResult.value
+  }
+  if (alignmentAutomationResult.status === 'fulfilled') {
+    alignmentAutomation.value = alignmentAutomationResult.value
   }
   if (routingPolicyResult.status === 'fulfilled') {
     routingPolicy.value = routingPolicyResult.value
@@ -219,6 +227,7 @@ async function loadDashboard() {
   if (
     metricsResult.status === 'rejected'
     || readinessResult.status === 'rejected'
+    || alignmentAutomationResult.status === 'rejected'
     || routingPolicyResult.status === 'rejected'
     || routingPolicyQualityGuardResult.status === 'rejected'
     || routingPolicyRegistryResult.status === 'rejected'
@@ -538,6 +547,7 @@ function back() {
     <AgentRlPanel
       :metrics="metrics"
       :readiness="readiness"
+      :alignment-automation="alignmentAutomation"
       :routing-policy="routingPolicy"
       :routing-policy-quality-guard="routingPolicyQualityGuard"
       :routing-policy-registry="routingPolicyRegistry"

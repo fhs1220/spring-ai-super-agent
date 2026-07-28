@@ -33,6 +33,32 @@
 `AGENT_RL_ALIGNMENT_AUTO_EVALUATE_ENABLED=true` 后，调度器才会周期性处理尚未评审的
 在线轨迹。
 
+## 自动评分运行面
+
+自动评分不是无上限后台循环。定时任务和批量手动接口统一经过
+`AlignmentAutomationService`：
+
+- 默认每批 10 条、每日最多 50 条轨迹；
+- 暂停状态、每日用量、连续失败和冷却时间原子保存到
+  `tmp/agent-rl/alignment-automation.json`；
+- 连续 3 个批次全部 Judge 面板不完整或批处理异常时，进入默认 30 分钟冷却；
+- 服务在批次中重启会自动恢复为失败状态，防止 `RUNNING` 假死；
+- 公开前端只读取 pending、已评审、当日额度和错误摘要，不返回问题、答案或 Judge 理由；
+- 评分执行、暂停和失败电路重置只存在于默认关闭的 Agent RL 管理 API。
+
+推荐的受保护操作接口：
+
+```http
+GET  /api/agent-rl/alignment/automation
+POST /api/agent-rl/alignment/automation/run?limit=10
+POST /api/agent-rl/alignment/automation/control
+Content-Type: application/json
+
+{"paused":false,"resetFailureCircuit":true,"reason":"operator approved"}
+```
+
+自动调度默认仍为 OFF；“具备自动评分能力”不等于应用启动后会自动产生费用。
+
 ## TRAPO-inspired 轨迹选择
 
 `TrajectoryGuidedSampleSelector` 不根据单次高分直接选择无标签数据。它按照任务组比较
@@ -84,7 +110,8 @@
 
 ## 实验与消融设计
 
-量化报告必须使用同一份固定 benchmark、相同模型和相同最大调用预算，对比：
+量化报告必须使用同一份固定 benchmark、相同上游基础模型架构和相同最大调用预算，但四组
+必须是经过不同训练方案得到的四个真实模型资产：
 
 | 实验组 | RLVR | AI Judge | 轨迹筛选 |
 |---|---:|---:|---:|
@@ -93,45 +120,96 @@
 | C：RLAIF | 是 | 是 | 否 |
 | D：完整方案 | 是 | 是 | 是 |
 
-四个实验组必须分别完成一次固定基准运行，然后调用：
+正式实验先创建不可变的四臂清单。模型资产和训练配置使用 64 位 SHA-256 指纹；四个模型
+资产指纹必须互不相同，因此不能把同一个模型重复运行四次后换名字冒充消融：
 
 ```http
-POST /api/agent-evaluation/alignment-ablation-reports
+POST /api/agent-evaluation/alignment-experiments
 Content-Type: application/json
 
 {
   "arms": [
     {
       "arm": "BASELINE_STATIC_REWARD",
-      "evaluationRunId": "rag-ab-...",
-      "modelVersion": "baseline-model"
+      "modelVersion": "baseline-model",
+      "modelArtifactFingerprint": "<64-hex-sha256>",
+      "trainingConfigFingerprint": "<64-hex-sha256>",
+      "rewardSchemaVersion": "static-v1",
+      "sourceDeployment": "bailian-baseline"
     },
     {
       "arm": "RLVR_ONLY",
-      "evaluationRunId": "rag-ab-...",
-      "modelVersion": "rlvr-model"
+      "modelVersion": "rlvr-model",
+      "modelArtifactFingerprint": "<different-64-hex-sha256>",
+      "trainingConfigFingerprint": "<64-hex-sha256>",
+      "rewardSchemaVersion": "rlvr-v2",
+      "sourceDeployment": "bailian-rlvr"
     },
     {
       "arm": "RLVR_RLAIF",
-      "evaluationRunId": "rag-ab-...",
-      "modelVersion": "rlaif-model"
+      "modelVersion": "rlaif-model",
+      "modelArtifactFingerprint": "<different-64-hex-sha256>",
+      "trainingConfigFingerprint": "<64-hex-sha256>",
+      "rewardSchemaVersion": "rlvr-rlaif-v2",
+      "sourceDeployment": "bailian-rlaif"
     },
     {
       "arm": "FULL_TRAJECTORY_GUIDED",
-      "evaluationRunId": "rag-ab-...",
-      "modelVersion": "full-model"
+      "modelVersion": "full-model",
+      "modelArtifactFingerprint": "<different-64-hex-sha256>",
+      "trainingConfigFingerprint": "<64-hex-sha256>",
+      "rewardSchemaVersion": "human-light-rlvr-v2",
+      "sourceDeployment": "bailian-full"
     }
   ]
 }
 ```
 
-报告器会拒绝 benchmark 版本、SHA-256 指纹或样本数不一致的运行，并输出质量增量、通过率
-增量、成本比例、执行失败数以及发布门禁，不允许手工拼接不可比较的数据。
+每个部署运行评测前，配置 `AGENT_EVALUATION_MODEL_VERSION`、
+`AGENT_EVALUATION_MODEL_ARTIFACT_FINGERPRINT`、`AGENT_EVALUATION_TRAINING_CONFIG_FINGERPRINT`、
+`AGENT_EVALUATION_REWARD_SCHEMA_VERSION` 和 `AGENT_EVALUATION_SOURCE_DEPLOYMENT`。完成后逐臂
+挂接证据并最终汇总：
+
+```http
+POST /api/agent-evaluation/alignment-experiments/{experimentId}/arms/{arm}/evidence
+Content-Type: application/json
+
+{"evaluationRunId":"rag-ab-..."}
+
+POST /api/agent-evaluation/alignment-experiments/{experimentId}/finalize
+```
+
+编排器会拒绝身份不匹配、复用同一 `runId`、模型资产重复、benchmark 版本/指纹或样本数
+不一致的证据。创建、挂接和最终报告均支持幂等重试；清单和结果持久化到
+`tmp/evaluation/alignment-experiments` 与 `tmp/evaluation/alignment-ablation`。
+
+报告还会按照 `caseId` 对四组运行做逐样本配对统计。默认使用由 benchmark 指纹和实验臂
+派生的固定随机种子执行 10,000 次 percentile bootstrap，输出：
+
+- 平均/中位质量差值和 95% 置信区间；
+- 配对标准化效应量；
+- 胜/平/负数量，默认 `|Δ| <= 0.03` 视为平局；
+- 去除平局后的精确双侧符号检验 p 值；
+- Bootstrap 均值为正的比例 `P(Δ>0)`；
+- 相对静态 Reward 基线的非劣性结论。
+
+发布门禁不强制“显著优于”基线，因为安全升级首先需要证明不劣；但只有置信区间完全高于
+0 时才会标记 `statisticallySignificant=true`，才能在面试或简历中声称统计显著提升。
+两条烟雾评测可以验证链路，却会因为少于默认 30 个配对样本而被发布门禁拒绝。
+
+统计参数可以通过以下环境变量调整：
+
+- `AGENT_RL_ALIGNMENT_ABLATION_BOOTSTRAP_ITERATIONS`
+- `AGENT_RL_ALIGNMENT_ABLATION_CONFIDENCE_LEVEL`
+- `AGENT_RL_ALIGNMENT_ABLATION_MINIMUM_PAIRED_CASES`
+- `AGENT_RL_ALIGNMENT_EXPERIMENT_DIRECTORY`
+- `AGENT_RL_ALIGNMENT_ABLATION_PAIRED_WIN_DELTA`
 
 第一版发布门禁建议：
 
 - 固定评测集泄漏数必须为 0；
 - 候选总体质量不得低于当前基线，最大回归沿用现有 A/B 门禁；
+- 完整方案至少有 30 个逐样本配对，且质量差值置信区间下界通过非劣界；
 - 路由准确率、成本比例沿用现有评测门禁；
 - 重复评审决策一致率目标不低于 90%；
 - `highDisagreementRate` 目标低于 15%；

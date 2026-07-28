@@ -306,6 +306,15 @@ RL 轨迹，避免测试数据污染训练。确定性评分覆盖任务要点�
 传统 RAG 尚无完整 Token 遥测，因此报告会以 `usageMeasuredCases=0` 明确标记，而不会把它
 误解释为零成本。
 
+四组 RLAIF/RLVR 消融报告会进一步按相同 `caseId` 配对逐样本质量分数，并使用由 benchmark
+指纹和实验臂生成的固定种子执行 10,000 次 percentile bootstrap。报告包含质量差值的 95%
+置信区间、配对标准化效应量、胜/平/负、精确符号检验 p 值和
+`P(Δ>0)`。发布结论采用非劣性门禁：置信区间下界不得低于允许回退界；少于 30 条样本或
+缺失逐样本结果时只能作为烟雾测试，不能标记为可发布。
+每次真实评测还绑定模型资产、训练配置、Reward Schema 和部署来源。正式四臂实验要求四个
+不同的模型资产 SHA-256，并只允许挂接身份完全匹配的已完成运行；同一模型或同一 `runId`
+不能被换标签复用。实验 ID 与最终报告 ID 都由规范化输入确定性生成，重试不会重复造报告。
+
 评测会调用四种变体并产生模型费用，API 默认关闭。仅在本地受信任环境开启：
 
 ```bash
@@ -340,6 +349,15 @@ GET /api/agent-evaluation/benchmark/metadata
 - `AGENT_EVALUATION_MAXIMUM_CASES`
 - `AGENT_EVALUATION_MINIMUM_BENCHMARK_CASES`
 - `AGENT_EVALUATION_MAXIMUM_ADAPTIVE_ORACLE_COST_RATIO`
+- `AGENT_EVALUATION_MODEL_VERSION`
+- `AGENT_EVALUATION_MODEL_ARTIFACT_FINGERPRINT`
+- `AGENT_EVALUATION_TRAINING_CONFIG_FINGERPRINT`
+- `AGENT_EVALUATION_REWARD_SCHEMA_VERSION`
+- `AGENT_EVALUATION_SOURCE_DEPLOYMENT`
+- `AGENT_RL_ALIGNMENT_ABLATION_BOOTSTRAP_ITERATIONS`
+- `AGENT_RL_ALIGNMENT_ABLATION_CONFIDENCE_LEVEL`
+- `AGENT_RL_ALIGNMENT_ABLATION_MINIMUM_PAIRED_CASES`
+- `AGENT_RL_ALIGNMENT_ABLATION_PAIRED_WIN_DELTA`
 
 不调用模型、不会产生费用的完整工程验收：
 
@@ -347,7 +365,7 @@ GET /api/agent-evaluation/benchmark/metadata
 bash verify-interview-v1.sh
 ```
 
-默认测试层只包含不依赖真实模型、MCP、外部网络或 PGVector 的 89 项可复现测试；
+默认测试层只包含不依赖真实模型、MCP、外部网络或 PGVector 的 100+ 项可复现测试；
 依赖外部服务的测试统一标记为 JUnit `integration`，应在相应服务和密钥就绪后显式执行：
 
 ```bash
@@ -432,14 +450,22 @@ Accept: text/event-stream
 - `POST /api/agent-rl/alignment/assessments?limit=10`：批量评审尚未打分的轨迹
 - `GET /api/agent-rl/alignment/assessments/{trajectoryId}`：查看自动评审和训练决策
 - `GET /api/agent-rl/alignment/metrics`：查看伪标签覆盖率、分歧率和自动批准率
+- `GET /api/agent-rl/alignment/automation`：查看自动评分预算、冷却和最近运行状态
+- `POST /api/agent-rl/alignment/automation/run?limit=10`：在共享预算内手动执行一批评分
+- `POST /api/agent-rl/alignment/automation/control`：暂停/恢复或重置失败电路
 - `POST /api/agent-evaluation/alignment-ablation-reports`：汇总四组独立评测运行
 - `GET /api/agent-evaluation/alignment-ablation-reports/{reportId}`：读取消融量化报告
+- `POST /api/agent-evaluation/alignment-experiments`：创建绑定四个真实模型资产的实验清单
+- `GET /api/agent-evaluation/alignment-experiments/{experimentId}`：读取清单和证据状态
+- `POST /api/agent-evaluation/alignment-experiments/{experimentId}/arms/{arm}/evidence`：挂接身份匹配的已完成评测
+- `POST /api/agent-evaluation/alignment-experiments/{experimentId}/finalize`：幂等生成统计报告
 
 前端的评分闭环使用下列聚合/反馈接口，无需开放完整轨迹管理 API：
 
 - `POST /api/ai/love_app/agent-rl/feedback`：提交某条轨迹的 1～5 星反馈
 - `GET /api/ai/love_app/agent-rl/metrics`：读取不含用户内容的聚合指标
 - `GET /api/ai/love_app/agent-rl/readiness`：读取百炼数据集就绪状态
+- `GET /api/ai/love_app/agent-rl/alignment-automation`：读取不含用户内容的自动评分状态
 
 ### Human-light RLAIF + 阿里云百炼 Agentic RL
 
@@ -476,6 +502,21 @@ export AGENT_RL_ALIGNMENT_AUTO_EVALUATE_ENABLED=true
 该开关默认关闭，因为四个 Judge 都会产生模型调用费用。默认百炼导出模式为
 `AUTOMATED_ALIGNMENT`；如需回退到原有纯人工审批模式，设置
 `AGENT_RL_BAILIAN_APPROVAL_MODE=HUMAN_ONLY`。
+
+批量手动评审和定时评审共享同一套持久化保护：
+
+- 默认每批最多 10 条、每天最多 50 条轨迹；
+- 每条轨迹执行四个 Judge，因此面板同时展示估算 Judge 调用数；
+- 连续 3 个批次完全无法形成有效 Judge 面板时，自动冷却 30 分钟；
+- 暂停、当天已用额度、连续失败、冷却截止时间和最近错误跨重启保留；
+- 服务在批次执行中重启时，会把该批次恢复为可审计失败，而不是显示仍在运行。
+
+相关配置：
+
+- `AGENT_RL_ALIGNMENT_DAILY_TRAJECTORY_LIMIT`
+- `AGENT_RL_ALIGNMENT_FAILURE_THRESHOLD`
+- `AGENT_RL_ALIGNMENT_FAILURE_COOLDOWN_MINUTES`
+- `AGENT_RL_ALIGNMENT_AUTOMATION_STATE_FILE`
 
 #### 2. 可选人工反馈
 

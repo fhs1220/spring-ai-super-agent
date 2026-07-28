@@ -31,7 +31,12 @@ class RagBenchmarkCatalogTest {
                 0.72,
                 0.02,
                 0.8,
-                1.10
+                1.10,
+                "model-test",
+                "a".repeat(64),
+                "b".repeat(64),
+                "reward-v2",
+                "test-deployment"
         );
         List<RagEvaluationCase> cases = service.loadCases();
         ChatModel chatModel = mock(ChatModel.class);

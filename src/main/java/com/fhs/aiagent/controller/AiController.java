@@ -18,6 +18,7 @@ import com.fhs.aiagent.rag.run.AgentRunStatus;
 import com.fhs.aiagent.rag.run.DurableAgentRun;
 import com.fhs.aiagent.rag.run.DurableAgentRunService;
 import com.fhs.aiagent.rl.AgentRlService;
+import com.fhs.aiagent.rl.alignment.AlignmentAutomationService;
 import com.fhs.aiagent.rl.bailian.BailianRlDatasetService;
 import com.fhs.aiagent.rl.model.AgentTrajectory;
 import com.fhs.aiagent.rl.model.AgenticRagResult;
@@ -55,6 +56,8 @@ public class AiController {
 
     private final BailianRlDatasetService bailianRlDatasetService;
 
+    private final AlignmentAutomationService alignmentAutomationService;
+
     private final AdaptiveMultiAgentOrchestrator multiAgentOrchestrator;
 
     private final DurableAgentRunService durableAgentRunService;
@@ -82,6 +85,7 @@ public class AiController {
     public AiController(LoveApp loveApp,
                         AgentRlService agentRlService,
                         BailianRlDatasetService bailianRlDatasetService,
+                        AlignmentAutomationService alignmentAutomationService,
                         AdaptiveMultiAgentOrchestrator multiAgentOrchestrator,
                         DurableAgentRunService durableAgentRunService,
                         TrajectoryAwareRoutingPolicy routingPolicy,
@@ -96,6 +100,7 @@ public class AiController {
         this.loveApp = loveApp;
         this.agentRlService = agentRlService;
         this.bailianRlDatasetService = bailianRlDatasetService;
+        this.alignmentAutomationService = alignmentAutomationService;
         this.multiAgentOrchestrator = multiAgentOrchestrator;
         this.durableAgentRunService = durableAgentRunService;
         this.routingPolicy = routingPolicy;
@@ -216,6 +221,12 @@ public class AiController {
     @GetMapping("/agent-rl/readiness")
     public BailianRlDatasetService.DatasetReadiness agentRlReadiness() {
         return bailianRlDatasetService.readinessDefault();
+    }
+
+    @GetMapping("/agent-rl/alignment-automation")
+    public AlignmentAutomationService.AutomationStatus
+    alignmentAutomationStatus() {
+        return alignmentAutomationService.status();
     }
 
     /**

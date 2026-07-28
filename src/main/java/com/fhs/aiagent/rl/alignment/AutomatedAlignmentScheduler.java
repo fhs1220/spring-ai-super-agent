@@ -3,7 +3,6 @@ package com.fhs.aiagent.rl.alignment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -15,15 +14,11 @@ public class AutomatedAlignmentScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(AutomatedAlignmentScheduler.class);
 
-    private final AiJudgePanelService panelService;
-
-    private final int batchSize;
+    private final AlignmentAutomationService automationService;
 
     public AutomatedAlignmentScheduler(
-            AiJudgePanelService panelService,
-            @Value("${agent.rl.alignment.auto-evaluate-batch-size:10}") int batchSize) {
-        this.panelService = panelService;
-        this.batchSize = Math.max(1, Math.min(batchSize, 100));
+            AlignmentAutomationService automationService) {
+        this.automationService = automationService;
     }
 
     @Scheduled(
@@ -31,14 +26,14 @@ public class AutomatedAlignmentScheduler {
             initialDelayString = "${agent.rl.alignment.auto-evaluate-initial-delay-ms:60000}")
     public void assessPendingTrajectories() {
         try {
-            AiJudgePanelService.BatchAssessmentResult result =
-                    panelService.assessPending(batchSize);
-            if (result.assessedCount() > 0) {
+            AlignmentAutomationService.AutomationRunResult result =
+                    automationService.runScheduled();
+            if (result.batch().assessedCount() > 0) {
                 log.info("AI Judge batch completed: assessed={}, positive={}, holdout={}, excluded={}",
-                        result.assessedCount(),
-                        result.positiveCount(),
-                        result.holdoutCount(),
-                        result.excludedOrNegativeCount());
+                        result.batch().assessedCount(),
+                        result.batch().positiveCount(),
+                        result.batch().holdoutCount(),
+                        result.batch().excludedOrNegativeCount());
             }
         } catch (RuntimeException exception) {
             log.warn("AI Judge scheduled batch failed: {}", exception.getMessage());

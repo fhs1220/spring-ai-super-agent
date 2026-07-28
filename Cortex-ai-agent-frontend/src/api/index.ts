@@ -142,6 +142,46 @@ export interface DatasetReadiness {
   warnings: string[]
 }
 
+export interface AlignmentAutomationState {
+  paused: boolean
+  running: boolean
+  budgetDate: string
+  assessedToday: number
+  consecutiveFailures: number
+  cooldownUntil: string | null
+  lastRunStartedAt: string | null
+  lastRunCompletedAt: string | null
+  lastAssessedCount: number
+  lastIncompleteAssessmentCount: number
+  lastTrigger: string
+  lastError: string
+  reason: string
+  revision: number
+}
+
+export interface AlignmentAutomationStatus {
+  mode:
+    | 'RUNNING'
+    | 'PAUSED'
+    | 'COOLDOWN'
+    | 'DAILY_LIMIT'
+    | 'IDLE'
+    | 'MANUAL_ONLY'
+    | 'READY'
+  schedulerConfigured: boolean
+  control: AlignmentAutomationState
+  batchSize: number
+  dailyTrajectoryLimit: number
+  remainingToday: number
+  estimatedJudgeCallsToday: number
+  failureThreshold: number
+  failureCooldownMinutes: number
+  completedTrajectoryCount: number
+  assessmentCount: number
+  pendingTrajectoryCount: number
+  evaluatedAt: string
+}
+
 export type RoutingPolicyMode = 'OFF' | 'SHADOW' | 'CANARY' | 'ACTIVE'
 
 export interface RoutingPolicyDeployment {
@@ -588,6 +628,14 @@ export async function fetchAgentRlMetrics(): Promise<AgentRlMetrics> {
 
 export async function fetchDatasetReadiness(): Promise<DatasetReadiness> {
   const response = await http.get<DatasetReadiness>('/ai/love_app/agent-rl/readiness')
+  return response.data
+}
+
+export async function fetchAlignmentAutomationStatus():
+  Promise<AlignmentAutomationStatus> {
+  const response = await http.get<AlignmentAutomationStatus>(
+    '/ai/love_app/agent-rl/alignment-automation',
+  )
   return response.data
 }
 

@@ -174,9 +174,20 @@ agent:
       auto-evaluate-batch-size: ${AGENT_RL_ALIGNMENT_AUTO_EVALUATE_BATCH_SIZE:10}
       auto-evaluate-interval-ms: ${AGENT_RL_ALIGNMENT_AUTO_EVALUATE_INTERVAL_MS:300000}
       auto-evaluate-initial-delay-ms: ${AGENT_RL_ALIGNMENT_AUTO_EVALUATE_INITIAL_DELAY_MS:60000}
+      # 所有批量评分共享每日轨迹额度；连续全批失败后进入持久化冷却，防止费用失控。
+      daily-trajectory-limit: ${AGENT_RL_ALIGNMENT_DAILY_TRAJECTORY_LIMIT:50}
+      failure-threshold: ${AGENT_RL_ALIGNMENT_FAILURE_THRESHOLD:3}
+      failure-cooldown-minutes: ${AGENT_RL_ALIGNMENT_FAILURE_COOLDOWN_MINUTES:30}
+      automation-state-file: ${AGENT_RL_ALIGNMENT_AUTOMATION_STATE_FILE:tmp/agent-rl/alignment-automation.json}
+      experiment-directory: ${AGENT_RL_ALIGNMENT_EXPERIMENT_DIRECTORY:tmp/evaluation/alignment-experiments}
       ablation:
         maximum-quality-regression: ${AGENT_RL_ALIGNMENT_ABLATION_MAXIMUM_QUALITY_REGRESSION:0.02}
         maximum-cost-ratio: ${AGENT_RL_ALIGNMENT_ABLATION_MAXIMUM_COST_RATIO:1.25}
+        # 同一 benchmark 按 caseId 配对；固定种子 Bootstrap 保证报告可复现。
+        bootstrap-iterations: ${AGENT_RL_ALIGNMENT_ABLATION_BOOTSTRAP_ITERATIONS:10000}
+        confidence-level: ${AGENT_RL_ALIGNMENT_ABLATION_CONFIDENCE_LEVEL:0.95}
+        minimum-paired-cases: ${AGENT_RL_ALIGNMENT_ABLATION_MINIMUM_PAIRED_CASES:30}
+        paired-win-delta: ${AGENT_RL_ALIGNMENT_ABLATION_PAIRED_WIN_DELTA:0.03}
     environment:
       # 供百炼云端 Rollout 调用；必须部署到云端可访问地址，并配置独立强令牌。
       api-enabled: ${AGENT_RL_ENVIRONMENT_API_ENABLED:false}
@@ -192,3 +203,9 @@ agent:
     maximum-quality-regression: ${AGENT_EVALUATION_MAXIMUM_QUALITY_REGRESSION:0.02}
     minimum-route-accuracy: ${AGENT_EVALUATION_MINIMUM_ROUTE_ACCURACY:0.8}
     maximum-adaptive-oracle-cost-ratio: ${AGENT_EVALUATION_MAXIMUM_ADAPTIVE_ORACLE_COST_RATIO:1.10}
+    # 四臂实验只接受可验证的 64 位 SHA-256 资产/训练指纹；普通本地 smoke 可保持 UNSPECIFIED。
+    model-version: ${AGENT_EVALUATION_MODEL_VERSION:qwen-plus}
+    model-artifact-fingerprint: ${AGENT_EVALUATION_MODEL_ARTIFACT_FINGERPRINT:UNSPECIFIED}
+    training-config-fingerprint: ${AGENT_EVALUATION_TRAINING_CONFIG_FINGERPRINT:UNSPECIFIED}
+    reward-schema-version: ${AGENT_EVALUATION_REWARD_SCHEMA_VERSION:human-light-rlvr-v2}
+    source-deployment: ${AGENT_EVALUATION_SOURCE_DEPLOYMENT:local}

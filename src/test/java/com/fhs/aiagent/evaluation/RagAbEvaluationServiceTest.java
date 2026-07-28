@@ -66,7 +66,12 @@ class RagAbEvaluationServiceTest {
                 0.72,
                 0.02,
                 0.8,
-                1.10
+                1.10,
+                "model-test",
+                "a".repeat(64),
+                "b".repeat(64),
+                "reward-v2",
+                "test-deployment"
         );
         List<RagAbEvaluationService.Progress> progress = new ArrayList<>();
 
@@ -102,6 +107,8 @@ class RagAbEvaluationServiceTest {
         assertThat(report.usageComparable()).isTrue();
         assertThat(report.adaptiveOracleCostRatio()).isEqualTo(1);
         assertThat(report.benchmarkFingerprint()).hasSize(64);
+        assertThat(report.runtimeIdentity().isVerifiable()).isTrue();
+        assertThat(report.runtimeIdentity().modelVersion()).isEqualTo("model-test");
         assertThat(report.tagSummaries()).isNotEmpty();
         assertThat(progress).hasSize(4);
         assertThat(Files.exists(Path.of(report.reportPath()))).isTrue();

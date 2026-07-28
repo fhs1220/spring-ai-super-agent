@@ -7,8 +7,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 @Service
 public class AiJudgePanelService {
@@ -68,8 +70,18 @@ public class AiJudgePanelService {
                 .filter(assessment -> assessment.trainingDecision() == TrainingDecision.HOLDOUT)
                 .count();
         long excluded = assessments.size() - positive - holdout;
+        long incomplete = assessments.stream()
+                .filter(assessment -> assessment.judgeCount()
+                        < AiJudgeDimension.values().length)
+                .count();
         return new BatchAssessmentResult(
-                assessments.size(), positive, holdout, excluded, assessments);
+                assessments.size(),
+                positive,
+                holdout,
+                excluded,
+                incomplete,
+                assessments
+        );
     }
 
     public AutomatedAlignmentAssessment get(String trajectoryId) {
@@ -138,6 +150,26 @@ public class AiJudgePanelService {
         );
     }
 
+    public AssessmentWorkload workload() {
+        List<AgentTrajectory> trajectories = trajectoryRepository.findAll();
+        Set<String> assessedIds = new HashSet<>();
+        assessmentRepository.findAll().forEach(
+                assessment -> assessedIds.add(assessment.trajectoryId()));
+        long completed = trajectories.stream()
+                .filter(trajectory -> "COMPLETED".equals(trajectory.status()))
+                .count();
+        long pending = trajectories.stream()
+                .filter(trajectory -> "COMPLETED".equals(trajectory.status()))
+                .filter(trajectory -> !assessedIds.contains(
+                        trajectory.trajectoryId()))
+                .count();
+        return new AssessmentWorkload(
+                completed,
+                assessedIds.size(),
+                pending
+        );
+    }
+
     private double round(double value) {
         return Math.round(value * 10_000.0) / 10_000.0;
     }
@@ -147,7 +179,20 @@ public class AiJudgePanelService {
             long positiveCount,
             long holdoutCount,
             long excludedOrNegativeCount,
+            long incompleteJudgeCount,
             List<AutomatedAlignmentAssessment> assessments
+    ) {
+        public BatchAssessmentResult {
+            assessments = assessments == null
+                    ? List.of()
+                    : List.copyOf(assessments);
+        }
+    }
+
+    public record AssessmentWorkload(
+            long completedTrajectoryCount,
+            long assessmentCount,
+            long pendingTrajectoryCount
     ) {
     }
 

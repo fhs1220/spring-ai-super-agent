@@ -3,6 +3,8 @@ package com.fhs.aiagent.controller;
 import com.fhs.aiagent.evaluation.RagAbEvaluationJobService;
 import com.fhs.aiagent.evaluation.AlignmentAblationReport;
 import com.fhs.aiagent.evaluation.AlignmentAblationReportService;
+import com.fhs.aiagent.evaluation.AlignmentExperiment;
+import com.fhs.aiagent.evaluation.AlignmentExperimentService;
 import com.fhs.aiagent.evaluation.RagEvaluationCase;
 import com.fhs.aiagent.evaluation.RagAbEvaluationService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -28,13 +30,18 @@ public class RagEvaluationController {
 
     private final AlignmentAblationReportService alignmentAblationReportService;
 
+    private final AlignmentExperimentService alignmentExperimentService;
+
     public RagEvaluationController(RagAbEvaluationJobService jobService,
                                    RagAbEvaluationService evaluationService,
                                    AlignmentAblationReportService
-                                           alignmentAblationReportService) {
+                                           alignmentAblationReportService,
+                                   AlignmentExperimentService
+                                           alignmentExperimentService) {
         this.jobService = jobService;
         this.evaluationService = evaluationService;
         this.alignmentAblationReportService = alignmentAblationReportService;
+        this.alignmentExperimentService = alignmentExperimentService;
     }
 
     @PostMapping("/ab-runs")
@@ -86,11 +93,52 @@ public class RagEvaluationController {
         return alignmentAblationReportService.get(reportId);
     }
 
+    @PostMapping("/alignment-experiments")
+    public AlignmentExperiment createAlignmentExperiment(
+            @RequestBody AlignmentExperimentRequest request) {
+        if (request == null || request.arms() == null) {
+            throw new IllegalArgumentException("arms are required");
+        }
+        return alignmentExperimentService.create(request.arms());
+    }
+
+    @GetMapping("/alignment-experiments/{experimentId}")
+    public AlignmentExperiment alignmentExperiment(
+            @PathVariable String experimentId) {
+        return alignmentExperimentService.get(experimentId);
+    }
+
+    @PostMapping("/alignment-experiments/{experimentId}/arms/{arm}/evidence")
+    public AlignmentExperiment attachAlignmentEvidence(
+            @PathVariable String experimentId,
+            @PathVariable AlignmentAblationReport.ExperimentArm arm,
+            @RequestBody AlignmentEvidenceRequest request) {
+        if (request == null || request.evaluationRunId() == null) {
+            throw new IllegalArgumentException("evaluationRunId is required");
+        }
+        return alignmentExperimentService.attachEvidence(
+                experimentId, arm, request.evaluationRunId());
+    }
+
+    @PostMapping("/alignment-experiments/{experimentId}/finalize")
+    public AlignmentExperiment finalizeAlignmentExperiment(
+            @PathVariable String experimentId) {
+        return alignmentExperimentService.finalizeExperiment(experimentId);
+    }
+
     public record StartEvaluationRequest(Integer maximumCases) {
     }
 
     public record AlignmentAblationRequest(
             List<AlignmentAblationReport.ArmInput> arms
     ) {
+    }
+
+    public record AlignmentExperimentRequest(
+            List<AlignmentExperiment.ArmPlan> arms
+    ) {
+    }
+
+    public record AlignmentEvidenceRequest(String evaluationRunId) {
     }
 }
