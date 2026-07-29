@@ -11,14 +11,22 @@ import argparse
 import asyncio
 import json
 import os
+import secrets
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 
 SUPPORTED_MODELS = {"qwen3.5-9b", "qwen3.5-35b-a3b"}
+DASHSCOPE_SDK_VERSION = "1.25.23"
+QWEN_9B_MINIMUM_MTU4_CAPACITY = 24
 REWARD_SCHEMA_VERSION = "human-light-rlvr-v3"
 STATIC_REWARD_SCHEMA_VERSION = "static-reward-v1"
+RETRIEVAL_PATH = "/api/agent-rl/environment/retrieve"
 ALIGNMENT_ARMS = {
     "BASELINE_STATIC_REWARD",
     "RLVR_ONLY",
@@ -139,6 +147,23 @@ def validate_config(config: dict[str, Any]) -> None:
     for section in required_sections:
         if not isinstance(config.get(section), dict):
             raise ValueError(f"config.{section} must be an object")
+    resources = config["resource_config"]
+    if resources.get("charge_type") != "mtu_postpaid":
+        raise ValueError("resource_config.charge_type must be mtu_postpaid")
+    if resources.get("mtu_spec_code") != "MTU4":
+        raise ValueError("resource_config.mtu_spec_code must be MTU4")
+    mtu_capacity = resources.get("mtu_capacity")
+    if (
+        model == "qwen3.5-9b"
+        and (
+            not isinstance(mtu_capacity, int)
+            or mtu_capacity < QWEN_9B_MINIMUM_MTU4_CAPACITY
+        )
+    ):
+        raise ValueError(
+            "qwen3.5-9b requires at least "
+            f"{QWEN_9B_MINIMUM_MTU4_CAPACITY} MTU4 units"
+        )
     batch_size = config["hyper_parameters"].get("batch_size")
     if not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError("hyper_parameters.batch_size must be a positive integer")
@@ -209,11 +234,140 @@ def require_execution_authorization() -> None:
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         raise ValueError("Missing required environment variables: " + ", ".join(missing))
+    validate_retrieval_url(os.environ["AGENT_RL_RETRIEVAL_URL"])
     wheel_name = os.environ["FC_PYPI_LIB"]
+    expected_wheel = (
+        f"dashscope-{DASHSCOPE_SDK_VERSION}-py3-none-any.whl"
+    )
+    if wheel_name != expected_wheel:
+        raise ValueError(
+            f"FC_PYPI_LIB must be {expected_wheel}, got {wheel_name}"
+        )
     candidates = (Path.cwd() / wheel_name, Path(__file__).resolve().parent / wheel_name)
     if not any(candidate.is_file() for candidate in candidates):
         raise ValueError(
             f"{wheel_name} must exist in the current directory or bailian-agent-rl/"
+        )
+
+
+def validate_retrieval_url(value: str) -> str:
+    url = value.strip().rstrip("/")
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ValueError(
+            "AGENT_RL_RETRIEVAL_URL must be an HTTPS origin without "
+            "credentials, path, query, or fragment"
+        )
+    return url
+
+
+def retrieval_request(
+    base_url: str,
+    token: str,
+    opener: Any = urlopen,
+    timeout_seconds: float = 30.0,
+) -> tuple[int, Any]:
+    request = Request(
+        validate_retrieval_url(base_url) + RETRIEVAL_PATH,
+        data=json.dumps(
+            {
+                "query": "如何在家庭冲突中沟通并制定预算？",
+                "topK": 1,
+                "similarityThreshold": 0.0,
+            }
+        ).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Agent-RL-Token": token,
+        },
+        method="POST",
+    )
+    try:
+        with opener(request, timeout=timeout_seconds) as response:
+            status = response.status
+            body = response.read()
+    except HTTPError as exception:
+        status = exception.code
+        body = exception.read()
+    except (OSError, URLError) as exception:
+        raise ValueError(
+            "Agent RL retrieval environment is unreachable"
+        ) from exception
+
+    payload = None
+    if body:
+        try:
+            payload = json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = None
+    return status, payload
+
+
+def verify_retrieval_environment(
+    opener: Any = urlopen,
+    timeout_seconds: float = 30.0,
+) -> dict[str, Any]:
+    base_url = validate_retrieval_url(os.environ["AGENT_RL_RETRIEVAL_URL"])
+    token = os.environ["AGENT_RL_RETRIEVAL_TOKEN"]
+    valid_status, valid_payload = retrieval_request(
+        base_url,
+        token,
+        opener=opener,
+        timeout_seconds=timeout_seconds,
+    )
+    if valid_status != 200:
+        raise ValueError(
+            "Agent RL retrieval environment rejected the configured token "
+            f"with HTTP {valid_status}"
+        )
+    documents = (
+        valid_payload.get("documents")
+        if isinstance(valid_payload, dict)
+        else None
+    )
+    if not isinstance(documents, list) or not documents:
+        raise ValueError(
+            "Agent RL retrieval environment returned no usable documents"
+        )
+
+    invalid_status, _ = retrieval_request(
+        base_url,
+        "stage6-invalid-" + secrets.token_urlsafe(24),
+        opener=opener,
+        timeout_seconds=timeout_seconds,
+    )
+    if invalid_status != 401:
+        raise ValueError(
+            "Agent RL retrieval environment did not reject an invalid token "
+            f"with HTTP 401; received HTTP {invalid_status}"
+        )
+    return {
+        "https": True,
+        "valid_token_http_status": valid_status,
+        "invalid_token_http_status": invalid_status,
+        "document_count": len(documents),
+    }
+
+
+def require_sdk_version() -> None:
+    try:
+        installed = version("dashscope")
+    except PackageNotFoundError as exception:
+        raise ValueError(
+            f"dashscope=={DASHSCOPE_SDK_VERSION} is not installed"
+        ) from exception
+    if installed != DASHSCOPE_SDK_VERSION:
+        raise ValueError(
+            f"dashscope=={DASHSCOPE_SDK_VERSION} is required; "
+            f"found {installed}"
         )
 
 
@@ -235,6 +389,7 @@ def runtime_config(runtime_type: str, config: dict[str, Any], runtime_class: Any
 async def submit(
     config: dict[str, Any], training_path: Path, validation_path: Path
 ) -> str:
+    require_sdk_version()
     try:
         from dashscope.finetune.agentic_rl import AgenticRL
         from dashscope.finetune.reinforcement import (
@@ -248,7 +403,8 @@ async def submit(
         )
     except ImportError as exception:
         raise ValueError(
-            "dashscope==1.25.16 is required; install bailian-agent-rl/requirements.txt"
+            f"dashscope=={DASHSCOPE_SDK_VERSION} is required; "
+            "install bailian-agent-rl/requirements.txt"
         ) from exception
 
     client = AgenticRL()
@@ -288,7 +444,7 @@ async def submit(
                 runtime=runtime_config("reward", config, FunctionComponentRuntime),
             ),
         ],
-        resource_config=config["resource_config"],
+        resources=config["resource_config"],
         hyper_parameters=config["hyper_parameters"],
     )
     return result.output.job_id

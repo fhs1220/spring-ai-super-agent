@@ -593,7 +593,7 @@ cd bailian-agent-rl
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip download --no-deps dashscope==1.25.16 -d .
+pip download --no-deps dashscope==1.25.23 -d .
 ```
 
 把数据集导出接口返回的实际路径替换到以下命令中：
@@ -612,7 +612,7 @@ python submit_job.py \
 
 ```bash
 export DASHSCOPE_API_KEY='替换为百炼 API Key'
-export FC_PYPI_LIB='dashscope-1.25.16-py3-none-any.whl'
+export FC_PYPI_LIB='dashscope-1.25.23-py3-none-any.whl'
 export AGENT_RL_RETRIEVAL_URL='https://你的服务域名'
 export AGENT_RL_RETRIEVAL_TOKEN='与服务端相同的令牌'
 export BAILIAN_RL_ALLOW_BILLING=true
@@ -623,8 +623,24 @@ python submit_job.py \
   --execute
 ```
 
-训练任务会产生 MTU 和函数计算费用。默认配置使用 `qwen3.5-9b`、1 个 MTU4、
-1 个 epoch，配置文件为 `bailian-agent-rl/config.example.json`。
+训练任务会产生 MTU 和函数计算费用。默认快速验证配置使用 `qwen3.5-9b`、24 个
+MTU4、1 个 epoch，配置文件为 `bailian-agent-rl/config.example.json`。截至
+2026-07-29，百炼官方后付费单价为每个 MTU4 ¥41/小时，因此训练资源约
+¥984/小时/任务，函数计算费用另计；正式提交前必须再次以控制台价格为准确认预算。
+
+Stage 5 已冻结 A/B/C 三臂时，先使用可恢复编排器做零计费预检：
+
+```bash
+python run_stage6_training.py \
+  --stage5-manifest ../tmp/agent-rl/stage5/<冻结包>/manifest.json \
+  --output ../tmp/agent-rl/stage6/<执行批次>/preflight.json
+```
+
+只有再次提供 `--execute` 且同时设置 `BAILIAN_RL_ALLOW_BILLING=true` 才会按
+`BASELINE_STATIC_REWARD → RLVR_ONLY → RLVR_RLAIF` 顺序创建三个付费任务。编排器会在
+首次提交前实时验证公网检索接口的正确令牌返回 200、错误令牌返回 401，并在每臂提交前
+原子落盘；若请求期间连接中断，它会冻结为
+`RECONCILIATION_REQUIRED`，禁止在未核对百炼控制台前盲目重提。
 
 正式消融不能把同一个配置提交四次。仓库提供四份独立配置：
 

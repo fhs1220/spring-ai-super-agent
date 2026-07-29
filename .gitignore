@@ -1,5 +1,8 @@
 application-local.yml
 .env
+.venv/
+__pycache__/
+*.py[cod]
 tmp
 *.whl
 HELP.md

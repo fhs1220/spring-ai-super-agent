@@ -3,19 +3,21 @@ spring:
     name: fhs-ai-agent
   ai:
     dashscope:
-      api-key: sk-9be1415d68284ad589cc06c9dbb5b839
+      api-key: ${DASHSCOPE_API_KEY:}
       chat:
         options:
-          model: qwen-turbo
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-turbo}
     ollama:
-      base-url: http://localhost:11434
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
-        model: "gemma3:1b"
-#  datasource:
-#    url: jdbc:postgresql://rm-cn-0yc4ovsva0003aso.rwlb.rds.aliyuncs.com:5432/fhs_ai_agent
-#    username: my_user
-#    password: Fhs596702588!
-#    driver-class-name: org.postgresql.Driver
+        model: ${OLLAMA_CHAT_MODEL:gemma3:1b}
+  # PostgreSQL is optional in the local profile. Configure these variables
+  # only when the datasource-backed path is enabled.
+  # datasource:
+  #   url: ${SPRING_DATASOURCE_URL:}
+  #   username: ${SPRING_DATASOURCE_USERNAME:}
+  #   password: ${SPRING_DATASOURCE_PASSWORD:}
+  #   driver-class-name: org.postgresql.Driver
 
 search-api:
-  api-key: nKgFKfquV941xPySw6zGCa5g
+  api-key: ${SEARCH_API_KEY:}

@@ -115,6 +115,13 @@ Readiness 通过。Stage 5 现有 A/B/C 三臂均可提交，只有 D
 `FULL_TRAJECTORY_GUIDED` 仍需训练后跨策略回放。扩量证据见
 [`RL_STAGE4_JUDGE_V2_EXPANSION_REPORT.md`](RL_STAGE4_JUDGE_V2_EXPANSION_REPORT.md)。
 
+Stage 6 提交前零计费预检已完成：DashScope SDK 已从不包含 Agentic RL 模块的
+1.25.16 修正为 1.25.23，SDK `resources` 参数契约和 24 个 MTU4 官方最低资源配置已
+修正，A/B/C 三臂已按新配置离线重新冻结并逐文件验证通过，可恢复提交编排器已冻结。
+预检未连接百炼、未创建云端任务，`billable_operations=0`。真实提交仍需公网检索环境、
+明确费用确认和独立 `--execute` 授权。证据见
+[`RL_STAGE6_PREFLIGHT_REPORT.md`](RL_STAGE6_PREFLIGHT_REPORT.md)。
+
 ## 授权边界
 
 以下三类操作分别需要显式授权，不能由“继续开发”自动推定：

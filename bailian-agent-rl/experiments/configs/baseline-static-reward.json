@@ -16,23 +16,23 @@
   "resource_config": {
     "charge_type": "mtu_postpaid",
     "mtu_spec_code": "MTU4",
-    "mtu_capacity": 1
+    "mtu_capacity": 24
   },
   "hyper_parameters": {
     "algorithm": "gspo",
     "n_epochs": 1,
-    "learning_rate": 7e-06,
-    "lr_scheduler_type": "constant",
+    "learning_rate": 2e-06,
+    "lr_scheduler_type": "linear",
     "lr_warmup_steps": -1,
     "batch_size": 64,
-    "n_rollouts": 4,
-    "ppo_mini_batch_size": 16,
-    "kl_loss_coef": 0.001,
-    "max_length": 4096,
+    "n_rollouts": 8,
+    "ppo_mini_batch_size": 8,
+    "kl_loss_coef": 0.002,
+    "max_length": 8192,
     "max_prompt_length": 1024,
-    "eval_steps": 20,
+    "eval_steps": 1,
     "save_steps": 50,
-    "save_strategy": "steps",
+    "save_strategy": "epoch",
     "save_total_limit": 2
   },
   "function_runtime": {
