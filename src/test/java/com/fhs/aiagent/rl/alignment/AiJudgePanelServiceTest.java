@@ -46,6 +46,11 @@ class AiJudgePanelServiceTest {
         assertThat(assessments.findByTrajectoryId("trajectory-1")).contains(result);
         assertThat(service.metrics().autoApprovalRate()).isEqualTo(1.0);
         assertThat(service.workload().pendingTrajectoryCount()).isZero();
+        assertThat(service.contract().contractVersion())
+                .isEqualTo("unspecified-judge-contract");
+        assertThat(service.contract().assessmentNamespace())
+                .isEqualTo("in-memory");
+        assertThat(service.contract().assessmentCount()).isEqualTo(1);
     }
 
     private AgentTrajectory trajectory() {

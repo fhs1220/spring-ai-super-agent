@@ -94,6 +94,11 @@ public class FileAlignmentAssessmentRepository implements AlignmentAssessmentRep
                 .toList();
     }
 
+    @Override
+    public String namespace() {
+        return storageDirectory.getFileName().toString();
+    }
+
     private Optional<AutomatedAlignmentAssessment> readOrQuarantine(Path target) {
         try {
             return Optional.of(objectMapper.readValue(

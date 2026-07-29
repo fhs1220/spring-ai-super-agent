@@ -90,6 +90,11 @@ public class AgentRlController {
         return aiJudgePanelService.metrics();
     }
 
+    @GetMapping("/alignment/contract")
+    public AiJudgePanelService.JudgeContract alignmentContract() {
+        return aiJudgePanelService.contract();
+    }
+
     @GetMapping("/alignment/automation")
     public AlignmentAutomationService.AutomationStatus alignmentAutomation() {
         return alignmentAutomationService.status();

@@ -170,6 +170,14 @@ public class AiJudgePanelService {
         );
     }
 
+    public JudgeContract contract() {
+        return new JudgeContract(
+                judgeClient.contractVersion(),
+                assessmentRepository.namespace(),
+                assessmentRepository.findAll().size()
+        );
+    }
+
     private double round(double value) {
         return Math.round(value * 10_000.0) / 10_000.0;
     }
@@ -193,6 +201,13 @@ public class AiJudgePanelService {
             long completedTrajectoryCount,
             long assessmentCount,
             long pendingTrajectoryCount
+    ) {
+    }
+
+    public record JudgeContract(
+            String contractVersion,
+            String assessmentNamespace,
+            int assessmentCount
     ) {
     }
 

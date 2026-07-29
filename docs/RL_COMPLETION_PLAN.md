@@ -98,6 +98,12 @@ Stage 5 已独立冻结不依赖 RLAIF 的两臂：119 条 RLVR v3 合格唯一�
 均通过；`RLVR_RLAIF` 与 `FULL_TRAJECTORY_GUIDED` 继续由 Stage 4 门禁阻断。详见
 [`RL_STAGE5_DATASET_FREEZE_REPORT.md`](RL_STAGE5_DATASET_FREEZE_REPORT.md)。
 
+为恢复被阻断的两臂，Judge v2 的评分锚点、维度下限、独立存储 Namespace 和 40 条回归
+验证计划已经零调用冻结。该计划最多调用 160 次 Judge，估算费用上界约 ¥0.1130556；
+只有 v2 在固定 Final 10 条上达到正向精度 ≥ 0.80 且负向误放行为 0，才允许重新评审
+119 条并恢复 RLAIF 数据导出。详见
+[`RL_STAGE4_JUDGE_V2_VALIDATION_PLAN.md`](RL_STAGE4_JUDGE_V2_VALIDATION_PLAN.md)。
+
 ## 授权边界
 
 以下三类操作分别需要显式授权，不能由“继续开发”自动推定：

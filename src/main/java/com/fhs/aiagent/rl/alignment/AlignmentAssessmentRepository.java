@@ -10,4 +10,8 @@ public interface AlignmentAssessmentRepository {
     Optional<AutomatedAlignmentAssessment> findByTrajectoryId(String trajectoryId);
 
     List<AutomatedAlignmentAssessment> findAll();
+
+    default String namespace() {
+        return "in-memory";
+    }
 }
