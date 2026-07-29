@@ -90,8 +90,9 @@ RAG Pipeline 包括：
 
 ### 自适应多 Agent
 
-`agentic-rag-v6` 使用“确定性 Complexity Router + 轨迹学习策略”判断任务是否值得启动多 Agent，
-并在 Generate、Review、Revise 三个阶段统一执行可审计的最小/最大回答长度契约：
+`agentic-rag-v7` 使用“确定性 Complexity Router + 轨迹学习策略”判断任务是否值得启动多 Agent，
+并在 Generate、Review、Revise 三个阶段统一执行可审计的引用与回答长度契约；即使
+Review 返回不可解析结果，未通过确定性契约的候选答案也必须进入 Revise：
 
 - 单一能力域的问题走 `SINGLE_AGENT` 快速路径，避免额外延迟和成本；
 - 同时涉及关系、育儿、家务、家庭财务或安全风险的复合问题走

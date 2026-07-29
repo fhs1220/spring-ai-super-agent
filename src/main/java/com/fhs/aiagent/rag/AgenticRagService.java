@@ -57,7 +57,7 @@ import java.util.regex.Pattern;
 @Component
 public class AgenticRagService {
 
-    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v6";
+    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v7";
 
     private static final int DEFAULT_MAXIMUM_ANSWER_CHARS = 1600;
 
@@ -817,6 +817,7 @@ public class AgenticRagService {
         emit(progressListener, "REVIEW", "STARTED", "答案审查",
                 "正在检查忠实性与任务完成度", List.of(), reviewStartedAt);
         GroundingReview review;
+        boolean reviewFailed = false;
         try {
             review = review(
                     question,
@@ -846,11 +847,20 @@ public class AgenticRagService {
                             "fallbackUsed", true
                     )
             );
+            reviewFailed = true;
             emit(progressListener, "REVIEW", "FAILED", "答案审查",
-                    "审查不可用，保留已有候选答案", List.of(), reviewStartedAt);
-            log.warn("[AgenticRAG][降级] 审查 Agent 失败，保留已有候选答案: {}",
-                    exception.getMessage());
-            return normalizedDraft;
+                    citationContractPassed && answerLengthContractPassed
+                            ? "审查不可用，候选答案已通过确定性契约"
+                            : "审查不可用，候选答案将进入确定性修正",
+                    List.of(), reviewStartedAt);
+            if (citationContractPassed && answerLengthContractPassed) {
+                log.warn("[AgenticRAG][降级] 审查 Agent 失败，候选答案已通过确定性契约: {}",
+                        exception.getMessage());
+                return normalizedDraft;
+            }
+            log.warn("[AgenticRAG][降级] 审查 Agent 失败且候选答案未通过确定性契约，"
+                    + "继续修正: {}", exception.getMessage());
+            review = null;
         }
         if (review != null
                 && review.grounded()
@@ -880,31 +890,35 @@ public class AgenticRagService {
 
         String revised = review == null ? null : review.revisedAnswer();
         boolean reviewProvidedRevision = revised != null && !revised.isBlank();
-        recorder.record(
-                AgentStepType.REVIEW,
-                reviewStartedAt,
-                review != null,
-                Map.of("answerLength", normalizedDraft.length()),
-                Map.of(
-                        "grounded", review != null && review.grounded(),
-                        "taskCompleted", review != null && review.taskCompleted(),
-                        "citationContractPassed", citationContractPassed,
-                        "answerLengthContractPassed",
-                        answerLengthContractPassed,
-                        "minimumAnswerChars", minimumAnswerChars,
-                        "maximumAnswerChars", maximumAnswerChars,
-                        "revised", reviewProvidedRevision
-                )
-        );
-        emit(progressListener, "REVIEW", "COMPLETED", "答案审查",
-                reviewProvidedRevision ? "审查 Agent 已直接修正答案" : "答案需要进入修正阶段",
-                List.of(
-                        "忠实：" + (review != null && review.grounded()),
-                        "完成任务：" + (review != null && review.taskCompleted()),
-                        "引用契约：" + citationContractPassed,
-                        "长度契约：" + answerLengthContractPassed
-                ),
-                reviewStartedAt);
+        if (!reviewFailed) {
+            recorder.record(
+                    AgentStepType.REVIEW,
+                    reviewStartedAt,
+                    review != null,
+                    Map.of("answerLength", normalizedDraft.length()),
+                    Map.of(
+                            "grounded", review != null && review.grounded(),
+                            "taskCompleted", review != null && review.taskCompleted(),
+                            "citationContractPassed", citationContractPassed,
+                            "answerLengthContractPassed",
+                            answerLengthContractPassed,
+                            "minimumAnswerChars", minimumAnswerChars,
+                            "maximumAnswerChars", maximumAnswerChars,
+                            "revised", reviewProvidedRevision
+                    )
+            );
+            emit(progressListener, "REVIEW", "COMPLETED", "答案审查",
+                    reviewProvidedRevision
+                            ? "审查 Agent 已直接修正答案"
+                            : "答案需要进入修正阶段",
+                    List.of(
+                            "忠实：" + (review != null && review.grounded()),
+                            "完成任务：" + (review != null && review.taskCompleted()),
+                            "引用契约：" + citationContractPassed,
+                            "长度契约：" + answerLengthContractPassed
+                    ),
+                    reviewStartedAt);
+        }
         if (revised == null || revised.isBlank()) {
             Instant reviseStartedAt = recorder.startStep();
             emit(progressListener, "REVISE", "STARTED", "答案修正",

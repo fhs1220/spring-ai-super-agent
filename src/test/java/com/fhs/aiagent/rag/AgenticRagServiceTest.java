@@ -254,6 +254,60 @@ class AgenticRagServiceTest {
     }
 
     @Test
+    void failedReviewCannotBypassDeterministicCitationGate() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        String uncitedDraft = longEnough(
+                "先暂停情绪，再共同协商。");
+        String validRevision = longEnough(
+                "先暂停情绪，再共同协商。[来源 1]");
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"夫妻沟通\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response(uncitedDraft),
+                response("{\"grounded\":true,[来源 1]}"),
+                response(validRevision)
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "冲突后应暂停情绪并共同协商。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "夫妻争吵后怎么沟通？",
+                "failed-review-citation-gate",
+                "你是恋爱心理顾问。"
+        );
+
+        assertThat(result.answer()).isEqualTo(validRevision);
+        assertThat(AgenticRagService.satisfiesCitationContract(
+                result.answer(),
+                "[来源 1 | 已婚篇.md]\n冲突后应暂停情绪并共同协商。"))
+                .isTrue();
+        assertThat(result.trace().steps())
+                .extracting(step -> step.phase())
+                .containsSubsequence("GENERATE", "REVIEW", "REVISE");
+        assertThat(result.trace().steps().stream()
+                .filter(step -> step.phase().equals("REVIEW"))
+                .findFirst()
+                .orElseThrow()
+                .success()).isFalse();
+        verify(chatModel, times(5)).call(any(Prompt.class));
+    }
+
+    @Test
     void deterministicLengthGateRevisesOtherwiseApprovedDraft() {
         ChatModel chatModel = mock(ChatModel.class);
         VectorStore vectorStore = mock(VectorStore.class);
@@ -349,7 +403,7 @@ class AgenticRagServiceTest {
     @Test
     void mirrorsSeedAnswerLengthContracts() {
         assertThat(AgenticRagService.DEFAULT_POLICY_VERSION)
-                .isEqualTo("agentic-rag-v6");
+                .isEqualTo("agentic-rag-v7");
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(
