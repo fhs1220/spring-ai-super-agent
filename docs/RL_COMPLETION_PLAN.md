@@ -15,8 +15,9 @@
 2 轮首次真实回放也已得到 100/100 条结果：Single/Multi 各 50、路由偏差 0、RLVR
 平均 0.723236，但因 3 条 `answer_too_long` 和 1 次已恢复超时未通过 Release Gate。
 第一次修复后的新 Batch 在 23/100 时又检出 2 条 `answer_too_short`，随即主动早停；
-现已离线补齐 140–1,600 / 320–2,400 的完整最小/最大长度契约，并加入不可通过即自动
-早停。Stage 2 仍需新 Batch 真实验证。证据见
+补齐长度契约后的 v6 Batch 在 16/100 时检出 1 条 `missing_or_invalid_citation` 并自动
+早停；根因是 Review 返回非法 JSON 时错误保留了已知引用不合格的候选答案。现已离线改为
+确定性契约失败必须进入 Revise，并升级为 v7。Stage 2 仍需新 Batch 真实验证。证据见
 [`RLVR_V3_STAGE2_50X2_REPORT.md`](RLVR_V3_STAGE2_50X2_REPORT.md)；Stage 1 证据见
 [`RLVR_V3_STRATIFIED_PILOT_REPORT.md`](RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
 自动 Alignment Assessment 仍为 0，尚无百炼训练数据包、训练任务或训练后模型资产。
@@ -46,11 +47,11 @@ RLVR、Judge 和轨迹筛选淘汰预留余量。
 
 ## 下一次 Stage 2 验收命令
 
-以下配置已经离线冻结，但尚未取得真实模型调用授权，也未产生 v6 轨迹。
+以下配置已经离线冻结，但尚未取得真实模型调用授权，也未产生 v7 轨迹。
 
-- Batch：`policy-v6-v2-stage2-final`
-- Policy：`agentic-rag-v6`
-- 计划指纹：`35504aa5e7bee2b426ecd051088f1c3a7f0c3260fd92f1c7df8577b14a7dbc2d`
+- Batch：`policy-v7-v2-stage2-final`
+- Policy：`agentic-rag-v7`
+- 计划指纹：`5c33862fb433fc9248155bbb64561fa0a3a070a525f6c9006a36dcf093fce3af`
 - 计划运行：100（Single/Multi 各 50）
 - Dry-run 调用 / 费用：0 / 0
 
@@ -58,7 +59,7 @@ RLVR、Judge 和轨迹筛选淘汰预留余量。
 
 ```bash
 AGENT_RL_API_ENABLED=true \
-AGENT_RL_POLICY_VERSION=agentic-rag-v6 \
+AGENT_RL_POLICY_VERSION=agentic-rag-v7 \
 sh mvnw spring-boot:run
 ```
 
@@ -68,11 +69,11 @@ sh mvnw spring-boot:run
 AGENT_RL_REPLAY_ALLOW_MODEL_CALLS=true \
 python3 bailian-agent-rl/replay_training_seeds.py \
   --seeds tmp/agent-rl/seeds/training-seeds-v2.jsonl \
-  --batch-id policy-v6-v2-stage2-final \
-  --policy-version agentic-rag-v6 \
+  --batch-id policy-v7-v2-stage2-final \
+  --policy-version agentic-rag-v7 \
   --rounds 2 \
   --limit 50 \
-  --output tmp/agent-rl/replays/policy-v6-v2-stage2-final.json \
+  --output tmp/agent-rl/replays/policy-v7-v2-stage2-final.json \
   --execute
 ```
 
