@@ -11,13 +11,12 @@
 5. 同一固定 Benchmark 的正式配对评测通过统计和成本门禁；
 6. 胜出资产经过 SHADOW、Canary、监控和可回滚发布。
 
-截至 2026-07-29，工程链路、300 条 v2 离线种子和 Stage 1 已完成。Stage 2 的 50 题 ×
-2 轮首次真实回放也已得到 100/100 条结果：Single/Multi 各 50、路由偏差 0、RLVR
-平均 0.723236，但因 3 条 `answer_too_long` 和 1 次已恢复超时未通过 Release Gate。
-第一次修复后的新 Batch 在 23/100 时又检出 2 条 `answer_too_short`，随即主动早停；
-补齐长度契约后的 v6 Batch 在 16/100 时检出 1 条 `missing_or_invalid_citation` 并自动
-早停；根因是 Review 返回非法 JSON 时错误保留了已知引用不合格的候选答案。现已离线改为
-确定性契约失败必须进入 Revise，并升级为 v7。Stage 2 仍需新 Batch 真实验证。证据见
+截至 2026-07-29，工程链路、300 条 v2 离线种子和 Stage 1 已完成。Stage 2 的 v7 Batch
+已得到 100/100 条结果：Single/Multi 各 50、路由偏差 0、RLVR 平均 0.759502、硬门禁
+100/100、违规 0。第 94 个逻辑运行时百炼返回 `Arrearage`，充值后从 93 条已完成前缀
+恢复并完成剩余 7 条；原事件按审计规则计为 1 次恢复超时，所以严格 Release Gate 仅因
+`timeouts_within_limit` 未通过。质量与路由验收已闭环，但原始“零超时”退出定义尚未满足。
+证据见
 [`RLVR_V3_STAGE2_50X2_REPORT.md`](RLVR_V3_STAGE2_50X2_REPORT.md)；Stage 1 证据见
 [`RLVR_V3_STRATIFIED_PILOT_REPORT.md`](RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
 自动 Alignment Assessment 仍为 0，尚无百炼训练数据包、训练任务或训练后模型资产。
@@ -45,46 +44,25 @@ RLVR、Judge 和轨迹筛选淘汰预留余量。
 是先训练并部署 A/B/C，再用其中的新策略对匹配问题重新回放，最后生成 D 的跨策略奖励轨迹
 数据。
 
-## 下一次 Stage 2 验收命令
+## Stage 2 当前决策
 
-以下配置已经离线冻结，但尚未取得真实模型调用授权，也未产生 v7 轨迹。
+已完成的 v7 证据身份：
 
 - Batch：`policy-v7-v2-stage2-final`
 - Policy：`agentic-rag-v7`
 - 计划指纹：`5c33862fb433fc9248155bbb64561fa0a3a070a525f6c9006a36dcf093fce3af`
-- 计划运行：100（Single/Multi 各 50）
-- Dry-run 调用 / 费用：0 / 0
+- 完成运行：100/100（Single/Multi 各 50）
+- 质量与路由：全部通过
+- 严格门禁：仅 `timeout_count=1` 未通过，根因为有日志证据的百炼 `Arrearage`
 
-后端：
+下一步不是自动增加新的工程阶段，而是在两种治理选择中确定一种：
 
-```bash
-AGENT_RL_API_ENABLED=true \
-AGENT_RL_POLICY_VERSION=agentic-rag-v7 \
-sh mvnw spring-boot:run
-```
+1. 保持原始零超时门禁：使用新 Batch 完整重跑 50×2；这是新的真实模型费用，必须单独授权。
+2. 接受外部事件 waiver：保留当前 Manifest 的失败结论，新增正式豁免记录后进入 Stage 3；
+   waiver 只能豁免已归因的计费中断，不能豁免任何 RLVR、路由或模型质量失败。
 
-另一个终端：
-
-```bash
-AGENT_RL_REPLAY_ALLOW_MODEL_CALLS=true \
-python3 bailian-agent-rl/replay_training_seeds.py \
-  --seeds tmp/agent-rl/seeds/training-seeds-v2.jsonl \
-  --batch-id policy-v7-v2-stage2-final \
-  --policy-version agentic-rag-v7 \
-  --rounds 2 \
-  --limit 50 \
-  --output tmp/agent-rl/replays/policy-v7-v2-stage2-final.json \
-  --execute
-```
-
-回放器默认执行以下自动门禁：
-
-- RLVR 平均分至少 0.70；
-- 路由偏差、超时和 RLVR 违规均为 0；
-- 所有计划运行完成且 RLVR 硬门禁全部通过；
-- v2 路由预期必须逐条得到实际轨迹验证。
-
-即使所有调用完成，只要门禁失败，进程也会以非零状态结束并把失败项写入结果 Manifest。
+在做出该决定前，不启动新的回放。无论选择哪一种，Stage 3、Judge、四个训练资产、正式
+评测和灰度验证仍是原计划中的后续阶段，没有新增阶段。
 
 ## 授权边界
 
