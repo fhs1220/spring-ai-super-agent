@@ -25,8 +25,10 @@
 [`docs/RLVR_V3_PILOT_REPORT.md`](docs/RLVR_V3_PILOT_REPORT.md)，从分层回放到四臂训练、
 正式评测和灰度上线的剩余工作见
 [`docs/RL_COMPLETION_PLAN.md`](docs/RL_COMPLETION_PLAN.md)。v2 首次单双 Agent 分层回放
-及引用门禁失败证据见
-[`docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md`](docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
+及引用门禁修复证据见
+[`docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md`](docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md)，
+50 题 × 2 轮的 Stage 2 真实扩量结果见
+[`docs/RLVR_V3_STAGE2_50X2_REPORT.md`](docs/RLVR_V3_STAGE2_50X2_REPORT.md)。
 
 ---
 
