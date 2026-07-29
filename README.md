@@ -24,7 +24,9 @@
 试回放的量化证据见
 [`docs/RLVR_V3_PILOT_REPORT.md`](docs/RLVR_V3_PILOT_REPORT.md)，从分层回放到四臂训练、
 正式评测和灰度上线的剩余工作见
-[`docs/RL_COMPLETION_PLAN.md`](docs/RL_COMPLETION_PLAN.md)。
+[`docs/RL_COMPLETION_PLAN.md`](docs/RL_COMPLETION_PLAN.md)。v2 首次单双 Agent 分层回放
+及引用门禁失败证据见
+[`docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md`](docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
 
 ---
 

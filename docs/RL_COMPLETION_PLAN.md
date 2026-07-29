@@ -11,9 +11,11 @@
 5. 同一固定 Benchmark 的正式配对评测通过统计和成本门禁；
 6. 胜出资产经过 SHADOW、Canary、监控和可回滚发布。
 
-截至 2026-07-29，工程链路和 300 条 v2 离线种子已完成。真实证据仍只有旧 v1 的
-5 题 × 2 轮、共 10 条 `SINGLE_AGENT` 轨迹；v2 的 50 题 × 2 轮只是 Dry Run。
-自动 Alignment Assessment 为 0，尚无百炼训练数据包、训练任务或训练后模型资产。
+截至 2026-07-29，工程链路和 300 条 v2 离线种子已完成。v2 已真实执行 8 题 × 2 轮：
+16/16 完成、Single/Multi 各 8、路由偏差和超时均为 0、RLVR 平均 0.714790，但因 5 条
+引用格式违规未通过 Release Gate，尚不能扩到 50 题。失败证据见
+[`RLVR_V3_STRATIFIED_PILOT_REPORT.md`](RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
+自动 Alignment Assessment 仍为 0，尚无百炼训练数据包、训练任务或训练后模型资产。
 
 ## 分阶段执行
 

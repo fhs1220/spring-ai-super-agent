@@ -175,6 +175,75 @@ class AgenticRagServiceTest {
     }
 
     @Test
+    void normalizesCommonCitationListsAndValidatesEverySourceIndex() {
+        assertThat(AgenticRagService.normalizeCitationSyntax(
+                "建议一[来源 1, 2, 2]；建议二来源：[3、4]；参考来源 [5]。"))
+                .isEqualTo(
+                        "建议一[来源 1][来源 2]；建议二[来源 3][来源 4]；[来源 5]。");
+        String context = """
+                [来源 1 | a.md]
+                证据一
+                ---
+                [来源 2 | b.md]
+                证据二
+                """;
+        assertThat(AgenticRagService.satisfiesCitationContract(
+                "行动[来源 1][来源 2]", context)).isTrue();
+        assertThat(AgenticRagService.satisfiesCitationContract(
+                "行动但没有引用", context)).isFalse();
+        assertThat(AgenticRagService.satisfiesCitationContract(
+                "行动[来源 3]", context)).isFalse();
+        assertThat(AgenticRagService.satisfiesCitationContract(
+                "无知识库时无需引用", "（未检索到相关文档）")).isTrue();
+    }
+
+    @Test
+    void deterministicCitationGateRevisesOtherwiseApprovedDraft() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"夫妻沟通\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response("先暂停情绪，再共同协商。"),
+                response("{\"grounded\":true,\"taskCompleted\":true,"
+                        + "\"revisedAnswer\":null}"),
+                response("先暂停情绪，再共同协商。[来源 1]")
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "冲突后应暂停情绪并共同协商。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "夫妻争吵后怎么沟通？",
+                "citation-gate",
+                "你是恋爱心理顾问。"
+        );
+
+        assertThat(result.answer()).endsWith("[来源 1]");
+        assertThat(result.trace().steps())
+                .extracting(step -> step.phase())
+                .containsExactly(
+                        "ROUTE", "PLAN", "RETRIEVE", "VERIFY",
+                        "GENERATE", "REVIEW", "REVISE");
+        assertThat(result.trace().steps().get(5).details())
+                .contains("引用契约：未通过");
+        verify(chatModel, times(5)).call(any(Prompt.class));
+    }
+
+    @Test
     void fallsBackToOriginalQuestionWhenPlannerTimesOut() {
         ChatModel chatModel = mock(ChatModel.class);
         VectorStore vectorStore = mock(VectorStore.class);
