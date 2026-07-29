@@ -57,6 +57,8 @@ import java.util.regex.Pattern;
 @Component
 public class AgenticRagService {
 
+    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v6";
+
     private static final int DEFAULT_MAXIMUM_ANSWER_CHARS = 1600;
 
     private static final int WEEKLY_PLAN_MAXIMUM_ANSWER_CHARS = 2400;
@@ -123,7 +125,8 @@ public class AgenticRagService {
                              AgentTrajectoryRepository trajectoryRepository,
                              AgentRewardCalculator rewardCalculator,
                              AdaptiveMultiAgentOrchestrator multiAgentOrchestrator,
-                             @Value("${agent.rl.policy-version:agentic-rag-v5}") String policyVersion,
+                             @Value("${agent.rl.policy-version:"
+                                     + DEFAULT_POLICY_VERSION + "}") String policyVersion,
                              @Value("${spring.ai.dashscope.chat.options.model:unknown}") String model,
                              @Value("${agent.rag.observability.input-price-per-million-tokens-cny:0.3}")
                              double inputPricePerMillionTokens,

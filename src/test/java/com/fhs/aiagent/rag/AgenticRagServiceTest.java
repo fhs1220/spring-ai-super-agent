@@ -348,6 +348,8 @@ class AgenticRagServiceTest {
 
     @Test
     void mirrorsSeedAnswerLengthContracts() {
+        assertThat(AgenticRagService.DEFAULT_POLICY_VERSION)
+                .isEqualTo("agentic-rag-v6");
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(

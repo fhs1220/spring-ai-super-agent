@@ -54,11 +54,11 @@ python3 bailian-agent-rl/generate_training_seeds.py \
 ```bash
 python3 bailian-agent-rl/replay_training_seeds.py \
   --seeds tmp/agent-rl/seeds/training-seeds-v2.jsonl \
-  --batch-id policy-v5-stratified-dry-v2 \
-  --policy-version agentic-rag-v5 \
+  --batch-id policy-v6-stratified-dry-v2 \
+  --policy-version agentic-rag-v6 \
   --rounds 2 \
   --limit 50 \
-  --output tmp/agent-rl/replays/policy-v5-stratified-dry-v2.json
+  --output tmp/agent-rl/replays/policy-v6-stratified-dry-v2.json
 ```
 
 Dry Run 是默认模式。上面的命令只显示计划，既不会访问本地接口，也不会调用模型。
@@ -73,7 +73,7 @@ Dry Run 是默认模式。上面的命令只显示计划，既不会访问本地
 
 ```bash
 AGENT_RL_API_ENABLED=true \
-AGENT_RL_POLICY_VERSION=agentic-rag-v5 \
+AGENT_RL_POLICY_VERSION=agentic-rag-v6 \
 sh mvnw spring-boot:run
 ```
 
@@ -83,11 +83,11 @@ sh mvnw spring-boot:run
 AGENT_RL_REPLAY_ALLOW_MODEL_CALLS=true \
 python3 bailian-agent-rl/replay_training_seeds.py \
   --seeds tmp/agent-rl/seeds/training-seeds-v2.jsonl \
-  --batch-id policy-v5-stratified-pilot-v2 \
-  --policy-version agentic-rag-v5 \
+  --batch-id policy-v6-stratified-pilot-v2 \
+  --policy-version agentic-rag-v6 \
   --rounds 2 \
   --limit 8 \
-  --output tmp/agent-rl/replays/policy-v5-stratified-pilot-v2.json \
+  --output tmp/agent-rl/replays/policy-v6-stratified-pilot-v2.json \
   --execute
 ```
 

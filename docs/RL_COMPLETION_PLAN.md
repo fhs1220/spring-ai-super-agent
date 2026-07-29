@@ -40,17 +40,25 @@
 40 条训练样本，达不到 `batch_size=64`；82 个是全数合格时的理论下限，实际必须为
 RLVR、Judge 和轨迹筛选淘汰预留余量。
 
-完整轨迹引导臂不能仅靠同一 `agentic-rag-v5` 的随机重复回答来宣称“策略演化”。合理顺序
+完整轨迹引导臂不能仅靠同一策略版本的随机重复回答来宣称“策略演化”。合理顺序
 是先训练并部署 A/B/C，再用其中的新策略对匹配问题重新回放，最后生成 D 的跨策略奖励轨迹
 数据。
 
-## 已验证的真实试回放命令
+## 下一次 Stage 2 验收命令
+
+以下配置已经离线冻结，但尚未取得真实模型调用授权，也未产生 v6 轨迹。
+
+- Batch：`policy-v6-v2-stage2-final`
+- Policy：`agentic-rag-v6`
+- 计划指纹：`35504aa5e7bee2b426ecd051088f1c3a7f0c3260fd92f1c7df8577b14a7dbc2d`
+- 计划运行：100（Single/Multi 各 50）
+- Dry-run 调用 / 费用：0 / 0
 
 后端：
 
 ```bash
 AGENT_RL_API_ENABLED=true \
-AGENT_RL_POLICY_VERSION=agentic-rag-v5 \
+AGENT_RL_POLICY_VERSION=agentic-rag-v6 \
 sh mvnw spring-boot:run
 ```
 
@@ -60,11 +68,11 @@ sh mvnw spring-boot:run
 AGENT_RL_REPLAY_ALLOW_MODEL_CALLS=true \
 python3 bailian-agent-rl/replay_training_seeds.py \
   --seeds tmp/agent-rl/seeds/training-seeds-v2.jsonl \
-  --batch-id policy-v5-v2-rerun-02 \
-  --policy-version agentic-rag-v5 \
+  --batch-id policy-v6-v2-stage2-final \
+  --policy-version agentic-rag-v6 \
   --rounds 2 \
-  --limit 8 \
-  --output tmp/agent-rl/replays/policy-v5-v2-rerun-02.json \
+  --limit 50 \
+  --output tmp/agent-rl/replays/policy-v6-v2-stage2-final.json \
   --execute
 ```
 

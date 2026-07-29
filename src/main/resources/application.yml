@@ -150,7 +150,7 @@ agent:
       input-price-per-million-tokens-cny: ${AGENT_RAG_INPUT_PRICE_PER_MILLION_TOKENS_CNY:0.3}
       output-price-per-million-tokens-cny: ${AGENT_RAG_OUTPUT_PRICE_PER_MILLION_TOKENS_CNY:0.6}
   rl:
-    policy-version: ${AGENT_RL_POLICY_VERSION:agentic-rag-v5}
+    policy-version: ${AGENT_RL_POLICY_VERSION:agentic-rag-v6}
     storage-directory: ${AGENT_RL_STORAGE_DIRECTORY:tmp/agent-rl/trajectories}
     # 轨迹包含用户问题和答案；仅在受信任环境中显式开启管理 API。
     api-enabled: ${AGENT_RL_API_ENABLED:false}
