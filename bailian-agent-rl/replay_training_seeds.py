@@ -709,6 +709,21 @@ def add_execution_summary(summary: dict[str, Any]) -> None:
     }
 
 
+def rlvr_violation_count(results: list[dict[str, Any]]) -> int:
+    return sum(
+        len(result["rlvr"].get("violations", []))
+        for result in results
+        if isinstance(result.get("rlvr"), dict)
+    )
+
+
+def rlvr_violation_limit_exceeded(
+    results: list[dict[str, Any]],
+    maximum_rlvr_violations: int,
+) -> bool:
+    return rlvr_violation_count(results) > maximum_rlvr_violations
+
+
 def add_replay_gate(
     summary: dict[str, Any],
     *,
@@ -862,23 +877,37 @@ def main() -> int:
         preflight_server(args.api_root, args.timeout_seconds)
         seeds_by_id = {seed["seed_id"]: seed for seed in seeds}
         completed_prefix = load_partial_results(args.output, summary, plan)
-        for item in plan[completed_prefix:]:
-            result = execute_item(
-                item,
-                seeds_by_id[item["seed_id"]],
-                args.api_root,
-                args.timeout_seconds,
-            )
-            summary["results"].append(result)
-            summary["completed_agent_runs"] = len(summary["results"])
-            write_manifest(args.output, summary)
-            if result["policy_version"] != expected_policy:
-                raise ValueError(
-                    "Server trajectory policyVersion mismatch: expected "
-                    f"{expected_policy!r}, got {result['policy_version']!r}; "
-                    "stopped after the first mismatched trajectory"
+        if rlvr_violation_limit_exceeded(
+            summary["results"],
+            args.maximum_rlvr_violations,
+        ):
+            summary["stopped_early"] = True
+            summary["stop_reason"] = "rlvr_violations_exceeded"
+        else:
+            for item in plan[completed_prefix:]:
+                result = execute_item(
+                    item,
+                    seeds_by_id[item["seed_id"]],
+                    args.api_root,
+                    args.timeout_seconds,
                 )
-        summary["completed"] = True
+                summary["results"].append(result)
+                summary["completed_agent_runs"] = len(summary["results"])
+                write_manifest(args.output, summary)
+                if result["policy_version"] != expected_policy:
+                    raise ValueError(
+                        "Server trajectory policyVersion mismatch: expected "
+                        f"{expected_policy!r}, got {result['policy_version']!r}; "
+                        "stopped after the first mismatched trajectory"
+                    )
+                if rlvr_violation_limit_exceeded(
+                    summary["results"],
+                    args.maximum_rlvr_violations,
+                ):
+                    summary["stopped_early"] = True
+                    summary["stop_reason"] = "rlvr_violations_exceeded"
+                    break
+        summary["completed"] = len(summary["results"]) == len(plan)
         add_execution_summary(summary)
         add_replay_gate(
             summary,

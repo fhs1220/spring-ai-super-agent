@@ -209,6 +209,13 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
             summary["route_expectation_summary"],
         )
         self.assertEqual(1, summary["recovery_summary"]["recovered_run_count"])
+        self.assertEqual(1, replay.rlvr_violation_count(summary["results"]))
+        self.assertTrue(
+            replay.rlvr_violation_limit_exceeded(summary["results"], 0)
+        )
+        self.assertFalse(
+            replay.rlvr_violation_limit_exceeded(summary["results"], 1)
+        )
 
     def test_replay_gate_passes_clean_run_and_rejects_route_timeout(self) -> None:
         summary = {

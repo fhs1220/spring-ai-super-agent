@@ -40,11 +40,13 @@ class AgenticRagServiceTest {
                 .chatMemoryRepository(new InMemoryChatMemoryRepository())
                 .maxMessages(20)
                 .build();
+        String validAnswer = longEnough(
+                "先暂停情绪，再表达感受并共同协商。[来源 1]");
         when(chatModel.call(any(Prompt.class))).thenReturn(
                 response("{\"subQueries\":[\"夫妻沟通\"]}"),
                 response("{\"sufficient\":true,\"missingInfo\":\"\","
                         + "\"followUpQueries\":[]}"),
-                response("先暂停情绪，再表达感受并共同协商。[来源 1]"),
+                response(validAnswer),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}")
         );
@@ -87,13 +89,15 @@ class AgenticRagServiceTest {
                 .chatMemoryRepository(new InMemoryChatMemoryRepository())
                 .maxMessages(20)
                 .build();
+        String validAnswer = longEnough(
+                "先协商家务分工[来源 2]，再定期安排二人相处时间[来源 1]。");
 
         when(chatModel.call(any(Prompt.class))).thenReturn(
                 response("{\"subQueries\":[\"婚后亲密关系\"]}"),
                 response("{\"sufficient\":false,\"missingInfo\":\"家务冲突\","
                         + "\"followUpQueries\":[\"夫妻家务分工冲突\"]}"),
                 response("{\"sufficient\":true,\"missingInfo\":\"\",\"followUpQueries\":[]}"),
-                response("先协商家务分工[来源 2]，再定期安排二人相处时间[来源 1]。"),
+                response(validAnswer),
                 response("{\"grounded\":true,\"taskCompleted\":true,\"revisedAnswer\":null}")
         );
 
@@ -116,7 +120,7 @@ class AgenticRagServiceTest {
                 "你是恋爱心理顾问。",
                 progressEvents::add);
 
-        assertThat(result.answer()).isEqualTo("先协商家务分工[来源 2]，再定期安排二人相处时间[来源 1]。");
+        assertThat(result.answer()).isEqualTo(validAnswer);
         assertThat(result.reward().total()).isEqualTo(0.93);
         assertThat(result.trace().steps())
                 .extracting(step -> step.phase())
@@ -140,7 +144,7 @@ class AgenticRagServiceTest {
                 .extracting(message -> message.getText())
                 .containsExactly(
                         "婚后不亲密，还总因家务吵架怎么办？",
-                        "先协商家务分工[来源 2]，再定期安排二人相处时间[来源 1]。"
+                        validAnswer
                 );
         assertThat(trajectoryRepository.findById(result.trajectoryId())).isPresent();
         assertThat(trajectoryRepository.findById(result.trajectoryId()).orElseThrow().steps())
@@ -207,14 +211,18 @@ class AgenticRagServiceTest {
                 .chatMemoryRepository(new InMemoryChatMemoryRepository())
                 .maxMessages(20)
                 .build();
+        String validRevision = longEnough(
+                "先暂停情绪，再共同协商。[来源 1]");
+        String uncitedDraft = longEnough(
+                "先暂停情绪，再共同协商。");
         when(chatModel.call(any(Prompt.class))).thenReturn(
                 response("{\"subQueries\":[\"夫妻沟通\"]}"),
                 response("{\"sufficient\":true,\"missingInfo\":\"\","
                         + "\"followUpQueries\":[]}"),
-                response("先暂停情绪，再共同协商。"),
+                response(uncitedDraft),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}"),
-                response("先暂停情绪，再共同协商。[来源 1]")
+                response(validRevision)
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -234,7 +242,7 @@ class AgenticRagServiceTest {
                 "你是恋爱心理顾问。"
         );
 
-        assertThat(result.answer()).endsWith("[来源 1]");
+        assertThat(result.answer()).contains("[来源 1]");
         assertThat(result.trace().steps())
                 .extracting(step -> step.phase())
                 .containsExactly(
@@ -254,6 +262,8 @@ class AgenticRagServiceTest {
                 .maxMessages(20)
                 .build();
         String overlongDraft = "建议".repeat(800) + "[来源 1]";
+        String validRevision = longEnough(
+                "先暂停情绪，再共同协商。[来源 1]");
         when(chatModel.call(any(Prompt.class))).thenReturn(
                 response("{\"subQueries\":[\"夫妻沟通\"]}"),
                 response("{\"sufficient\":true,\"missingInfo\":\"\","
@@ -261,7 +271,7 @@ class AgenticRagServiceTest {
                 response(overlongDraft),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}"),
-                response("先暂停情绪，再共同协商。[来源 1]")
+                response(validRevision)
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -281,7 +291,55 @@ class AgenticRagServiceTest {
                 "你是恋爱心理顾问。"
         );
 
-        assertThat(result.answer()).isEqualTo("先暂停情绪，再共同协商。[来源 1]");
+        assertThat(result.answer()).isEqualTo(validRevision);
+        assertThat(AgenticRagService.satisfiesAnswerLengthContract(
+                result.answer(), "夫妻争吵后怎么沟通？")).isTrue();
+        assertThat(result.trace().steps())
+                .extracting(step -> step.phase())
+                .containsSubsequence("GENERATE", "REVIEW", "REVISE");
+        verify(chatModel, times(5)).call(any(Prompt.class));
+    }
+
+    @Test
+    void deterministicMinimumLengthGateRevisesOtherwiseApprovedDraft() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        String shortDraft = "先暂停情绪，再共同协商。[来源 1]";
+        String validRevision = longEnough(shortDraft);
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"夫妻沟通\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response(shortDraft),
+                response("{\"grounded\":true,\"taskCompleted\":true,"
+                        + "\"revisedAnswer\":null}"),
+                response(validRevision)
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "冲突后应暂停情绪并共同协商。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "夫妻争吵后怎么沟通？",
+                "minimum-length-gate",
+                "你是恋爱心理顾问。"
+        );
+
+        assertThat(result.answer()).isEqualTo(validRevision);
+        assertThat(AgenticRagService.satisfiesAnswerLengthContract(
+                result.answer(), "夫妻争吵后怎么沟通？")).isTrue();
         assertThat(result.trace().steps())
                 .extracting(step -> step.phase())
                 .containsSubsequence("GENERATE", "REVIEW", "REVISE");
@@ -294,6 +352,12 @@ class AgenticRagServiceTest {
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请给一份按优先级排序的检查清单。")).isEqualTo(1600);
+        assertThat(AgenticRagService.minimumAnswerChars(
+                "请制定七天小计划，每天写行动和复盘。")).isEqualTo(320);
+        assertThat(AgenticRagService.minimumAnswerChars(
+                "请给一份按优先级排序的检查清单。")).isEqualTo(140);
+        assertThat(AgenticRagService.satisfiesAnswerLengthContract(
+                "好".repeat(139), "请给检查清单")).isFalse();
         assertThat(AgenticRagService.satisfiesAnswerLengthContract(
                 "好".repeat(1600), "请给检查清单")).isTrue();
         assertThat(AgenticRagService.satisfiesAnswerLengthContract(
@@ -308,11 +372,13 @@ class AgenticRagServiceTest {
                 .chatMemoryRepository(new InMemoryChatMemoryRepository())
                 .maxMessages(20)
                 .build();
+        String validAnswer = longEnough(
+                "先表达自己的感受，再共同确定沟通时间[来源 1]。");
         when(chatModel.call(any(Prompt.class)))
                 .thenThrow(new RuntimeException("planner timeout"))
                 .thenReturn(
                         response("{\"sufficient\":true,\"missingInfo\":\"\",\"followUpQueries\":[]}"),
-                        response("先表达自己的感受，再共同确定沟通时间[来源 1]。"),
+                        response(validAnswer),
                         response("{\"grounded\":true,\"taskCompleted\":true,\"revisedAnswer\":null}")
                 );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
@@ -339,5 +405,14 @@ class AgenticRagServiceTest {
 
     private static ChatResponse response(String content) {
         return new ChatResponse(List.of(new Generation(new AssistantMessage(content))));
+    }
+
+    private static String longEnough(String content) {
+        String padding = "执行后记录实际效果、遇到的阻碍和下一次调整，并在约定时间共同复盘。";
+        StringBuilder answer = new StringBuilder(content);
+        while (answer.codePointCount(0, answer.length()) < 140) {
+            answer.append(padding);
+        }
+        return answer.toString();
     }
 }
