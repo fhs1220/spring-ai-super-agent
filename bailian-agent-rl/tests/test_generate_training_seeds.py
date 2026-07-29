@@ -55,25 +55,67 @@ class GenerateTrainingSeedsTest(unittest.TestCase):
         self.assertEqual(0, first_manifest["model_calls"])
         self.assertFalse(first_manifest["submission_allowed"])
         self.assertEqual(
-            15,
-            len(
-                {
-                    seed["rollout_extra"]["source_provenance"][0]["section"]
-                    for seed in first
-                }
-            ),
+            {"SINGLE_AGENT": 38, "ADAPTIVE_MULTI_AGENT": 37},
+            first_manifest["samples_per_expected_execution_mode"],
         )
         self.assertEqual(
-            {5},
-            set(first_manifest["samples_per_source_section"].values()),
+            {"SINGLE_AGENT": 25, "ADAPTIVE_MULTI_AGENT": 25},
+            first_manifest["first_50_expected_execution_modes"],
+        )
+        self.assertEqual(38, first_manifest["samples_per_source_count"]["1"])
+        self.assertEqual(
+            37,
+            sum(
+                count
+                for source_count, count
+                in first_manifest["samples_per_source_count"].items()
+                if source_count != "1"
+            ),
+        )
+        multi_agent_seeds = [
+            seed
+            for seed in first
+            if seed["rollout_extra"]["route_expectation"]["execution_mode"]
+            == "ADAPTIVE_MULTI_AGENT"
+        ]
+        self.assertEqual(37, len(multi_agent_seeds))
+        self.assertTrue(
+            all(
+                len(seed["rollout_extra"]["source_provenance"]) >= 2
+                for seed in multi_agent_seeds
+            )
+        )
+        self.assertTrue(
+            all(
+                len(
+                    {
+                        source["content_sha256"]
+                        for source in seed["rollout_extra"]["source_provenance"]
+                    }
+                )
+                == len(seed["rollout_extra"]["source_provenance"])
+                for seed in multi_agent_seeds
+            )
+        )
+        self.assertTrue(
+            {"RELATIONSHIP", "PARENTING", "HOUSEHOLD", "FINANCE"}.issubset(
+                {
+                    domain
+                    for seed in multi_agent_seeds
+                    for domain in seed["rollout_extra"]["route_expectation"][
+                        "detected_domains"
+                    ]
+                }
+            )
         )
         self.assertEqual(
             75,
             sum(first_manifest["samples_per_request_type"].values()),
         )
-        self.assertEqual(
-            {15},
-            set(first_manifest["samples_per_request_type"].values()),
+        self.assertLessEqual(
+            max(first_manifest["samples_per_request_type"].values())
+            - min(first_manifest["samples_per_request_type"].values()),
+            4,
         )
         weekly_contracts = [
             seed["rollout_extra"]["verification_contract"]
@@ -109,6 +151,35 @@ class GenerateTrainingSeedsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "positive"):
             generator.generate_seeds(units, benchmark, 0, 0.82)
+
+    def test_rejects_invalid_multi_agent_ratio(self) -> None:
+        units = generator.load_knowledge_units(generator.DEFAULT_DOCUMENT_DIR)
+        benchmark = generator.load_benchmark(generator.DEFAULT_BENCHMARK)
+
+        with self.assertRaisesRegex(ValueError, "multi-agent-ratio"):
+            generator.generate_seeds(units, benchmark, 10, 0.82, 1.1)
+
+    def test_supports_single_only_and_multi_only_generation(self) -> None:
+        units = generator.load_knowledge_units(generator.DEFAULT_DOCUMENT_DIR)
+        benchmark = generator.load_benchmark(generator.DEFAULT_BENCHMARK)
+
+        single, _ = generator.generate_seeds(units, benchmark, 10, 0.82, 0.0)
+        multi, _ = generator.generate_seeds(units, benchmark, 10, 0.82, 1.0)
+
+        self.assertEqual(
+            {"SINGLE_AGENT"},
+            {
+                seed["rollout_extra"]["route_expectation"]["execution_mode"]
+                for seed in single
+            },
+        )
+        self.assertEqual(
+            {"ADAPTIVE_MULTI_AGENT"},
+            {
+                seed["rollout_extra"]["route_expectation"]["execution_mode"]
+                for seed in multi
+            },
+        )
 
 
 if __name__ == "__main__":

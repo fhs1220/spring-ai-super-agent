@@ -28,9 +28,21 @@ if str(SCRIPT_ROOT) not in sys.path:
 from functions.reward.scoring import score_rollout  # noqa: E402
 
 
-SEED_SCHEMA_VERSION = "agent-rl-trajectory-seed-v1"
-REPLAY_SCHEMA_VERSION = "agent-rl-seed-replay-v1"
+SEED_SCHEMA_VERSION = "agent-rl-trajectory-seed-v2"
+SUPPORTED_SEED_SCHEMA_VERSIONS = {
+    "agent-rl-trajectory-seed-v1",
+    SEED_SCHEMA_VERSION,
+}
+REPLAY_SCHEMA_VERSION = "agent-rl-seed-replay-v2"
 DATASET_ROLE = "trajectory_seed_only"
+VALID_EXECUTION_MODES = {"SINGLE_AGENT", "ADAPTIVE_MULTI_AGENT"}
+VALID_DOMAINS = {
+    "RELATIONSHIP", "PARENTING", "HOUSEHOLD", "FINANCE", "SAFETY",
+}
+DOMAIN_SELECTION_ORDER = (
+    "SAFETY", "PARENTING", "HOUSEHOLD", "FINANCE", "RELATIONSHIP",
+)
+ROUTER_CONTRACT_VERSION = "deterministic-complexity-router-v1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,7 +106,8 @@ def validate_seed(value: Any, path: Path, line_number: int) -> None:
     prefix = f"{path}:{line_number}"
     if not isinstance(value, dict):
         raise ValueError(f"{prefix} must be an object")
-    if value.get("schema_version") != SEED_SCHEMA_VERSION:
+    schema_version = value.get("schema_version")
+    if schema_version not in SUPPORTED_SEED_SCHEMA_VERSIONS:
         raise ValueError(f"{prefix} has an unsupported schema_version")
     if value.get("dataset_role") != DATASET_ROLE:
         raise ValueError(f"{prefix} must be marked {DATASET_ROLE}")
@@ -108,6 +121,82 @@ def validate_seed(value: Any, path: Path, line_number: int) -> None:
     guard = rollout_extra.get("benchmark_guard")
     if not isinstance(guard, dict) or guard.get("overlap") is not False:
         raise ValueError(f"{prefix} did not pass the benchmark guard")
+    if schema_version == SEED_SCHEMA_VERSION:
+        validate_route_expectation(rollout_extra, prefix)
+
+
+def validate_route_expectation(
+    rollout_extra: dict[str, Any],
+    prefix: str,
+) -> None:
+    expectation = rollout_extra.get("route_expectation")
+    if not isinstance(expectation, dict):
+        raise ValueError(f"{prefix} route_expectation must be an object")
+    mode = expectation.get("execution_mode")
+    if mode not in VALID_EXECUTION_MODES:
+        raise ValueError(f"{prefix} has an invalid expected execution mode")
+    domains = expectation.get("detected_domains")
+    if (
+        not isinstance(domains, list)
+        or not domains
+        or any(not isinstance(domain, str) or not domain for domain in domains)
+    ):
+        raise ValueError(f"{prefix} expected domains must be a non-empty array")
+    if len(set(domains)) != len(domains) or not set(domains).issubset(
+        VALID_DOMAINS
+    ):
+        raise ValueError(f"{prefix} has invalid or duplicate expected domains")
+    if mode == "SINGLE_AGENT" and len(domains) != 1:
+        raise ValueError(f"{prefix} single-Agent seed must have one domain")
+    if mode == "ADAPTIVE_MULTI_AGENT" and len(domains) < 2:
+        raise ValueError(f"{prefix} multi-Agent seed must have multiple domains")
+    selected = expectation.get("selected_domains")
+    if (
+        not isinstance(selected, list)
+        or len(selected) > 3
+        or len(set(selected)) != len(selected)
+        or not set(selected).issubset(domains)
+    ):
+        raise ValueError(f"{prefix} has invalid selected domains")
+    expected_selected = (
+        [domain for domain in DOMAIN_SELECTION_ORDER if domain in domains][:3]
+        if mode == "ADAPTIVE_MULTI_AGENT"
+        else []
+    )
+    if selected != expected_selected:
+        raise ValueError(
+            f"{prefix} selected domains do not match the router contract"
+        )
+    if expectation.get("minimum_domains") != 2:
+        raise ValueError(f"{prefix} requires minimum_domains=2")
+    if expectation.get("max_agents") != 3:
+        raise ValueError(f"{prefix} requires max_agents=3")
+    if expectation.get("router_contract") != ROUTER_CONTRACT_VERSION:
+        raise ValueError(f"{prefix} has an unsupported router contract")
+    provenance = rollout_extra.get("source_provenance")
+    if not isinstance(provenance, list) or not provenance:
+        raise ValueError(f"{prefix} source_provenance must be a non-empty array")
+    fingerprints = {
+        item.get("content_sha256")
+        for item in provenance
+        if isinstance(item, dict)
+        and isinstance(item.get("content_sha256"), str)
+        and re.fullmatch(r"[a-f0-9]{64}", item["content_sha256"])
+    }
+    if len(fingerprints) != len(provenance):
+        raise ValueError(f"{prefix} has invalid or duplicate source fingerprints")
+    if mode == "ADAPTIVE_MULTI_AGENT" and len(fingerprints) < 2:
+        raise ValueError(
+            f"{prefix} multi-Agent seed requires at least two source fingerprints"
+        )
+
+
+def route_expectation(seed: dict[str, Any]) -> dict[str, Any]:
+    rollout_extra = seed.get("rollout_extra")
+    if not isinstance(rollout_extra, dict):
+        return {}
+    expectation = rollout_extra.get("route_expectation")
+    return expectation if isinstance(expectation, dict) else {}
 
 
 def first_user_question(value: dict[str, Any]) -> str:
@@ -150,9 +239,25 @@ def build_plan(
                     "run_id": f"replay-{batch_id}-{round_number}-{suffix}",
                     "chat_id": f"replay-{batch_id}-{suffix}",
                     "question": first_user_question(seed),
+                    "expected_execution_mode": route_expectation(seed).get(
+                        "execution_mode"
+                    ),
+                    "expected_domains": route_expectation(seed).get(
+                        "detected_domains", []
+                    ),
                 }
             )
     return plan
+
+
+def plan_fingerprint(plan: list[dict[str, Any]]) -> str:
+    canonical = json.dumps(
+        plan,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def require_execution_authorization(policy_version: str | None) -> str:
@@ -341,6 +446,12 @@ def execute_item(
             "context_source": "seed_reference_solution",
         },
         "execution_mode": route_output.get("mode"),
+        "expected_execution_mode": item.get("expected_execution_mode"),
+        "route_expectation_matched": (
+            route_output.get("mode") == item.get("expected_execution_mode")
+            if item.get("expected_execution_mode")
+            else None
+        ),
         "telemetry": {
             "model_call_count": telemetry.get("modelCallCount"),
             "total_tokens": telemetry.get("totalTokens"),
@@ -401,6 +512,16 @@ def add_execution_summary(summary: dict[str, Any]) -> None:
         ),
     }
     summary["execution_modes"] = modes
+    route_expectations = [
+        result.get("route_expectation_matched")
+        for result in results
+        if isinstance(result.get("route_expectation_matched"), bool)
+    ]
+    summary["route_expectation_summary"] = {
+        "evaluated": len(route_expectations),
+        "matched": sum(route_expectations),
+        "mismatched": len(route_expectations) - sum(route_expectations),
+    }
     summary["online_reward_summary"] = number_summary(online_rewards)
     summary["rlvr_summary"] = {
         **number_summary(rlvr_scores),
@@ -442,19 +563,38 @@ def main() -> int:
             "seed_count": len({item["seed_id"] for item in plan}),
             "rounds": args.rounds,
             "planned_agent_runs": len(plan),
-            "underlying_model_call_count": "unknown_until_execution",
+            "plan_fingerprint": plan_fingerprint(plan),
+            "underlying_model_call_count": (
+                "unknown_until_execution" if args.execute else 0
+            ),
+            "billable_operations": "unknown_until_execution" if args.execute else 0,
             "policy_version": args.policy_version,
             "results": [],
         }
+        expected_modes: dict[str, int] = {}
+        expected_domains: dict[str, int] = {}
+        for item in plan:
+            mode = str(item.get("expected_execution_mode") or "UNSPECIFIED")
+            expected_modes[mode] = expected_modes.get(mode, 0) + 1
+            for domain in item.get("expected_domains", []):
+                expected_domains[domain] = expected_domains.get(domain, 0) + 1
+        summary["expected_execution_modes"] = expected_modes
+        summary["expected_domain_runs"] = expected_domains
         if not args.execute:
             summary["preview"] = [
                 {
                     "seed_id": item["seed_id"],
                     "round": item["round"],
                     "run_id": item["run_id"],
+                    "expected_execution_mode": item[
+                        "expected_execution_mode"
+                    ],
+                    "expected_domains": item["expected_domains"],
                 }
                 for item in plan[:5]
             ]
+            if args.output is not None:
+                write_manifest(args.output, summary)
             print(json.dumps(summary, ensure_ascii=False, indent=2))
             print("Dry-run only. No endpoint or model was called.")
             return 0

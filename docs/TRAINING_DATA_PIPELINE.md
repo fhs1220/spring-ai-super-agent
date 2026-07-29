@@ -6,10 +6,13 @@
 ## 数据分层
 
 1. **题目种子（非训练样本）**
-   - 来源：项目内 3 份恋爱知识库、15 个核心问答；
+   - 来源：项目内 3 份恋爱知识库、16 个核心问答（含独立育儿协作依据）；
    - 扩展维度：10 种场景约束、5 种任务形态、3 种开场方式；
-   - 默认生成 300 个唯一问题，15 个主题各 20 个；
-   - 每条记录保留知识章节与内容 SHA-256、验证契约和数据角色
+   - 默认生成 300 个唯一问题，其中单 Agent / 复合多 Agent 各 150 条，并按
+     1:1 交错，使前 50 条也保持 25 / 25；
+   - 复合种子覆盖关系沟通、育儿、家务和家庭财务，且每条至少绑定两个不同知识章节
+     SHA-256；
+   - 每条记录保留知识章节与内容 SHA-256、验证契约、预期路由和数据角色
      `trajectory_seed_only`；
    - 36 条 `love-rag-ab.jsonl` 固定 Benchmark 同时进行规范化精确匹配、包含匹配和
      3-gram Jaccard 近似匹配。
@@ -32,15 +35,17 @@
 ```bash
 cd /Users/fhs1220/super-agent/spring-ai-super-agent
 python3 bailian-agent-rl/generate_training_seeds.py \
-  --output tmp/agent-rl/seeds/training-seeds-v1.jsonl \
-  --manifest tmp/agent-rl/seeds/training-seeds-v1.manifest.json \
+  --output tmp/agent-rl/seeds/training-seeds-v2.jsonl \
+  --manifest tmp/agent-rl/seeds/training-seeds-v2.manifest.json \
   --target 300
 ```
 
 该命令不调用模型、不访问云端、不产生费用。Manifest 会记录：
 
 - 数据、知识库和 Benchmark 指纹；
-- 唯一问题数和每个知识主题的样本数；
+- 唯一问题数、每个知识主题和请求类型的样本数；
+- 预期单/多 Agent、能力域和来源数量分布；
+- 前 50 条的预期路由分布；
 - 污染检测阈值和拒绝数量；
 - `model_calls=0`、`billable_operations=0`、`submission_allowed=false`。
 
@@ -48,15 +53,19 @@ python3 bailian-agent-rl/generate_training_seeds.py \
 
 ```bash
 python3 bailian-agent-rl/replay_training_seeds.py \
-  --seeds tmp/agent-rl/seeds/training-seeds-v1.jsonl \
-  --batch-id policy-v5-seed-v1 \
+  --seeds tmp/agent-rl/seeds/training-seeds-v2.jsonl \
+  --batch-id policy-v5-stratified-dry-v2 \
   --policy-version agentic-rag-v5 \
   --rounds 2 \
-  --limit 10
+  --limit 50 \
+  --output tmp/agent-rl/replays/policy-v5-stratified-dry-v2.json
 ```
 
 Dry Run 是默认模式。上面的命令只显示计划，既不会访问本地接口，也不会调用模型。
-去掉 `--limit 10` 时，300 个问题、2 轮合计计划 600 次真实 Agent 请求。
+输出会明确列出预期执行模式和能力域；当前前 50 题、2 轮应得到 50 次
+`SINGLE_AGENT` 与 50 次 `ADAPTIVE_MULTI_AGENT` 计划。去掉 `--limit 50` 时，
+300 个问题、2 轮合计计划 600 次真实 Agent 请求。提供 `--output` 时会保存 Dry Run
+清单摘要及计划指纹，仍不会访问接口。
 
 ## 3. 显式授权小批量真实回放
 
@@ -73,12 +82,12 @@ sh mvnw spring-boot:run
 ```bash
 AGENT_RL_REPLAY_ALLOW_MODEL_CALLS=true \
 python3 bailian-agent-rl/replay_training_seeds.py \
-  --seeds tmp/agent-rl/seeds/training-seeds-v1.jsonl \
-  --batch-id policy-v5-pilot-01 \
+  --seeds tmp/agent-rl/seeds/training-seeds-v2.jsonl \
+  --batch-id policy-v5-stratified-pilot-v2 \
   --policy-version agentic-rag-v5 \
   --rounds 2 \
   --limit 5 \
-  --output tmp/agent-rl/replays/policy-v5-pilot-01.json \
+  --output tmp/agent-rl/replays/policy-v5-stratified-pilot-v2.json \
   --execute
 ```
 
@@ -92,6 +101,10 @@ python3 bailian-agent-rl/replay_training_seeds.py \
 
 每个请求使用确定性 `runId`。进程中断后使用同一 `batch-id` 重跑，后端会重放已完成的
 durable run，不会为同一个 `runId` 再生成一条新轨迹。
+
+真实回放清单会逐条记录 `expected_execution_mode`、
+`route_expectation_matched`，并汇总匹配与偏离数量。预期路由是离线确定性路由契约，
+服务端实际路由仍以真实轨迹为准。
 
 ## 建议的样本规模
 

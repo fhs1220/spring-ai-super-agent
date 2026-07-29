@@ -26,6 +26,14 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
         self.assertEqual(4, len(first))
         self.assertEqual({1, 2}, {item["round"] for item in first})
         self.assertEqual(4, len({item["run_id"] for item in first}))
+        self.assertEqual(
+            replay.plan_fingerprint(first),
+            replay.plan_fingerprint(second),
+        )
+        self.assertEqual(
+            {"SINGLE_AGENT"},
+            {item["expected_execution_mode"] for item in first},
+        )
 
     def test_execute_requires_double_authorization(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -106,6 +114,32 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
         self.assertEqual(0.03, summary["observed_telemetry"]["estimated_cost_cny"])
         self.assertEqual(0.65, summary["rlvr_summary"]["average"])
         self.assertEqual(1, summary["rlvr_summary"]["violation_count"])
+        self.assertEqual(
+            {"evaluated": 0, "matched": 0, "mismatched": 0},
+            summary["route_expectation_summary"],
+        )
+
+    def test_v2_multi_seed_requires_distinct_source_fingerprints(self) -> None:
+        value = seed("c" * 20, "育儿和家务如何共同分工？")
+        value["rollout_extra"]["route_expectation"] = {
+            "execution_mode": "ADAPTIVE_MULTI_AGENT",
+            "detected_domains": ["PARENTING", "HOUSEHOLD"],
+            "selected_domains": ["PARENTING", "HOUSEHOLD"],
+            "minimum_domains": 2,
+            "max_agents": 3,
+            "router_contract": replay.ROUTER_CONTRACT_VERSION,
+        }
+
+        with self.assertRaisesRegex(ValueError, "at least two"):
+            replay.validate_seed(value, Path("seeds.jsonl"), 1)
+
+    def test_legacy_v1_seed_remains_replayable(self) -> None:
+        value = seed("e" * 20, "旧种子问题")
+        value["schema_version"] = "agent-rl-trajectory-seed-v1"
+        value["rollout_extra"].pop("route_expectation")
+        value["rollout_extra"].pop("source_provenance")
+
+        replay.validate_seed(value, Path("legacy-seeds.jsonl"), 1)
 
 
 def seed(seed_hash: str, question: str) -> dict:
@@ -116,6 +150,21 @@ def seed(seed_hash: str, question: str) -> dict:
         "messages": [{"role": "user", "content": question}],
         "rollout_extra": {
             "benchmark_guard": {"overlap": False},
+            "source_provenance": [
+                {
+                    "path": "source.md",
+                    "section": "section",
+                    "content_sha256": "d" * 64,
+                }
+            ],
+            "route_expectation": {
+                "execution_mode": "SINGLE_AGENT",
+                "detected_domains": ["RELATIONSHIP"],
+                "selected_domains": [],
+                "minimum_domains": 2,
+                "max_agents": 3,
+                "router_contract": replay.ROUTER_CONTRACT_VERSION,
+            },
         },
     }
 
