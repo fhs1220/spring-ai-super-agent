@@ -11,10 +11,10 @@
 5. 同一固定 Benchmark 的正式配对评测通过统计和成本门禁；
 6. 胜出资产经过 SHADOW、Canary、监控和可回滚发布。
 
-截至 2026-07-29，工程链路和 300 条 v2 离线种子已完成。v2 的 8 题 × 2 轮首次回放和
-一次修复后重跑均已完成。重跑仍为 16/16 完成、Single/Multi 各 8、路由偏差和超时均为
-0，RLVR 平均提升至 0.730920，引用违规由 5 条降至 2 条，但仍未通过 Release Gate，
-尚不能扩到 50 题。失败证据见
+截至 2026-07-29，工程链路和 300 条 v2 离线种子已完成。v2 的 8 题 × 2 轮首次回放及
+两次修复后重跑均已完成。最终 Rerun 02 为 16/16 完成、Single/Multi 各 8、路由偏差、
+超时和 RLVR 违规均为 0、硬门禁 16/16、RLVR 平均 0.739860，Stage 1 Release Gate
+已通过，可以在新的明确授权后进入 50 题 × 2 轮验证。完整证据见
 [`RLVR_V3_STRATIFIED_PILOT_REPORT.md`](RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
 自动 Alignment Assessment 仍为 0，尚无百炼训练数据包、训练任务或训练后模型资产。
 
@@ -41,7 +41,7 @@ RLVR、Judge 和轨迹筛选淘汰预留余量。
 是先训练并部署 A/B/C，再用其中的新策略对匹配问题重新回放，最后生成 D 的跨策略奖励轨迹
 数据。
 
-## 下一次真实试回放
+## 已验证的真实试回放命令
 
 后端：
 
@@ -57,11 +57,11 @@ sh mvnw spring-boot:run
 AGENT_RL_REPLAY_ALLOW_MODEL_CALLS=true \
 python3 bailian-agent-rl/replay_training_seeds.py \
   --seeds tmp/agent-rl/seeds/training-seeds-v2.jsonl \
-  --batch-id policy-v5-stratified-pilot-v2 \
+  --batch-id policy-v5-v2-rerun-02 \
   --policy-version agentic-rag-v5 \
   --rounds 2 \
   --limit 8 \
-  --output tmp/agent-rl/replays/policy-v5-stratified-pilot-v2.json \
+  --output tmp/agent-rl/replays/policy-v5-v2-rerun-02.json \
   --execute
 ```
 
