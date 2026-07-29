@@ -73,6 +73,14 @@ public class AgenticRagService {
             "(?:参考)?来源\\s*[:：]?\\s*\\[(\\d{1,3}"
                     + "(?:\\s*[,，、]\\s*\\d{1,3})*)\\]");
 
+    private static final Pattern PARENTHESIZED_SOURCE_LIST = Pattern.compile(
+            "[（(]\\s*(?:依据|参考)?来源\\s*[:：]?\\s*(\\d{1,3}"
+                    + "(?:\\s*[,，、]\\s*\\d{1,3})*)\\s*[）)]");
+
+    private static final Pattern BARE_SOURCE_LIST = Pattern.compile(
+            "(?<!\\[)(?:依据|参考)?来源\\s*[:：]?\\s*(\\d{1,3}"
+                    + "(?:\\s*[,，、]\\s*\\d{1,3})*)(?!\\s*\\])");
+
     private static final Pattern CANONICAL_SOURCE = Pattern.compile(
             "\\[来源\\s*(\\d{1,3})\\]");
 
@@ -1102,7 +1110,10 @@ public class AgenticRagService {
             return answer;
         }
         String normalized = replaceCitationLists(answer, INLINE_SOURCE_LIST);
-        return replaceCitationLists(normalized, LABELLED_SOURCE_LIST);
+        normalized = replaceCitationLists(normalized, LABELLED_SOURCE_LIST);
+        normalized = replaceCitationLists(
+                normalized, PARENTHESIZED_SOURCE_LIST);
+        return replaceCitationLists(normalized, BARE_SOURCE_LIST);
     }
 
     static boolean satisfiesCitationContract(String answer, String context) {

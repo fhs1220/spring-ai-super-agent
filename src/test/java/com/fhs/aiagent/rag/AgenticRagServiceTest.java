@@ -177,9 +177,11 @@ class AgenticRagServiceTest {
     @Test
     void normalizesCommonCitationListsAndValidatesEverySourceIndex() {
         assertThat(AgenticRagService.normalizeCitationSyntax(
-                "建议一[来源 1, 2, 2]；建议二来源：[3、4]；参考来源 [5]。"))
+                "建议一[来源 1, 2, 2]；建议二来源：[3、4]；参考来源 [5]；"
+                        + "安排（来源6, 7）；结论依据来源 8。"))
                 .isEqualTo(
-                        "建议一[来源 1][来源 2]；建议二[来源 3][来源 4]；[来源 5]。");
+                        "建议一[来源 1][来源 2]；建议二[来源 3][来源 4]；"
+                                + "[来源 5]；安排[来源 6][来源 7]；结论[来源 8]。");
         String context = """
                 [来源 1 | a.md]
                 证据一
