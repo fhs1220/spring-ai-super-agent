@@ -246,6 +246,61 @@ class AgenticRagServiceTest {
     }
 
     @Test
+    void deterministicLengthGateRevisesOtherwiseApprovedDraft() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        String overlongDraft = "建议".repeat(800) + "[来源 1]";
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"夫妻沟通\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response(overlongDraft),
+                response("{\"grounded\":true,\"taskCompleted\":true,"
+                        + "\"revisedAnswer\":null}"),
+                response("先暂停情绪，再共同协商。[来源 1]")
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "冲突后应暂停情绪并共同协商。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "夫妻争吵后怎么沟通？",
+                "length-gate",
+                "你是恋爱心理顾问。"
+        );
+
+        assertThat(result.answer()).isEqualTo("先暂停情绪，再共同协商。[来源 1]");
+        assertThat(result.trace().steps())
+                .extracting(step -> step.phase())
+                .containsSubsequence("GENERATE", "REVIEW", "REVISE");
+        verify(chatModel, times(5)).call(any(Prompt.class));
+    }
+
+    @Test
+    void mirrorsSeedAnswerLengthContracts() {
+        assertThat(AgenticRagService.maximumAnswerChars(
+                "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
+        assertThat(AgenticRagService.maximumAnswerChars(
+                "请给一份按优先级排序的检查清单。")).isEqualTo(1600);
+        assertThat(AgenticRagService.satisfiesAnswerLengthContract(
+                "好".repeat(1600), "请给检查清单")).isTrue();
+        assertThat(AgenticRagService.satisfiesAnswerLengthContract(
+                "好".repeat(1601), "请给检查清单")).isFalse();
+    }
+
+    @Test
     void fallsBackToOriginalQuestionWhenPlannerTimesOut() {
         ChatModel chatModel = mock(ChatModel.class);
         VectorStore vectorStore = mock(VectorStore.class);

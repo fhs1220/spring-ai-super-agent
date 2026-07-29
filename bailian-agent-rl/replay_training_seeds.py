@@ -37,6 +37,7 @@ SUPPORTED_SEED_SCHEMA_VERSIONS = {
 REPLAY_SCHEMA_VERSION = "agent-rl-seed-replay-v2"
 DATASET_ROLE = "trajectory_seed_only"
 VALID_EXECUTION_MODES = {"SINGLE_AGENT", "ADAPTIVE_MULTI_AGENT"}
+RESUMABLE_RUN_STATUSES = {"FAILED", "CANCELLED", "RECOVERY_REQUIRED"}
 DEFAULT_ROUTING_CONTRACT = (
     PROJECT_ROOT
     / "src/main/resources/multiagent/deterministic-routing-contract-v1.json"
@@ -371,6 +372,58 @@ def preflight_server(api_root: str, timeout: int) -> None:
         ) from exception
 
 
+def request_agent_result(
+    request: urllib.request.Request,
+    run_url: str,
+    timeout: int,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return parse_sse_complete(response), None
+    except urllib.error.HTTPError as exception:
+        if exception.code != 409:
+            raise ValueError(
+                f"Agent replay request failed: {request.full_url}: {exception}"
+            ) from exception
+    except urllib.error.URLError as exception:
+        raise ValueError(
+            f"Agent replay request failed: {request.full_url}: {exception}"
+        ) from exception
+
+    durable_run = request_json(run_url, timeout)
+    status = str(durable_run.get("status") or "")
+    if status not in RESUMABLE_RUN_STATUSES:
+        raise ValueError(
+            f"Agent run conflict cannot be resumed from status {status!r}"
+        )
+    prior_error = str(durable_run.get("error") or "")
+    prior_attempt = int(durable_run.get("attempt") or 0)
+    recovery = {
+        "resumed": True,
+        "prior_status": status,
+        "prior_attempt": prior_attempt,
+        "prior_error": prior_error,
+        "prior_timeout_count": (
+            1
+            if re.search(r"timeout|timed out|exceeded", prior_error, re.IGNORECASE)
+            else 0
+        ),
+    }
+    resume_request = urllib.request.Request(
+        run_url + "/resume",
+        data=b"",
+        headers={"Accept": "text/event-stream"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(resume_request, timeout=timeout) as response:
+            return parse_sse_complete(response), recovery
+    except (urllib.error.URLError, ValueError) as exception:
+        raise ValueError(
+            f"Agent replay resume failed: {resume_request.full_url}: {exception}"
+        ) from exception
+
+
 def execute_item(
     item: dict[str, Any],
     seed: dict[str, Any],
@@ -389,11 +442,12 @@ def execute_item(
         headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            result = parse_sse_complete(response)
-    except urllib.error.URLError as exception:
-        raise ValueError(f"Agent replay request failed: {url}: {exception}") from exception
+    run_url = (
+        api_root.rstrip("/")
+        + "/ai/love_app/chat/agentic-rag/runs/"
+        + urllib.parse.quote(item["run_id"], safe="")
+    )
+    result, recovery = request_agent_result(request, run_url, timeout)
     trajectory_id = result.get("trajectoryId")
     if not isinstance(trajectory_id, str) or not trajectory_id:
         raise ValueError("Agent result has no trajectoryId")
@@ -470,7 +524,7 @@ def execute_item(
         if isinstance(route_step.get("output"), dict)
         else {}
     )
-    return {
+    replay_result = {
         "seed_id": item["seed_id"],
         "round": item["round"],
         "run_id": item["run_id"],
@@ -504,6 +558,53 @@ def execute_item(
             "timeout_count": telemetry.get("timeoutCount"),
         },
     }
+    if recovery is not None:
+        replay_result["recovery"] = recovery
+    return replay_result
+
+
+def load_partial_results(
+    path: Path,
+    summary: dict[str, Any],
+    plan: list[dict[str, Any]],
+) -> int:
+    if not path.exists():
+        return 0
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exception:
+        raise ValueError(
+            f"Existing replay manifest is unreadable: {path}: {exception}"
+        ) from exception
+    if not isinstance(existing, dict):
+        raise ValueError("Existing replay manifest must be an object")
+    for field in (
+        "batch_id",
+        "plan_fingerprint",
+        "planned_agent_runs",
+        "policy_version",
+    ):
+        if existing.get(field) != summary.get(field):
+            raise ValueError(
+                f"Existing replay manifest {field} does not match the plan"
+            )
+    results = existing.get("results")
+    if not isinstance(results, list):
+        raise ValueError("Existing replay manifest results must be an array")
+    existing_run_ids = [result.get("run_id") for result in results]
+    planned_prefix = [item["run_id"] for item in plan[:len(results)]]
+    if existing_run_ids != planned_prefix:
+        raise ValueError(
+            "Existing replay manifest results are not the deterministic plan prefix"
+        )
+    if any(result.get("status") != "COMPLETED" for result in results):
+        raise ValueError(
+            "Existing replay manifest contains a non-completed result"
+        )
+    summary["results"] = results
+    summary["completed_agent_runs"] = len(results)
+    summary["resumed_from_completed_agent_runs"] = len(results)
+    return len(results)
 
 
 def write_manifest(path: Path, value: dict[str, Any]) -> None:
@@ -553,9 +654,31 @@ def add_execution_summary(summary: dict[str, Any]) -> None:
             ),
             8,
         ),
-        "timeout_count": sum(
-            int(value.get("timeout_count") or 0) for value in telemetry
+        "timeout_count": (
+            sum(int(value.get("timeout_count") or 0) for value in telemetry)
+            + sum(
+                int(result.get("recovery", {}).get("prior_timeout_count") or 0)
+                for result in results
+                if isinstance(result.get("recovery"), dict)
+            )
         ),
+    }
+    recovered = [
+        result["recovery"]
+        for result in results
+        if isinstance(result.get("recovery"), dict)
+        and result["recovery"].get("resumed") is True
+    ]
+    summary["recovery_summary"] = {
+        "recovered_run_count": len(recovered),
+        "prior_timeout_count": sum(
+            int(value.get("prior_timeout_count") or 0) for value in recovered
+        ),
+        "prior_errors": [
+            value.get("prior_error")
+            for value in recovered
+            if value.get("prior_error")
+        ],
     }
     summary["execution_modes"] = modes
     route_expectations = [
@@ -738,7 +861,8 @@ def main() -> int:
             raise ValueError("--execute requires --output for resumable evidence")
         preflight_server(args.api_root, args.timeout_seconds)
         seeds_by_id = {seed["seed_id"]: seed for seed in seeds}
-        for item in plan:
+        completed_prefix = load_partial_results(args.output, summary, plan)
+        for item in plan[completed_prefix:]:
             result = execute_item(
                 item,
                 seeds_by_id[item["seed_id"]],

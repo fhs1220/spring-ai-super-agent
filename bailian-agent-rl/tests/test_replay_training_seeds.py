@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +14,21 @@ SPEC = importlib.util.spec_from_file_location("replay_training_seeds", MODULE_PA
 replay = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(replay)
+
+
+class FakeResponse:
+
+    def __init__(self, lines: list[bytes]) -> None:
+        self.lines = lines
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def __iter__(self):
+        return iter(self.lines)
 
 
 class ReplayTrainingSeedsTest(unittest.TestCase):
@@ -71,6 +88,73 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "AGENT_RL_API_ENABLED=true"):
                 replay.preflight_server("http://127.0.0.1:8123/api", 10)
 
+    def test_resumes_failed_durable_run_and_audits_timeout(self) -> None:
+        request = replay.urllib.request.Request(
+            "http://localhost/start",
+            data=b"{}",
+            method="POST",
+        )
+        conflict = replay.urllib.error.HTTPError(
+            request.full_url, 409, "Conflict", {}, None
+        )
+        response = FakeResponse([
+            b"event: complete\n",
+            b'data: {"trajectoryId":"trajectory-1"}\n',
+            b"\n",
+        ])
+        with (
+            patch.object(
+                replay.urllib.request,
+                "urlopen",
+                side_effect=[conflict, response],
+            ),
+            patch.object(
+                replay,
+                "request_json",
+                return_value={
+                    "status": "FAILED",
+                    "attempt": 1,
+                    "error": "GENERATE model call exceeded 30000 ms",
+                },
+            ),
+        ):
+            result, recovery = replay.request_agent_result(
+                request, "http://localhost/runs/run-1", 10
+            )
+
+        self.assertEqual("trajectory-1", result["trajectoryId"])
+        self.assertEqual(1, recovery["prior_timeout_count"])
+        self.assertEqual("FAILED", recovery["prior_status"])
+
+    def test_loads_only_completed_deterministic_prefix_for_resume(self) -> None:
+        plan = replay.build_plan(
+            [seed("a" * 20, "问题一"), seed("b" * 20, "问题二")],
+            "batch-001",
+            2,
+            None,
+        )
+        summary = {
+            "batch_id": "batch-001",
+            "plan_fingerprint": replay.plan_fingerprint(plan),
+            "planned_agent_runs": 4,
+            "policy_version": "policy-v1",
+            "results": [],
+        }
+        completed = {
+            "run_id": plan[0]["run_id"],
+            "status": "COMPLETED",
+        }
+        existing = {**summary, "results": [completed]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(existing), encoding="utf-8")
+
+            count = replay.load_partial_results(path, summary, plan)
+
+        self.assertEqual(1, count)
+        self.assertEqual([completed], summary["results"])
+        self.assertEqual(1, summary["resumed_from_completed_agent_runs"])
+
     def test_adds_auditable_execution_summary(self) -> None:
         summary = {
             "results": [
@@ -103,6 +187,11 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
                         "estimated_cost_cny": 0.02,
                         "timeout_count": 1,
                     },
+                    "recovery": {
+                        "resumed": True,
+                        "prior_timeout_count": 1,
+                        "prior_error": "GENERATE model call exceeded 30000 ms",
+                    },
                 },
             ]
         }
@@ -112,12 +201,14 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
         self.assertEqual(11, summary["underlying_model_call_count"])
         self.assertEqual(3000, summary["observed_telemetry"]["total_tokens"])
         self.assertEqual(0.03, summary["observed_telemetry"]["estimated_cost_cny"])
+        self.assertEqual(2, summary["observed_telemetry"]["timeout_count"])
         self.assertEqual(0.65, summary["rlvr_summary"]["average"])
         self.assertEqual(1, summary["rlvr_summary"]["violation_count"])
         self.assertEqual(
             {"evaluated": 0, "matched": 0, "mismatched": 0},
             summary["route_expectation_summary"],
         )
+        self.assertEqual(1, summary["recovery_summary"]["recovered_run_count"])
 
     def test_replay_gate_passes_clean_run_and_rejects_route_timeout(self) -> None:
         summary = {

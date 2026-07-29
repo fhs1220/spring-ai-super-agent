@@ -145,7 +145,7 @@ agent:
         maximum-cost-multiplier: ${AGENT_RAG_ROUTING_DRIFT_MAXIMUM_COST_MULTIPLIER:1.5}
     observability:
       # Agent 阶段级硬超时，覆盖底层客户端重试/握手卡住的情况。
-      model-call-timeout-seconds: ${AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS:30}
+      model-call-timeout-seconds: ${AGENT_RAG_MODEL_CALL_TIMEOUT_SECONDS:60}
       # 默认按 qwen-turbo 中国内地公开价估算；可通过环境变量覆盖。
       input-price-per-million-tokens-cny: ${AGENT_RAG_INPUT_PRICE_PER_MILLION_TOKENS_CNY:0.3}
       output-price-per-million-tokens-cny: ${AGENT_RAG_OUTPUT_PRICE_PER_MILLION_TOKENS_CNY:0.6}
