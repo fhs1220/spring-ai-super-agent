@@ -119,6 +119,52 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
             summary["route_expectation_summary"],
         )
 
+    def test_replay_gate_passes_clean_run_and_rejects_route_timeout(self) -> None:
+        summary = {
+            "planned_agent_runs": 2,
+            "expected_execution_modes": {
+                "SINGLE_AGENT": 1,
+                "ADAPTIVE_MULTI_AGENT": 1,
+            },
+            "results": [
+                replay_result("SINGLE_AGENT", 0.76),
+                replay_result("ADAPTIVE_MULTI_AGENT", 0.74),
+            ],
+        }
+
+        replay.add_execution_summary(summary)
+        replay.add_replay_gate(
+            summary,
+            minimum_rlvr_average=0.70,
+            maximum_route_mismatches=0,
+            maximum_timeouts=0,
+            maximum_rlvr_violations=0,
+        )
+
+        self.assertTrue(summary["replay_gate"]["passed"])
+        self.assertEqual(2, summary["billable_operations"])
+
+        summary["results"][1]["route_expectation_matched"] = False
+        summary["results"][1]["telemetry"]["timeout_count"] = 1
+        replay.add_execution_summary(summary)
+        replay.add_replay_gate(
+            summary,
+            minimum_rlvr_average=0.70,
+            maximum_route_mismatches=0,
+            maximum_timeouts=0,
+            maximum_rlvr_violations=0,
+        )
+
+        self.assertFalse(summary["replay_gate"]["passed"])
+        self.assertIn(
+            "route_mismatches_within_limit",
+            summary["replay_gate"]["failures"],
+        )
+        self.assertIn(
+            "timeouts_within_limit",
+            summary["replay_gate"]["failures"],
+        )
+
     def test_v2_multi_seed_requires_distinct_source_fingerprints(self) -> None:
         value = seed("c" * 20, "育儿和家务如何共同分工？")
         value["rollout_extra"]["route_expectation"] = {
@@ -165,6 +211,26 @@ def seed(seed_hash: str, question: str) -> dict:
                 "max_agents": 3,
                 "router_contract": replay.ROUTER_CONTRACT_VERSION,
             },
+        },
+    }
+
+
+def replay_result(mode: str, rlvr_total: float) -> dict:
+    return {
+        "status": "COMPLETED",
+        "reward": 0.8,
+        "rlvr": {
+            "total": rlvr_total,
+            "hard_gate_passed": True,
+            "violations": [],
+        },
+        "execution_mode": mode,
+        "route_expectation_matched": True,
+        "telemetry": {
+            "model_call_count": 1,
+            "total_tokens": 100,
+            "estimated_cost_cny": 0.001,
+            "timeout_count": 0,
         },
     }
 

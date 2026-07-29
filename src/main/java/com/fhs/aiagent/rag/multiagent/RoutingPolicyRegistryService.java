@@ -33,6 +33,9 @@ public class RoutingPolicyRegistryService {
 
     public static final String BASELINE_VERSION = "routing-policy-baseline-v1";
 
+    public static final String DETERMINISTIC_ROUTER_VERSION =
+            DeterministicRoutingContract.defaultContract().schemaVersion();
+
     private static final Logger log =
             LoggerFactory.getLogger(RoutingPolicyRegistryService.class);
 
@@ -356,7 +359,7 @@ public class RoutingPolicyRegistryService {
                 3,
                 BASELINE_VERSION,
                 RoutingPolicyArtifactStatus.BASELINE,
-                "deterministic-complexity-router-v1",
+                DETERMINISTIC_ROUTER_VERSION,
                 upstreamModel,
                 Map.of(),
                 "baseline",

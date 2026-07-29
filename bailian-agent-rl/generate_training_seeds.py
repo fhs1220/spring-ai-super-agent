@@ -21,11 +21,14 @@ SCHEMA_VERSION = "agent-rl-trajectory-seed-v2"
 DATASET_ROLE = "trajectory_seed_only"
 DEFAULT_SIMILARITY_THRESHOLD = 0.82
 DEFAULT_MULTI_AGENT_RATIO = 0.5
-ROUTER_CONTRACT_VERSION = "deterministic-complexity-router-v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DOCUMENT_DIR = PROJECT_ROOT / "src/main/resources/document"
 DEFAULT_BENCHMARK = (
     PROJECT_ROOT / "src/main/resources/evaluation/love-rag-ab.jsonl"
+)
+DEFAULT_ROUTING_CONTRACT = (
+    PROJECT_ROOT
+    / "src/main/resources/multiagent/deterministic-routing-contract-v1.json"
 )
 
 SCENARIOS = (
@@ -68,25 +71,6 @@ CONCEPT_RULES = (
     ("消费观念", ("消费观|沟通", "预算|支出", "储蓄|目标", "大额消费", "共同决定")),
 )
 
-DOMAIN_KEYWORDS = {
-    "RELATIONSHIP": (
-        "恋爱", "婚姻", "夫妻", "伴侣", "沟通", "争吵", "感情",
-        "亲密", "异地", "信任",
-    ),
-    "PARENTING": ("孩子", "育儿", "带娃", "教育", "接送", "哄睡", "喂养"),
-    "HOUSEHOLD": (
-        "家务", "做饭", "洗碗", "清洁", "分工", "隐形劳动", "家庭责任",
-    ),
-    "FINANCE": (
-        "经济", "预算", "收入", "支出", "存钱", "债务", "房贷", "财务", "钱",
-    ),
-    "SAFETY": (
-        "家暴", "暴力", "威胁", "殴打", "强迫", "限制人身", "自杀", "轻生",
-    ),
-}
-DOMAIN_SELECTION_ORDER = (
-    "SAFETY", "PARENTING", "HOUSEHOLD", "FINANCE", "RELATIONSHIP",
-)
 DOMAIN_CONCEPTS = {
     "RELATIONSHIP": "沟通|倾听|协商|复盘",
     "PARENTING": "孩子|育儿|接送|哄睡",
@@ -195,6 +179,51 @@ def canonical_json(value: Any) -> str:
 
 def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def load_routing_contract(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exception:
+        raise ValueError(
+            f"Routing contract is unreadable: {path}: {exception}"
+        ) from exception
+    if not isinstance(value, dict):
+        raise ValueError("Routing contract must be an object")
+    keywords = value.get("domain_keywords")
+    order = value.get("domain_selection_order")
+    if (
+        not isinstance(value.get("schema_version"), str)
+        or not isinstance(keywords, dict)
+        or not keywords
+        or any(
+            not isinstance(domain, str)
+            or not isinstance(items, list)
+            or not items
+            or any(not isinstance(item, str) or not item for item in items)
+            for domain, items in keywords.items()
+        )
+        or not isinstance(order, list)
+        or set(order) != set(keywords)
+        or value.get("fallback_domain") not in keywords
+        or not isinstance(value.get("minimum_domains"), int)
+        or value["minimum_domains"] < 1
+        or not isinstance(value.get("max_agents"), int)
+        or value["max_agents"] < 1
+    ):
+        raise ValueError(f"Routing contract is invalid: {path}")
+    return value
+
+
+ROUTING_CONTRACT = load_routing_contract(DEFAULT_ROUTING_CONTRACT)
+ROUTER_CONTRACT_VERSION = ROUTING_CONTRACT["schema_version"]
+DOMAIN_KEYWORDS = {
+    domain: tuple(keywords)
+    for domain, keywords in ROUTING_CONTRACT["domain_keywords"].items()
+}
+DOMAIN_SELECTION_ORDER = tuple(
+    ROUTING_CONTRACT["domain_selection_order"]
+)
 
 
 def normalize_question(value: str) -> str:
@@ -328,23 +357,25 @@ def detected_domains(question: str) -> tuple[str, ...]:
         for domain, keywords in DOMAIN_KEYWORDS.items()
         if any(keyword in normalized for keyword in keywords)
     )
-    return domains or ("RELATIONSHIP",)
+    return domains or (ROUTING_CONTRACT["fallback_domain"],)
 
 
 def route_expectation(question: str) -> dict[str, Any]:
     domains = detected_domains(question)
-    multi_agent = len(domains) >= 2
+    minimum_domains = ROUTING_CONTRACT["minimum_domains"]
+    max_agents = ROUTING_CONTRACT["max_agents"]
+    multi_agent = len(domains) >= minimum_domains
     selected = tuple(
         domain for domain in DOMAIN_SELECTION_ORDER if domain in domains
-    )[:3] if multi_agent else ()
+    )[:max_agents] if multi_agent else ()
     return {
         "execution_mode": (
             "ADAPTIVE_MULTI_AGENT" if multi_agent else "SINGLE_AGENT"
         ),
         "detected_domains": list(domains),
         "selected_domains": list(selected),
-        "minimum_domains": 2,
-        "max_agents": 3,
+        "minimum_domains": minimum_domains,
+        "max_agents": max_agents,
         "router_contract": ROUTER_CONTRACT_VERSION,
     }
 

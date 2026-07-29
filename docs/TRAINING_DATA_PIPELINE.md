@@ -69,7 +69,7 @@ Dry Run 是默认模式。上面的命令只显示计划，既不会访问本地
 
 ## 3. 显式授权小批量真实回放
 
-先用 5 条题目验证服务、策略版本、成本和轨迹完整性：
+先用 8 条交错题目验证服务、策略版本、成本、轨迹完整性和单双 Agent 各半覆盖：
 
 ```bash
 AGENT_RL_API_ENABLED=true \
@@ -86,7 +86,7 @@ python3 bailian-agent-rl/replay_training_seeds.py \
   --batch-id policy-v5-stratified-pilot-v2 \
   --policy-version agentic-rag-v5 \
   --rounds 2 \
-  --limit 5 \
+  --limit 8 \
   --output tmp/agent-rl/replays/policy-v5-stratified-pilot-v2.json \
   --execute
 ```
@@ -106,9 +106,13 @@ durable run，不会为同一个 `runId` 再生成一条新轨迹。
 `route_expectation_matched`，并汇总匹配与偏离数量。预期路由是离线确定性路由契约，
 服务端实际路由仍以真实轨迹为准。
 
+执行完成后还会自动检查：所有运行完成、RLVR 硬门禁全过、RLVR 平均分至少 0.70、
+RLVR 违规为 0、路由偏差为 0、超时为 0。调用全部完成但门禁失败时，结果仍会持久化，
+进程以非零状态退出，不能直接进入扩量阶段。
+
 ## 建议的样本规模
 
-- 阶段 A：5 个种子 × 2 轮，验证接口、费用和策略版本；
+- 阶段 A：8 个种子 × 2 轮，验证接口、费用、策略版本和单双 Agent；
 - 阶段 B：50 个种子 × 2 轮，检查奖励分布、失败率和主题覆盖；
 - 阶段 C：300 个种子 × 2 轮，形成约 600 条候选轨迹；
 - 人工只抽查 20–30 条高价值或高分歧样本，其他样本由 RLVR 契约和 AI Judge Panel

@@ -74,12 +74,9 @@ public class RagAbEvaluationJobService {
     }
 
     private void execute(RunState state) {
-        if (state.cancelRequested.get()) {
-            state.status = "CANCELLED";
-            state.completedAt = Instant.now();
+        if (!state.begin()) {
             return;
         }
-        state.status = "RUNNING";
         try {
             RagAbReport report = evaluationService.evaluate(
                     state.runId,
@@ -87,23 +84,9 @@ public class RagAbEvaluationJobService {
                     state.cancelRequested::get,
                     state::updateProgress
             );
-            if (state.cancelRequested.get()) {
-                state.status = "CANCELLED";
-            } else {
-                state.report = report;
-                state.status = "COMPLETED";
-            }
+            state.complete(report);
         } catch (RuntimeException exception) {
-            if (state.cancelRequested.get()
-                    || AgentRunCancelledException.isCancellation(exception)) {
-                state.status = "CANCELLED";
-            } else {
-                state.status = "FAILED";
-                state.error = exception.getClass().getSimpleName() + ": "
-                        + exception.getMessage();
-            }
-        } finally {
-            state.completedAt = Instant.now();
+            state.fail(exception, AgentRunCancelledException.isCancellation(exception));
         }
     }
 
@@ -164,20 +147,60 @@ public class RagAbEvaluationJobService {
             this.maximumCases = maximumCases;
         }
 
-        private void attach(Future<?> future) {
+        private synchronized void attach(Future<?> future) {
             this.future = future;
             if (cancelRequested.get()) {
                 future.cancel(true);
             }
         }
 
-        private void updateProgress(RagAbEvaluationService.Progress progress) {
+        private synchronized boolean begin() {
+            if (cancelRequested.get() || isTerminal()) {
+                if (!isTerminal()) {
+                    status = "CANCELLED";
+                    completedAt = Instant.now();
+                }
+                return false;
+            }
+            status = "RUNNING";
+            return true;
+        }
+
+        private synchronized void complete(RagAbReport completedReport) {
+            if (cancelRequested.get() || "CANCELLED".equals(status)) {
+                status = "CANCELLED";
+            } else {
+                report = completedReport;
+                status = "COMPLETED";
+            }
+            completedAt = Instant.now();
+        }
+
+        private synchronized void fail(
+                RuntimeException exception,
+                boolean cancellationException) {
+            if (cancelRequested.get()
+                    || "CANCELLED".equals(status)
+                    || cancellationException) {
+                status = "CANCELLED";
+            } else {
+                status = "FAILED";
+                error = exception.getClass().getSimpleName() + ": "
+                        + exception.getMessage();
+            }
+            completedAt = Instant.now();
+        }
+
+        private synchronized void updateProgress(RagAbEvaluationService.Progress progress) {
+            if (isTerminal()) {
+                return;
+            }
             this.completedCases = progress.completedCases();
             this.totalCases = progress.totalCases();
             this.currentCaseId = progress.currentCaseId();
         }
 
-        private void cancel() {
+        private synchronized void cancel() {
             if (!isTerminal()) {
                 cancelRequested.set(true);
                 status = "CANCELLED";

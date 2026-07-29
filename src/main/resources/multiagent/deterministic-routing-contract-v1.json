@@ -1,0 +1,66 @@
+{
+  "schema_version": "deterministic-complexity-router-v1",
+  "minimum_domains": 2,
+  "max_agents": 3,
+  "fallback_domain": "RELATIONSHIP",
+  "domain_selection_order": [
+    "SAFETY",
+    "PARENTING",
+    "HOUSEHOLD",
+    "FINANCE",
+    "RELATIONSHIP"
+  ],
+  "domain_keywords": {
+    "RELATIONSHIP": [
+      "恋爱",
+      "婚姻",
+      "夫妻",
+      "伴侣",
+      "沟通",
+      "争吵",
+      "感情",
+      "亲密",
+      "异地",
+      "信任"
+    ],
+    "PARENTING": [
+      "孩子",
+      "育儿",
+      "带娃",
+      "教育",
+      "接送",
+      "哄睡",
+      "喂养"
+    ],
+    "HOUSEHOLD": [
+      "家务",
+      "做饭",
+      "洗碗",
+      "清洁",
+      "分工",
+      "隐形劳动",
+      "家庭责任"
+    ],
+    "FINANCE": [
+      "经济",
+      "预算",
+      "收入",
+      "支出",
+      "存钱",
+      "债务",
+      "房贷",
+      "财务",
+      "钱"
+    ],
+    "SAFETY": [
+      "家暴",
+      "暴力",
+      "威胁",
+      "殴打",
+      "强迫",
+      "限制人身",
+      "自杀",
+      "轻生"
+    ]
+  }
+}

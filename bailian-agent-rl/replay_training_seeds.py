@@ -22,6 +22,7 @@ from typing import Any
 
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_ROOT.parent
 if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
@@ -36,13 +37,45 @@ SUPPORTED_SEED_SCHEMA_VERSIONS = {
 REPLAY_SCHEMA_VERSION = "agent-rl-seed-replay-v2"
 DATASET_ROLE = "trajectory_seed_only"
 VALID_EXECUTION_MODES = {"SINGLE_AGENT", "ADAPTIVE_MULTI_AGENT"}
-VALID_DOMAINS = {
-    "RELATIONSHIP", "PARENTING", "HOUSEHOLD", "FINANCE", "SAFETY",
-}
-DOMAIN_SELECTION_ORDER = (
-    "SAFETY", "PARENTING", "HOUSEHOLD", "FINANCE", "RELATIONSHIP",
+DEFAULT_ROUTING_CONTRACT = (
+    PROJECT_ROOT
+    / "src/main/resources/multiagent/deterministic-routing-contract-v1.json"
 )
-ROUTER_CONTRACT_VERSION = "deterministic-complexity-router-v1"
+
+
+def load_routing_contract(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exception:
+        raise ValueError(
+            f"Routing contract is unreadable: {path}: {exception}"
+        ) from exception
+    if not isinstance(value, dict):
+        raise ValueError("Routing contract must be an object")
+    keywords = value.get("domain_keywords")
+    order = value.get("domain_selection_order")
+    if (
+        not isinstance(value.get("schema_version"), str)
+        or not isinstance(keywords, dict)
+        or not keywords
+        or not isinstance(order, list)
+        or set(order) != set(keywords)
+        or value.get("fallback_domain") not in keywords
+        or not isinstance(value.get("minimum_domains"), int)
+        or value["minimum_domains"] < 1
+        or not isinstance(value.get("max_agents"), int)
+        or value["max_agents"] < 1
+    ):
+        raise ValueError(f"Routing contract is invalid: {path}")
+    return value
+
+
+ROUTING_CONTRACT = load_routing_contract(DEFAULT_ROUTING_CONTRACT)
+VALID_DOMAINS = set(ROUTING_CONTRACT["domain_keywords"])
+DOMAIN_SELECTION_ORDER = tuple(
+    ROUTING_CONTRACT["domain_selection_order"]
+)
+ROUTER_CONTRACT_VERSION = ROUTING_CONTRACT["schema_version"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,6 +88,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=320)
+    parser.add_argument("--minimum-rlvr-average", type=float, default=0.70)
+    parser.add_argument("--maximum-route-mismatches", type=int, default=0)
+    parser.add_argument("--maximum-timeouts", type=int, default=0)
+    parser.add_argument("--maximum-rlvr-violations", type=int, default=0)
     parser.add_argument(
         "--execute",
         action="store_true",
@@ -146,20 +183,26 @@ def validate_route_expectation(
         VALID_DOMAINS
     ):
         raise ValueError(f"{prefix} has invalid or duplicate expected domains")
-    if mode == "SINGLE_AGENT" and len(domains) != 1:
-        raise ValueError(f"{prefix} single-Agent seed must have one domain")
-    if mode == "ADAPTIVE_MULTI_AGENT" and len(domains) < 2:
-        raise ValueError(f"{prefix} multi-Agent seed must have multiple domains")
+    minimum_domains = ROUTING_CONTRACT["minimum_domains"]
+    max_agents = ROUTING_CONTRACT["max_agents"]
+    if mode == "SINGLE_AGENT" and len(domains) >= minimum_domains:
+        raise ValueError(f"{prefix} single-Agent seed has too many domains")
+    if mode == "ADAPTIVE_MULTI_AGENT" and len(domains) < minimum_domains:
+        raise ValueError(f"{prefix} multi-Agent seed has too few domains")
     selected = expectation.get("selected_domains")
     if (
         not isinstance(selected, list)
-        or len(selected) > 3
+        or len(selected) > max_agents
         or len(set(selected)) != len(selected)
         or not set(selected).issubset(domains)
     ):
         raise ValueError(f"{prefix} has invalid selected domains")
     expected_selected = (
-        [domain for domain in DOMAIN_SELECTION_ORDER if domain in domains][:3]
+        [
+            domain
+            for domain in DOMAIN_SELECTION_ORDER
+            if domain in domains
+        ][:ROUTING_CONTRACT["max_agents"]]
         if mode == "ADAPTIVE_MULTI_AGENT"
         else []
     )
@@ -167,10 +210,12 @@ def validate_route_expectation(
         raise ValueError(
             f"{prefix} selected domains do not match the router contract"
         )
-    if expectation.get("minimum_domains") != 2:
-        raise ValueError(f"{prefix} requires minimum_domains=2")
-    if expectation.get("max_agents") != 3:
-        raise ValueError(f"{prefix} requires max_agents=3")
+    if expectation.get("minimum_domains") != minimum_domains:
+        raise ValueError(
+            f"{prefix} requires minimum_domains={minimum_domains}"
+        )
+    if expectation.get("max_agents") != max_agents:
+        raise ValueError(f"{prefix} requires max_agents={max_agents}")
     if expectation.get("router_contract") != ROUTER_CONTRACT_VERSION:
         raise ValueError(f"{prefix} has an unsupported router contract")
     provenance = rollout_extra.get("source_provenance")
@@ -496,6 +541,7 @@ def add_execution_summary(summary: dict[str, Any]) -> None:
     summary["underlying_model_call_count"] = sum(
         int(value.get("model_call_count") or 0) for value in telemetry
     )
+    summary["billable_operations"] = summary["underlying_model_call_count"]
     summary["observed_telemetry"] = {
         "total_tokens": sum(
             int(value.get("total_tokens") or 0) for value in telemetry
@@ -537,6 +583,94 @@ def add_execution_summary(summary: dict[str, Any]) -> None:
             if isinstance(result.get("rlvr"), dict)
         ),
         "context_source": "seed_reference_solution",
+    }
+
+
+def add_replay_gate(
+    summary: dict[str, Any],
+    *,
+    minimum_rlvr_average: float,
+    maximum_route_mismatches: int,
+    maximum_timeouts: int,
+    maximum_rlvr_violations: int,
+) -> None:
+    if not 0.0 <= minimum_rlvr_average <= 1.0:
+        raise ValueError("minimum-rlvr-average must be between 0 and 1")
+    for name, value in (
+        ("maximum-route-mismatches", maximum_route_mismatches),
+        ("maximum-timeouts", maximum_timeouts),
+        ("maximum-rlvr-violations", maximum_rlvr_violations),
+    ):
+        if value < 0:
+            raise ValueError(f"{name} must not be negative")
+
+    results = summary.get("results")
+    results = results if isinstance(results, list) else []
+    planned = int(summary.get("planned_agent_runs") or 0)
+    completed = sum(
+        1 for result in results if result.get("status") == "COMPLETED"
+    )
+    rlvr_summary = summary.get("rlvr_summary")
+    rlvr_summary = rlvr_summary if isinstance(rlvr_summary, dict) else {}
+    route_summary = summary.get("route_expectation_summary")
+    route_summary = route_summary if isinstance(route_summary, dict) else {}
+    telemetry = summary.get("observed_telemetry")
+    telemetry = telemetry if isinstance(telemetry, dict) else {}
+    expected_modes = summary.get("expected_execution_modes")
+    expected_modes = expected_modes if isinstance(expected_modes, dict) else {}
+    expected_route_runs = sum(
+        int(count)
+        for mode, count in expected_modes.items()
+        if mode != "UNSPECIFIED"
+    )
+
+    average = rlvr_summary.get("average")
+    hard_gate_passed = int(rlvr_summary.get("hard_gate_passed") or 0)
+    violations = int(rlvr_summary.get("violation_count") or 0)
+    route_evaluated = int(route_summary.get("evaluated") or 0)
+    route_mismatches = int(route_summary.get("mismatched") or 0)
+    timeouts = int(telemetry.get("timeout_count") or 0)
+    checks = {
+        "all_runs_completed": planned > 0 and completed == planned,
+        "all_rlvr_hard_gates_passed": (
+            planned > 0 and hard_gate_passed == planned
+        ),
+        "rlvr_average_met": (
+            isinstance(average, (int, float))
+            and float(average) >= minimum_rlvr_average
+        ),
+        "rlvr_violations_within_limit": (
+            violations <= maximum_rlvr_violations
+        ),
+        "route_expectations_fully_evaluated": (
+            expected_route_runs == 0 or route_evaluated == expected_route_runs
+        ),
+        "route_mismatches_within_limit": (
+            route_mismatches <= maximum_route_mismatches
+        ),
+        "timeouts_within_limit": timeouts <= maximum_timeouts,
+    }
+    failures = [name for name, passed in checks.items() if not passed]
+    summary["replay_gate"] = {
+        "passed": not failures,
+        "checks": checks,
+        "failures": failures,
+        "thresholds": {
+            "minimum_rlvr_average": minimum_rlvr_average,
+            "maximum_route_mismatches": maximum_route_mismatches,
+            "maximum_timeouts": maximum_timeouts,
+            "maximum_rlvr_violations": maximum_rlvr_violations,
+        },
+        "observed": {
+            "planned_agent_runs": planned,
+            "completed_agent_runs": completed,
+            "rlvr_hard_gate_passed": hard_gate_passed,
+            "rlvr_average": average,
+            "rlvr_violation_count": violations,
+            "route_expectations_evaluated": route_evaluated,
+            "route_mismatches": route_mismatches,
+            "timeout_count": timeouts,
+        },
     }
 
 
@@ -622,8 +756,22 @@ def main() -> int:
                 )
         summary["completed"] = True
         add_execution_summary(summary)
+        add_replay_gate(
+            summary,
+            minimum_rlvr_average=args.minimum_rlvr_average,
+            maximum_route_mismatches=args.maximum_route_mismatches,
+            maximum_timeouts=args.maximum_timeouts,
+            maximum_rlvr_violations=args.maximum_rlvr_violations,
+        )
         write_manifest(args.output, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        if not summary["replay_gate"]["passed"]:
+            print(
+                "Seed replay completed but failed the replay gate: "
+                + ", ".join(summary["replay_gate"]["failures"]),
+                file=sys.stderr,
+            )
+            return 3
         return 0
     except (OSError, ValueError) as exception:
         print(f"Seed replay failed: {exception}", file=sys.stderr)

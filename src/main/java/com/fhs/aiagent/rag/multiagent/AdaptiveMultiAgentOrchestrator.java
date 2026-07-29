@@ -42,7 +42,11 @@ public class AdaptiveMultiAgentOrchestrator {
 
     public static final String MULTI_MODE = "ADAPTIVE_MULTI_AGENT";
 
-    private static final Map<AgentDomain, List<String>> DOMAIN_KEYWORDS = domainKeywords();
+    private static final DeterministicRoutingContract ROUTING_CONTRACT =
+            DeterministicRoutingContract.defaultContract();
+
+    private static final Map<AgentDomain, List<String>> DOMAIN_KEYWORDS =
+            ROUTING_CONTRACT.domainKeywords();
 
     private final ChatClient chatClient;
 
@@ -153,7 +157,7 @@ public class AdaptiveMultiAgentOrchestrator {
             }
         });
         if (domains.isEmpty()) {
-            domains.add(AgentDomain.RELATIONSHIP);
+            domains.add(ROUTING_CONTRACT.fallbackDomain());
         }
 
         boolean structuredTask = containsAny(normalized, List.of(
@@ -603,16 +607,8 @@ public class AdaptiveMultiAgentOrchestrator {
 
     private List<AgentDomain> selectDomains(Set<AgentDomain> detected) {
         List<AgentDomain> ordered = new ArrayList<>();
-        if (detected.contains(AgentDomain.SAFETY)) {
-            ordered.add(AgentDomain.SAFETY);
-        }
-        for (AgentDomain domain : List.of(
-                AgentDomain.PARENTING,
-                AgentDomain.HOUSEHOLD,
-                AgentDomain.FINANCE,
-                AgentDomain.RELATIONSHIP
-        )) {
-            if (detected.contains(domain) && !ordered.contains(domain)) {
+        for (AgentDomain domain : ROUTING_CONTRACT.selectionOrder()) {
+            if (detected.contains(domain)) {
                 ordered.add(domain);
             }
         }
@@ -759,23 +755,4 @@ public class AdaptiveMultiAgentOrchestrator {
         }
     }
 
-    private static Map<AgentDomain, List<String>> domainKeywords() {
-        Map<AgentDomain, List<String>> values = new EnumMap<>(AgentDomain.class);
-        values.put(AgentDomain.RELATIONSHIP, List.of(
-                "恋爱", "婚姻", "夫妻", "伴侣", "沟通", "争吵", "感情", "亲密", "异地", "信任"
-        ));
-        values.put(AgentDomain.PARENTING, List.of(
-                "孩子", "育儿", "带娃", "教育", "接送", "哄睡", "喂养"
-        ));
-        values.put(AgentDomain.HOUSEHOLD, List.of(
-                "家务", "做饭", "洗碗", "清洁", "分工", "隐形劳动", "家庭责任"
-        ));
-        values.put(AgentDomain.FINANCE, List.of(
-                "经济", "预算", "收入", "支出", "存钱", "债务", "房贷", "财务", "钱"
-        ));
-        values.put(AgentDomain.SAFETY, List.of(
-                "家暴", "暴力", "威胁", "殴打", "强迫", "限制人身", "自杀", "轻生"
-        ));
-        return Map.copyOf(values);
-    }
 }
