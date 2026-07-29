@@ -14,7 +14,9 @@
 截至 2026-07-29，工程链路、300 条 v2 离线种子和 Stage 1 已完成。Stage 2 的 50 题 ×
 2 轮首次真实回放也已得到 100/100 条结果：Single/Multi 各 50、路由偏差 0、RLVR
 平均 0.723236，但因 3 条 `answer_too_long` 和 1 次已恢复超时未通过 Release Gate。
-断点恢复、长度契约和 60 秒阶段超时已离线修复，仍需新 Batch 真实验证。证据见
+第一次修复后的新 Batch 在 23/100 时又检出 2 条 `answer_too_short`，随即主动早停；
+现已离线补齐 140–1,600 / 320–2,400 的完整最小/最大长度契约，并加入不可通过即自动
+早停。Stage 2 仍需新 Batch 真实验证。证据见
 [`RLVR_V3_STAGE2_50X2_REPORT.md`](RLVR_V3_STAGE2_50X2_REPORT.md)；Stage 1 证据见
 [`RLVR_V3_STRATIFIED_PILOT_REPORT.md`](RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
 自动 Alignment Assessment 仍为 0，尚无百炼训练数据包、训练任务或训练后模型资产。
