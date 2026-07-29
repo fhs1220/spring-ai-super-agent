@@ -87,9 +87,16 @@ Stage 3 已完成，不自动执行剩余 150 个种子。完整结果见
 0.666667，且误放行 1 条人工负向锚点，因此 Stage 4 仍未通过，不导出训练数据。
 
 原留出集已经用于诊断，现已从 89 条从未人工查看的剩余轨迹冻结 10 条最终盲测，覆盖
-5 种请求类型 × 2 种执行模式，不展示 Judge 意见且不调用模型。完成该 10 条并通过固定
-门禁后，才进入 Stage 5。完整证据见
+5 种请求类型 × 2 种执行模式，不展示 Judge 意见且不调用模型。最终盲测已完成，但
+v1 聚合器将 10 条全部判为正向，实际精度 0.60，并误放行 1 条人工 1 分样本。Stage 4
+冻结为 `FAILED_AUTOMATED_ALIGNMENT_GATE`；不再用追加小批人工或移动阈值制造通过。
+完整证据见
 [`RL_STAGE4_ALIGNMENT_CALIBRATION_REPORT.md`](RL_STAGE4_ALIGNMENT_CALIBRATION_REPORT.md)。
+
+Stage 5 已独立冻结不依赖 RLAIF 的两臂：119 条 RLVR v3 合格唯一轨迹按固定指纹切为
+95 条训练、24 条验证，Benchmark 污染 0。静态 Reward 与 `RLVR_ONLY` 的百炼 Dry Run
+均通过；`RLVR_RLAIF` 与 `FULL_TRAJECTORY_GUIDED` 继续由 Stage 4 门禁阻断。详见
+[`RL_STAGE5_DATASET_FREEZE_REPORT.md`](RL_STAGE5_DATASET_FREEZE_REPORT.md)。
 
 ## 授权边界
 

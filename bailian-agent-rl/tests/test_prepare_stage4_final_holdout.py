@@ -55,6 +55,51 @@ class Stage4FinalHoldoutTest(unittest.TestCase):
         ):
             self.assertNotIn(assignment, source)
 
+    def test_final_holdout_gate_rejects_negative_false_positive(self) -> None:
+        bundle = {
+            "bundle_fingerprint": "bundle",
+            "source_calibration_fingerprint": "calibration",
+        }
+        validated = {
+            "bundle_fingerprint": "bundle",
+            "labels": [
+                {
+                    "rank": rank,
+                    "trajectory_id": f"trajectory-{rank}",
+                    "overall_rating": 1 if rank == 10 else 5,
+                }
+                for rank in range(1, 11)
+            ],
+        }
+        calibration_report = {
+            "report_fingerprint": "calibration",
+            "predictions": [
+                {
+                    "trajectory_id": f"trajectory-{rank}",
+                    "prediction": {
+                        "training_decision": "POSITIVE",
+                        "total_reward": 0.8,
+                        "confidence": 0.9,
+                    },
+                }
+                for rank in range(1, 11)
+            ],
+        }
+
+        evaluation = holdout.evaluate_final_holdout(
+            bundle, validated, calibration_report
+        )
+
+        self.assertFalse(evaluation["passed"])
+        self.assertEqual(0.9, evaluation["positive_precision"])
+        self.assertEqual(
+            1, evaluation["negative_anchor_false_positive_count"]
+        )
+        self.assertIn(
+            "no_negative_anchor_auto_approved",
+            evaluation["failures"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

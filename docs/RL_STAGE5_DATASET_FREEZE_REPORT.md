@@ -1,0 +1,51 @@
+# RL Stage 5 静态 Reward / RLVR 数据冻结报告
+
+## 结论
+
+静态 Reward 与 `RLVR_ONLY` 两臂的数据包已经离线冻结并通过百炼提交前检查；
+`RLVR_RLAIF` 与 `FULL_TRAJECTORY_GUIDED` 因 Stage 4 最终人工盲测失败而保持阻断。
+本轮没有调用模型、没有创建云资源、没有产生计费操作。
+
+## 冻结来源
+
+- Stage 4 Batch：`policy-v7-stage4-judge-119`；
+- Policy：`agentic-rag-v7`；
+- Stage 4 计划指纹：
+  `d40dfa5753a44c5f988e83003b72f780973e8a71d2141e876da725bce650c998`；
+- Stage 3 回放计划指纹：
+  `3230c4faf444af17f09aa70f3b44f0cca311e119729132dd373775cae2347c94`；
+- 数据冻结指纹：
+  `8dfdca3f522c16afd48e1d01ba860c9b1776684b1e57b76e1126f814c58f92da`。
+
+冻结器逐条绑定 Stage 3 真实回放结果和 RLVR v3 明细，不使用轨迹文件中的旧在线 Reward
+替代 RLVR v3。119 条唯一问题全部满足完成状态、RLVR ≥ 0.70、硬门禁通过、违规为空、
+Policy 和轨迹身份一致。
+
+## 数据切分与污染检查
+
+- 唯一轨迹：119；
+- 训练集：95；
+- 验证集：24；
+- Batch Size：64；
+- 训练/验证问题重叠：0；
+- 固定 Benchmark：36 条；
+- Benchmark 最大 3-gram Jaccard：0.172131；
+- 相似或包含污染：0；
+- Benchmark 指纹：
+  `da9b7e624747e1c3301ac423999e74c014d637dc9753c9d3c227b718d167f07b`。
+
+静态 Reward 与 `RLVR_ONLY` 有意使用完全相同的训练/验证样本，后续分别训练成不同模型
+资产，以隔离 Reward 函数变化。两臂数据指纹相同，但训练配置指纹不同：
+
+| 实验臂 | 训练/验证 | 配置指纹 | Readiness |
+|---|---:|---|---|
+| `BASELINE_STATIC_REWARD` | 95 / 24 | `122fcf7395f6e00d1e4a96aa65c7b4760b2e7391efbf54fd7ae4ca2c37a771af` | 通过 |
+| `RLVR_ONLY` | 95 / 24 | `91f090141e81314a9a2059e392050c4979a009b37ab893462845d2a902f29de5` | 通过 |
+
+两次 `submit_job.py` Dry Run 均通过；未提供 `--execute`，所以没有启动付费训练。
+
+## 被阻断的实验臂
+
+`RLVR_RLAIF` 和 `FULL_TRAJECTORY_GUIDED` 不得使用当前 Judge 标签。恢复这两臂必须先
+形成新的、独立验证通过的监督来源或正式修改实验范围；不能复用失败聚合结果、降低精度
+门槛或把 RLVR-only 数据改名为 RLAIF 数据。

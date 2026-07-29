@@ -38,6 +38,7 @@ REQUEST_TYPES = (
     "weekly_plan",
 )
 EXECUTION_MODES = ("SINGLE_AGENT", "ADAPTIVE_MULTI_AGENT")
+MINIMUM_POSITIVE_PRECISION = 0.80
 
 
 def parse_args() -> argparse.Namespace:
@@ -181,6 +182,96 @@ def build_bundle(
     }
 
 
+def evaluate_final_holdout(
+    bundle: dict[str, Any],
+    validated: dict[str, Any],
+    calibration: dict[str, Any],
+) -> dict[str, Any]:
+    if (
+        bundle.get("source_calibration_fingerprint")
+        != calibration.get("report_fingerprint")
+        or validated.get("bundle_fingerprint")
+        != bundle.get("bundle_fingerprint")
+    ):
+        raise ValueError("final holdout evaluation identity mismatch")
+    predictions = {
+        value.get("trajectory_id"): value.get("prediction")
+        for value in calibration.get("predictions", [])
+        if isinstance(value, dict)
+    }
+    rows = []
+    for label in validated.get("labels", []):
+        prediction = predictions.get(label.get("trajectory_id"))
+        if not isinstance(prediction, dict):
+            raise ValueError("final holdout prediction is missing")
+        rating = label["overall_rating"]
+        human_class = (
+            "POSITIVE" if rating >= 4
+            else "NEGATIVE" if rating <= 2
+            else "HOLDOUT"
+        )
+        rows.append({
+            "rank": label["rank"],
+            "trajectory_id": label["trajectory_id"],
+            "human_rating": rating,
+            "human_class": human_class,
+            "predicted_decision": prediction.get("training_decision"),
+            "predicted_reward": prediction.get("total_reward"),
+            "predicted_confidence": prediction.get("confidence"),
+        })
+    predicted_positive = [
+        row for row in rows
+        if row["predicted_decision"] == "POSITIVE"
+    ]
+    true_positive = [
+        row for row in predicted_positive
+        if row["human_class"] == "POSITIVE"
+    ]
+    negative_false_positives = [
+        row for row in predicted_positive
+        if row["human_class"] == "NEGATIVE"
+    ]
+    auto_decision_count = sum(
+        row["predicted_decision"] in ("POSITIVE", "NEGATIVE")
+        for row in rows
+    )
+    positive_precision = (
+        round(len(true_positive) / len(predicted_positive), 6)
+        if predicted_positive else 0.0
+    )
+    checks = {
+        "frozen_final_holdout_has_10_samples": len(rows) == 10,
+        "final_holdout_has_at_least_3_auto_decisions":
+            auto_decision_count >= 3,
+        "final_holdout_positive_precision_at_least_0_80":
+            positive_precision >= MINIMUM_POSITIVE_PRECISION,
+        "no_negative_anchor_auto_approved":
+            not negative_false_positives,
+    }
+    return {
+        "schema_version": "stage4-final-holdout-gate-v1",
+        "source_calibration_fingerprint":
+            calibration["report_fingerprint"],
+        "sample_count": len(rows),
+        "decision_counts": {
+            decision: sum(
+                row["predicted_decision"] == decision for row in rows
+            )
+            for decision in ("POSITIVE", "NEGATIVE", "HOLDOUT", "EXCLUDED")
+        },
+        "positive_precision": positive_precision,
+        "negative_anchor_false_positive_count":
+            len(negative_false_positives),
+        "checks": checks,
+        "failures": [
+            name for name, passed in checks.items() if not passed
+        ],
+        "passed": all(checks.values()),
+        "rows": rows,
+        "model_calls": 0,
+    }
+
+
 def main() -> int:
     args = parse_args()
     try:
@@ -195,11 +286,21 @@ def main() -> int:
             if args.validated_output is None:
                 raise ValueError("--labels requires --validated-output")
             validated = validate_labels(bundle, load_object(args.labels))
+            final_evaluation = evaluate_final_holdout(
+                bundle,
+                validated,
+                load_object(args.calibration_report),
+            )
+            validated = {
+                **validated,
+                "final_holdout_evaluation": final_evaluation,
+            }
             write_json(args.validated_output, validated)
             print(json.dumps({
                 "mode": "validate-final-holdout",
                 "bundle_fingerprint": bundle["bundle_fingerprint"],
                 **validated["validation"],
+                "final_holdout_evaluation": final_evaluation,
             }, ensure_ascii=False, indent=2))
             return 0
         if args.output is None:
