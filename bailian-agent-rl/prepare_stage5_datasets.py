@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--source-replay", type=Path, required=True)
     parser.add_argument("--final-holdout-labels", type=Path, required=True)
+    parser.add_argument("--judge-v2-expansion", type=Path)
     parser.add_argument("--trajectories", type=Path, required=True)
     parser.add_argument("--benchmark", type=Path, required=True)
     parser.add_argument("--config-directory", type=Path, required=True)
@@ -376,11 +377,74 @@ def main() -> int:
                 "batch_size": batch_size,
                 "ready_for_submission": ready,
             }
-        blocked_reason = (
-            "stage4_final_human_holdout_gate_failed"
-            if final_gate.get("passed") is False
-            else "not_exported_by_baseline_rlvr_freeze"
+        expansion = (
+            load_object(args.judge_v2_expansion)
+            if args.judge_v2_expansion else None
         )
+        if expansion is not None:
+            selection = expansion.get("selection")
+            if (
+                expansion.get("state") != "COMPLETED"
+                or expansion.get("source_plan_fingerprint")
+                != manifest.get("plan_fingerprint")
+                or not isinstance(selection, dict)
+                or selection.get("ready_for_stage5") is not True
+                or selection.get("negative_count") != 0
+            ):
+                raise ValueError("Judge v2 expansion is not ready for Stage 5")
+            positive_ids = {
+                value["trajectory_id"]
+                for value in selection["decisions"]
+                if value.get("decision") == "POSITIVE"
+            }
+            rlaif_samples = [
+                sample for sample in samples
+                if sample["rollout_extra"]["source_trajectory_id"]
+                in positive_ids
+            ]
+            if len(rlaif_samples) != selection["positive_count"]:
+                raise ValueError("Judge v2 positive selection identity mismatch")
+            rlaif_training, rlaif_validation = split_samples(
+                rlaif_samples, selection["validation_ratio"]
+            )
+            arm = "RLVR_RLAIF"
+            config_path = args.config_directory / "rlvr-rlaif.json"
+            config = load_object(config_path)
+            arm_directory = args.output / arm.lower().replace("_", "-")
+            training_path = arm_directory / "rl-train.jsonl"
+            validation_path = arm_directory / "rl-validation.jsonl"
+            write_jsonl(training_path, rlaif_training)
+            write_jsonl(validation_path, rlaif_validation)
+            batch_size = config.get("hyper_parameters", {}).get("batch_size")
+            arm_results[arm] = {
+                "config_path": str(config_path),
+                "config_fingerprint": file_sha256(config_path),
+                "training_path": str(training_path),
+                "training_fingerprint": file_sha256(training_path),
+                "training_count": len(rlaif_training),
+                "validation_path": str(validation_path),
+                "validation_fingerprint": file_sha256(validation_path),
+                "validation_count": len(rlaif_validation),
+                "batch_size": batch_size,
+                "ready_for_submission": (
+                    isinstance(batch_size, int)
+                    and len(rlaif_training) > batch_size
+                    and bool(rlaif_validation)
+                ),
+                "source_expansion_fingerprint":
+                    expansion["expansion_fingerprint"],
+            }
+        blocked_arms = {
+            "FULL_TRAJECTORY_GUIDED": (
+                "requires_cross_policy_reward_trajectories"
+                if expansion is not None
+                else "stage4_judge_v2_expansion_not_supplied"
+            )
+        }
+        if expansion is None:
+            blocked_arms["RLVR_RLAIF"] = (
+                "stage4_judge_v2_expansion_not_supplied"
+            )
         payload = {
             "schema_version": SCHEMA_VERSION,
             "source_batch_id": manifest["batch_id"],
@@ -401,10 +465,7 @@ def main() -> int:
             },
             "benchmark_audit": audit,
             "arms": arm_results,
-            "blocked_arms": {
-                "RLVR_RLAIF": blocked_reason,
-                "FULL_TRAJECTORY_GUIDED": blocked_reason,
-            },
+            "blocked_arms": blocked_arms,
             "source_final_holdout_label_fingerprint":
                 final_labels["validation"]["label_fingerprint"],
             "source_final_holdout_passed": final_gate.get("passed"),

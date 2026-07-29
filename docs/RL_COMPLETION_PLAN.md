@@ -109,6 +109,12 @@ Judge v2 的 40×4 真实验证现已完成。Development 自动校准的正向-
 剩余 79 条尚无 v2 结果的轨迹，复用已完成的 40 条，再检查 RLAIF 数据量门禁。详见
 [`RL_STAGE4_JUDGE_V2_VALIDATION_REPORT.md`](RL_STAGE4_JUDGE_V2_VALIDATION_REPORT.md)。
 
+剩余 79×4 扩量也已完成，新增 316 个完整 Judge 输出。全量 119 条得到 73 条正向、
+46 条 HOLDOUT、0 条负标签；RLAIF 固定切分为 66 条训练、7 条验证，Batch Size 64
+Readiness 通过。Stage 5 现有 A/B/C 三臂均可提交，只有 D
+`FULL_TRAJECTORY_GUIDED` 仍需训练后跨策略回放。扩量证据见
+[`RL_STAGE4_JUDGE_V2_EXPANSION_REPORT.md`](RL_STAGE4_JUDGE_V2_EXPANSION_REPORT.md)。
+
 ## 授权边界
 
 以下三类操作分别需要显式授权，不能由“继续开发”自动推定：

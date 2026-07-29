@@ -2,8 +2,8 @@
 
 ## 结论
 
-静态 Reward 与 `RLVR_ONLY` 两臂的数据包已经离线冻结并通过百炼提交前检查；
-`RLVR_RLAIF` 与 `FULL_TRAJECTORY_GUIDED` 因 Stage 4 最终人工盲测失败而保持阻断。
+静态 Reward、`RLVR_ONLY` 与 `RLVR_RLAIF` 三臂的数据包已经离线冻结并通过百炼提交前
+检查；`FULL_TRAJECTORY_GUIDED` 仍需跨策略奖励轨迹。
 本轮没有调用模型、没有创建云资源、没有产生计费操作。
 
 ## 冻结来源
@@ -15,7 +15,7 @@
 - Stage 3 回放计划指纹：
   `3230c4faf444af17f09aa70f3b44f0cca311e119729132dd373775cae2347c94`；
 - 数据冻结指纹：
-  `8dfdca3f522c16afd48e1d01ba860c9b1776684b1e57b76e1126f814c58f92da`。
+  `d378f0b12796a4a70a315e715098cb37313064a721793515b5f0d5d6065de188`。
 
 冻结器逐条绑定 Stage 3 真实回放结果和 RLVR v3 明细，不使用轨迹文件中的旧在线 Reward
 替代 RLVR v3。119 条唯一问题全部满足完成状态、RLVR ≥ 0.70、硬门禁通过、违规为空、
@@ -41,11 +41,11 @@ Policy 和轨迹身份一致。
 |---|---:|---|---|
 | `BASELINE_STATIC_REWARD` | 95 / 24 | `122fcf7395f6e00d1e4a96aa65c7b4760b2e7391efbf54fd7ae4ca2c37a771af` | 通过 |
 | `RLVR_ONLY` | 95 / 24 | `91f090141e81314a9a2059e392050c4979a009b37ab893462845d2a902f29de5` | 通过 |
+| `RLVR_RLAIF` | 66 / 7 | `b20ae29fc1004dbca341224c754ba0cb67f6d1f34f9da0b82cc7d4900494c388` | 通过 |
 
-两次 `submit_job.py` Dry Run 均通过；未提供 `--execute`，所以没有启动付费训练。
+三次 `submit_job.py` Dry Run 均通过；未提供 `--execute`，所以没有启动付费训练。
 
 ## 被阻断的实验臂
 
-`RLVR_RLAIF` 和 `FULL_TRAJECTORY_GUIDED` 不得使用当前 Judge 标签。恢复这两臂必须先
-形成新的、独立验证通过的监督来源或正式修改实验范围；不能复用失败聚合结果、降低精度
-门槛或把 RLVR-only 数据改名为 RLAIF 数据。
+`FULL_TRAJECTORY_GUIDED` 仍被阻断。它必须在 A/B/C 产生不同的新模型资产后，对匹配
+问题执行跨策略回放并形成真实奖励轨迹；不能把同一 v7 策略的随机重复回答改名为策略演化。
