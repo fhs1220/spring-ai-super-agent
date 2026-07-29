@@ -73,7 +73,9 @@ Single/Multi 各 150，路由偏差 0。119 个问题满足两轮均无违规、
 
 Stage 3 已完成，不自动执行剩余 150 个种子。完整结果见
 [`RL_STAGE3_COLLECTION_REPORT.md`](RL_STAGE3_COLLECTION_REPORT.md)。下一步是 Stage 4
-的四 Judge RLAIF 与 20–30 条人工锚点；Judge 模型调用仍需单独授权。
+的四 Judge RLAIF 与 20–30 条人工锚点；Judge 模型调用仍需单独授权。Stage 4 已完成
+119 条显式轨迹白名单、476 次 Judge 调用上限和 30 条风险分层人工抽检的零调用冻结，
+详见 [`RL_STAGE4_JUDGE_PLAN.md`](RL_STAGE4_JUDGE_PLAN.md)。
 
 ## 授权边界
 

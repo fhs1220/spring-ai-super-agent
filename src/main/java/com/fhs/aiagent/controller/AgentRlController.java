@@ -7,6 +7,7 @@ import com.fhs.aiagent.rl.alignment.AutomatedAlignmentAssessment;
 import com.fhs.aiagent.rl.bailian.BailianRlDatasetService;
 import com.fhs.aiagent.rl.model.AgentTrajectory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/agent-rl")
@@ -68,8 +70,13 @@ public class AgentRlController {
     }
 
     @GetMapping("/alignment/assessments/{trajectoryId}")
-    public AutomatedAlignmentAssessment assessment(@PathVariable String trajectoryId) {
-        return aiJudgePanelService.get(trajectoryId);
+    public ResponseEntity<AutomatedAlignmentAssessment> assessment(
+            @PathVariable String trajectoryId) {
+        try {
+            return ResponseEntity.ok(aiJudgePanelService.get(trajectoryId));
+        } catch (NoSuchElementException exception) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PostMapping("/alignment/assessments")
