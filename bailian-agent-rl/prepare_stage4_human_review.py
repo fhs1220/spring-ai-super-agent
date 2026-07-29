@@ -174,6 +174,7 @@ def build_bundle(
     return {
         **identity,
         "bundle_fingerprint": canonical_sha256(identity),
+        "export_filename": "policy-v7-stage4-human-labels-30.json",
         "minimum_comment_chars": MINIMUM_COMMENT_CHARS,
         "dimensions": list(DIMENSIONS),
         "items": items,
@@ -365,7 +366,7 @@ HTML_TEMPLATE = """<!doctype html>
 <div class="shell">
   <header>
     <h1>Stage 4 人工锚点评审</h1>
-    <p>请独立阅读问题和回答，再填写总体评分与四个维度评分。Judge 结果仅作复核参考，不要机械照抄。</p>
+    <p id="review-guidance"></p>
     <p class="muted">1=不可用，2=明显较差，3=有好有坏需保留，4=可用但有小问题，5=高质量可直接使用。</p>
   </header>
   <div class="toolbar">
@@ -385,12 +386,15 @@ const dimensionNames={INSTRUCTION_FOLLOWING:'指令遵循',ACTIONABILITY:'可执
 let state=JSON.parse(localStorage.getItem(key)||'{"reviewer":"","labels":{}}');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rating=(rank,name)=>`<div class="stars">${[1,2,3,4,5].map(v=>`<label><input type="radio" name="${name}-${rank}" value="${v}">${v}</label>`).join('')}</div>`;
+document.getElementById('review-guidance').textContent=bundle.blind_review===true
+ ? '请独立阅读问题和回答，再填写总体评分与四个维度评分。本页不提供任何自动评分信号。'
+ : '请独立阅读问题和回答，再填写总体评分与四个维度评分。Judge 结果仅作复核参考，不要机械照抄。';
 document.getElementById('reviewer').value=state.reviewer||'';
 document.getElementById('items').innerHTML=bundle.items.map(item=>`
 <section class="card" id="item-${item.rank}">
  <div class="meta"><b>#${item.rank}</b><span class="tag">${esc(item.execution_mode)}</span><span class="tag">${esc(item.request_type)}</span><span class="tag">${esc(item.domains.join(' + '))}</span></div>
  <div class="content"><div class="pane"><h3>用户问题</h3>${esc(item.question)}</div><div class="pane"><h3>候选回答</h3>${esc(item.answer)}</div></div>
- <details><summary>查看四 Judge 原始意见（旧聚合结果仅供参考）</summary><div class="judges">${item.judge_scores.map(j=>`<div class="judge"><b>${dimensionNames[j.dimension]}</b> · 分数 ${j.score} · 置信度 ${j.confidence}<br>${esc(j.rationale)}</div>`).join('')}</div></details>
+ ${bundle.show_judge_opinions===false?'':`<details><summary>查看四 Judge 原始意见（旧聚合结果仅供参考）</summary><div class="judges">${item.judge_scores.map(j=>`<div class="judge"><b>${dimensionNames[j.dimension]}</b> · 分数 ${j.score} · 置信度 ${j.confidence}<br>${esc(j.rationale)}</div>`).join('')}</div></details>`}
  <div class="rating-grid">
   <b>总体评分</b>${rating(item.rank,'overall')}
   ${bundle.dimensions.map(d=>`<b>${dimensionNames[d]}</b>${rating(item.rank,d)}`).join('')}
@@ -419,7 +423,7 @@ document.getElementById('export').onclick=()=>{
  save();const missing=bundle.items.filter(i=>!complete(state.labels[i.rank]));if(state.reviewer.length<2){alert('请先填写至少 2 个字符的评审人姓名或代号');return}if(missing.length){document.getElementById(`item-${missing[0].rank}`).scrollIntoView({behavior:'smooth'});alert(`还有 ${missing.length} 条未完整填写`);return}
  const labels=bundle.items.map(i=>({rank:i.rank,seed_id:i.seed_id,trajectory_id:i.trajectory_id,question_fingerprint:i.question_fingerprint,answer_fingerprint:i.answer_fingerprint,...state.labels[i.rank]}));
  const output={schema_version:'agent-rl-human-anchor-labels-v1',source_batch_id:bundle.source_batch_id,source_plan_fingerprint:bundle.source_plan_fingerprint,review_contract_version:bundle.review_contract_version,bundle_fingerprint:bundle.bundle_fingerprint,reviewer_id:state.reviewer,exported_at:new Date().toISOString(),labels};
- const blob=new Blob([JSON.stringify(output,null,2)+'\\n'],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='policy-v7-stage4-human-labels-30.json';a.click();URL.revokeObjectURL(a.href);
+ const blob=new Blob([JSON.stringify(output,null,2)+'\\n'],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=bundle.export_filename||'policy-v7-stage4-human-labels.json';a.click();URL.revokeObjectURL(a.href);
 };
 refresh();
 </script>

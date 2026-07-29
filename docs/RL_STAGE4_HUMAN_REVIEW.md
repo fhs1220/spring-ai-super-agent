@@ -58,3 +58,24 @@ python3 bailian-agent-rl/prepare_stage4_human_review.py \
   --labels policy-v7-stage4-human-labels-30.json \
   --validated-output tmp/agent-rl/human-review/policy-v7-stage4-human-labels-30.validated.json
 ```
+
+## 校准后的最终盲测
+
+30 条锚点校准已完成，但原 10 条留出集没有通过精度和负样本保护门禁。结果与后续冻结的
+新鲜 10 条盲测契约见
+[`RL_STAGE4_ALIGNMENT_CALIBRATION_REPORT.md`](RL_STAGE4_ALIGNMENT_CALIBRATION_REPORT.md)。
+
+生成最终盲测页：
+
+```bash
+python3 bailian-agent-rl/prepare_stage4_final_holdout.py \
+  --manifest tmp/agent-rl/alignment-plans/policy-v7-stage4-judge-119.json \
+  --calibration-report tmp/agent-rl/human-review/policy-v7-stage4-alignment-calibration-v1.json \
+  --prior-labels tmp/agent-rl/human-review/policy-v7-stage4-human-labels-30.validated.json \
+  --trajectories tmp/agent-rl/trajectories \
+  --assessments tmp/agent-rl/alignment-assessments \
+  --output tmp/agent-rl/human-review/policy-v7-stage4-final-holdout-10.html
+```
+
+最终盲测页不携带四 Judge 原始意见，防止评审被旧自动评分诱导。完成后使用同一脚本的
+`--labels` 和 `--validated-output` 参数校验导出文件。
