@@ -7,7 +7,8 @@ Stage 4 的零调用准备已冻结。输入严格限定为 Stage 3 通过
 每个问题从两轮中选择 RLVR 更高的一条代表轨迹，交给四个 Judge 维度评审，因此真实执行
 上限为 119 条轨迹、476 次 Judge 调用。
 
-这一阶段尚未执行 Judge 模型调用。真实执行仍需单独明确授权。
+真实执行已经按冻结计划完成，119 个四 Judge 面板全部完整；监督标签门禁未通过，结果与
+根因见 [`RL_STAGE4_JUDGE_REPORT.md`](RL_STAGE4_JUDGE_REPORT.md)。
 
 ## 冻结契约
 
@@ -19,7 +20,7 @@ Stage 4 的零调用准备已冻结。输入严格限定为 Stage 3 通过
 | 合格唯一问题 | 119 |
 | 代表轨迹规则 | 每题选择 RLVR 最高的一轮；同分时按轮次、轨迹 ID |
 | Judge 维度 | 指令遵循、可执行性、逻辑一致性、严格反审 |
-| 最大 Judge 调用 | 476 |
+| 计划内成功 Judge 输出 | 476 |
 | 人工优先抽检 | 30 |
 | 冻结计划指纹 | `d40dfa5753a44c5f988e83003b72f780973e8a71d2141e876da725bce650c998` |
 | 模型调用授权环境变量 | `AGENT_RL_JUDGE_ALLOW_MODEL_CALLS=true` |
@@ -69,4 +70,4 @@ python3 bailian-agent-rl/run_stage4_judges.py \
 AGENT_RL_JUDGE_ALLOW_MODEL_CALLS=true
 ```
 
-在用户授权 Judge 预算前，不运行真实命令。
+真实命令已按用户单独授权执行完毕，不得用相同 Batch 覆盖现有结果。

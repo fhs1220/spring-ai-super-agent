@@ -5,11 +5,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 /**
  * spring ai 框架调用ai LLM
  */
 @Component
+@ConditionalOnProperty(
+        name = "demo.ai-invoke-enabled",
+        havingValue = "true"
+)
 public class SpringAiAiInvoke implements CommandLineRunner{
     @Resource
     private ChatModel dashscopeChatModel;

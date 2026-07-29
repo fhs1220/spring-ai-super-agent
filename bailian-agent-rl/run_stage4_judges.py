@@ -314,9 +314,11 @@ def human_review_sample(
             item["seed_id"],
         ),
     )
-    buckets: dict[str, deque[dict[str, Any]]] = defaultdict(deque)
+    buckets: dict[tuple[str, str], deque[dict[str, Any]]] = defaultdict(deque)
     for item in ranked:
-        buckets[item["request_type"]].append(item)
+        buckets[
+            (item["request_type"], item["execution_mode"])
+        ].append(item)
     selected: list[dict[str, Any]] = []
     bucket_names = sorted(buckets)
     while len(selected) < requested_size:
@@ -451,6 +453,9 @@ def load_resume(path: Path, planned: dict[str, Any]) -> dict[str, Any]:
     if result_ids != planned_ids[:len(result_ids)]:
         raise ValueError("existing execution results are not the plan prefix")
     planned["execution_results"] = results
+    if results:
+        planned["mode"] = existing.get("mode", planned["mode"])
+        planned["state"] = existing.get("state", planned["state"])
     return planned
 
 
@@ -546,6 +551,91 @@ def add_execution_summary(manifest: dict[str, Any]) -> None:
             if manifest["execution_summary"]["passed"]
             else "REVIEW_REQUIRED"
         )
+        manifest["human_review"]["post_judge_contract_version"] = (
+            "judge-risk-stratified-human-anchor-v1"
+        )
+        manifest["human_review"]["post_judge_sample"] = (
+            post_judge_human_review_sample(
+                manifest["plan"],
+                results,
+                manifest["human_review"]["requested_sample_size"],
+            )
+        )
+
+
+def post_judge_human_review_sample(
+    plan: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+    requested_size: int,
+) -> list[dict[str, Any]]:
+    if requested_size < 1 or requested_size > len(plan):
+        raise ValueError("human review size must be between 1 and plan size")
+    results_by_id = {
+        result["trajectory_id"]: result
+        for result in results
+        if isinstance(result.get("trajectory_id"), str)
+    }
+    if len(results_by_id) != len(plan):
+        raise ValueError("post-Judge human review requires one result per plan item")
+    candidates = []
+    for item in plan:
+        result = results_by_id.get(item["trajectory_id"])
+        if result is None:
+            raise ValueError(
+                f"post-Judge result is missing: {item['trajectory_id']}"
+            )
+        candidates.append({**item, **result})
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            item["training_decision"] != "EXCLUDED",
+            not item["had_recovery"],
+            float(item.get("confidence") or 0.0),
+            float(item.get("judge_agreement") or 0.0),
+            abs(float(item.get("total_reward") or 0.0) - 0.75),
+            item["seed_id"],
+        ),
+    )
+    buckets: dict[tuple[str, str], deque[dict[str, Any]]] = defaultdict(deque)
+    for item in ranked:
+        buckets[
+            (item["request_type"], item["execution_mode"])
+        ].append(item)
+    selected: list[dict[str, Any]] = []
+    bucket_names = sorted(buckets)
+    while len(selected) < requested_size:
+        made_progress = False
+        for name in bucket_names:
+            if buckets[name] and len(selected) < requested_size:
+                selected.append(buckets[name].popleft())
+                made_progress = True
+        if not made_progress:
+            break
+    sample = []
+    for rank, item in enumerate(selected, start=1):
+        reasons = [
+            "judge_uncertainty",
+            "stratified_request_type",
+            "stratified_execution_mode",
+        ]
+        if item["training_decision"] == "EXCLUDED":
+            reasons.insert(0, "hard_gate_excluded")
+        if item["had_recovery"]:
+            reasons.insert(0, "recovery_audit")
+        sample.append({
+            "rank": rank,
+            "seed_id": item["seed_id"],
+            "trajectory_id": item["trajectory_id"],
+            "execution_mode": item["execution_mode"],
+            "domains": item["domains"],
+            "request_type": item["request_type"],
+            "training_decision": item["training_decision"],
+            "total_reward": item["total_reward"],
+            "confidence": item["confidence"],
+            "judge_agreement": item["judge_agreement"],
+            "priority_reasons": reasons,
+        })
+    return sample
 
 
 def require_execution_authorization() -> None:

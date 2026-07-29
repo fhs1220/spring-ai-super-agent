@@ -74,6 +74,8 @@ class Stage4JudgePlanTest(unittest.TestCase):
         }
         existing = {
             **planned,
+            "mode": "execute",
+            "state": "COMPLETED",
             "execution_results": [{"trajectory_id": "trajectory-2"}],
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -81,6 +83,32 @@ class Stage4JudgePlanTest(unittest.TestCase):
             output.write_text(json.dumps(existing), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "not the plan prefix"):
                 stage4.load_resume(output, planned)
+
+    def test_resume_preserves_execution_identity(self) -> None:
+        planned = {
+            "schema_version": stage4.SCHEMA_VERSION,
+            "batch_id": "batch-1",
+            "plan_fingerprint": "a" * 64,
+            "source_replay": {"batch_id": "source"},
+            "mode": "dry-run",
+            "state": "PLANNED",
+            "plan": [{"trajectory_id": "trajectory-1"}],
+            "execution_results": [],
+        }
+        existing = {
+            **planned,
+            "mode": "execute",
+            "state": "COMPLETED",
+            "execution_results": [{"trajectory_id": "trajectory-1"}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "manifest.json"
+            output.write_text(json.dumps(existing), encoding="utf-8")
+
+            resumed = stage4.load_resume(output, planned)
+
+        self.assertEqual("execute", resumed["mode"])
+        self.assertEqual("COMPLETED", resumed["state"])
 
     def test_human_sample_includes_recovery_and_rotates_types(self) -> None:
         plan = [
@@ -93,6 +121,30 @@ class Stage4JudgePlanTest(unittest.TestCase):
         sample = stage4.human_review_sample(plan, 3)
 
         self.assertIn("seed-c", {item["seed_id"] for item in sample})
+        self.assertEqual(
+            {"actions", "dialogue"},
+            {item["request_type"] for item in sample},
+        )
+
+    def test_post_judge_sample_prioritizes_excluded_and_recovery(self) -> None:
+        plan = [
+            plan_item("seed-a", "actions", False, 0.71),
+            plan_item("seed-b", "actions", True, 0.72),
+            plan_item("seed-c", "dialogue", False, 0.73),
+            plan_item("seed-d", "dialogue", False, 0.74),
+        ]
+        results = [
+            judge_result("seed-a", "HOLDOUT", 0.4),
+            judge_result("seed-b", "HOLDOUT", 0.6),
+            judge_result("seed-c", "EXCLUDED", 0.5),
+            judge_result("seed-d", "HOLDOUT", 0.2),
+        ]
+
+        sample = stage4.post_judge_human_review_sample(plan, results, 3)
+
+        selected = {item["seed_id"] for item in sample}
+        self.assertIn("seed-b", selected)
+        self.assertIn("seed-c", selected)
         self.assertEqual(
             {"actions", "dialogue"},
             {item["request_type"] for item in sample},
@@ -186,6 +238,21 @@ def plan_item(
         "had_recovery": recovered,
         "pair_minimum_rlvr": minimum_rlvr,
         "pair_rlvr_gap": 0.05,
+    }
+
+
+def judge_result(
+    seed_id: str,
+    decision: str,
+    confidence: float,
+) -> dict:
+    return {
+        "seed_id": seed_id,
+        "trajectory_id": f"trajectory-{seed_id}",
+        "training_decision": decision,
+        "total_reward": 0.75,
+        "confidence": confidence,
+        "judge_agreement": 0.6,
     }
 
 
