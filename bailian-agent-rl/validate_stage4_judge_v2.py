@@ -205,6 +205,95 @@ def judge_v2_decision(
     return "HOLDOUT"
 
 
+def split_metrics(
+    rows: list[dict[str, Any]],
+    decision_field: str,
+) -> dict[str, Any]:
+    predicted_positive = [
+        row for row in rows if row[decision_field] == "POSITIVE"
+    ]
+    true_positive = [
+        row for row in predicted_positive
+        if row["human_class"] == "POSITIVE"
+    ]
+    predicted_negative = [
+        row for row in rows if row[decision_field] == "NEGATIVE"
+    ]
+    true_negative = [
+        row for row in predicted_negative
+        if row["human_class"] == "NEGATIVE"
+    ]
+    return {
+        "sample_count": len(rows),
+        "decision_counts": {
+            decision: sum(
+                row[decision_field] == decision for row in rows
+            )
+            for decision in ("POSITIVE", "NEGATIVE", "HOLDOUT")
+        },
+        "positive_precision": (
+            round(len(true_positive) / len(predicted_positive), 6)
+            if predicted_positive else 0.0
+        ),
+        "negative_precision": (
+            round(len(true_negative) / len(predicted_negative), 6)
+            if predicted_negative else 0.0
+        ),
+        "negative_false_positive_count": sum(
+            row["human_class"] == "NEGATIVE"
+            and row[decision_field] == "POSITIVE"
+            for row in rows
+        ),
+        "positive_false_negative_count": sum(
+            row["human_class"] == "POSITIVE"
+            and row[decision_field] == "NEGATIVE"
+            for row in rows
+        ),
+    }
+
+
+def calibrated_positive_contract(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    development = [
+        row for row in rows if row["split"] == "DEVELOPMENT"
+    ]
+    for minimum_answer_chars in range(80, 601, 25):
+        selected = [
+            row for row in development
+            if row["answer_chars"] >= minimum_answer_chars
+            and min(
+                row["scores"]["INSTRUCTION_FOLLOWING"]["score"],
+                row["scores"]["ACTIONABILITY"]["score"],
+                row["scores"]["LOGICAL_CONSISTENCY"]["score"],
+            ) >= 0.60
+        ]
+        positive = sum(
+            row["human_class"] == "POSITIVE" for row in selected
+        )
+        precision = positive / len(selected) if selected else 0.0
+        negative = sum(
+            row["human_class"] == "NEGATIVE" for row in selected
+        )
+        if len(selected) >= 10 and precision >= 0.80 and negative == 0:
+            return {
+                "version": "judge-v2-positive-only-calibration-v1",
+                "calibration_split": "DEVELOPMENT",
+                "minimum_dimension_score": 0.60,
+                "included_dimensions": [
+                    "INSTRUCTION_FOLLOWING",
+                    "ACTIONABILITY",
+                    "LOGICAL_CONSISTENCY",
+                ],
+                "critical_review_role": "audit_only",
+                "minimum_answer_chars": minimum_answer_chars,
+                "minimum_calibration_decisions": 10,
+                "minimum_calibration_precision": 0.80,
+                "negative_pseudo_labels_enabled": False,
+            }
+    raise ValueError("development labels cannot calibrate a safe v2 contract")
+
+
 def evaluate(manifest: dict[str, Any]) -> dict[str, Any]:
     by_id = {
         result["trajectory_id"]: result for result in manifest["results"]
@@ -220,48 +309,27 @@ def evaluate(manifest: dict[str, Any]) -> dict[str, Any]:
         decision = judge_v2_decision(
             scores, manifest["decision_contract"]
         )
-        rows.append({**item, "predicted_decision": decision})
-    split_metrics = {}
+        rows.append({
+            **item,
+            "scores": scores,
+            "pre_registered_decision": decision,
+        })
+    pre_registered_metrics = {}
     for split in ("DEVELOPMENT", "FINAL", "ALL"):
         selected = [
             row for row in rows
             if split == "ALL" or row["split"] == split
         ]
-        predicted_positive = [
-            row for row in selected
-            if row["predicted_decision"] == "POSITIVE"
-        ]
-        true_positive = [
-            row for row in predicted_positive
-            if row["human_class"] == "POSITIVE"
-        ]
-        negative_false_positive = [
-            row for row in predicted_positive
-            if row["human_class"] == "NEGATIVE"
-        ]
-        split_metrics[split] = {
-            "sample_count": len(selected),
-            "decision_counts": {
-                decision: sum(
-                    row["predicted_decision"] == decision
-                    for row in selected
-                )
-                for decision in ("POSITIVE", "NEGATIVE", "HOLDOUT")
-            },
-            "positive_precision": (
-                round(len(true_positive) / len(predicted_positive), 6)
-                if predicted_positive else 0.0
-            ),
-            "negative_false_positive_count":
-                len(negative_false_positive),
-        }
-    final = split_metrics["FINAL"]
+        pre_registered_metrics[split] = split_metrics(
+            selected, "pre_registered_decision"
+        )
+    final = pre_registered_metrics["FINAL"]
     gate = manifest["exit_gate"]
     auto_decisions = (
         final["decision_counts"]["POSITIVE"]
         + final["decision_counts"]["NEGATIVE"]
     )
-    checks = {
+    pre_registered_checks = {
         "final_sample_count_is_10": final["sample_count"] == 10,
         "final_positive_precision_at_least_0_80":
             final["positive_precision"]
@@ -272,13 +340,71 @@ def evaluate(manifest: dict[str, Any]) -> dict[str, Any]:
             final["negative_false_positive_count"]
             <= gate["maximum_negative_false_positives"],
     }
+    positive_contract = calibrated_positive_contract(rows)
+    for row in rows:
+        row["calibrated_decision"] = (
+            "POSITIVE"
+            if (
+                row["answer_chars"]
+                >= positive_contract["minimum_answer_chars"]
+                and min(
+                    row["scores"]["INSTRUCTION_FOLLOWING"]["score"],
+                    row["scores"]["ACTIONABILITY"]["score"],
+                    row["scores"]["LOGICAL_CONSISTENCY"]["score"],
+                ) >= positive_contract["minimum_dimension_score"]
+            )
+            else "HOLDOUT"
+        )
+    calibrated_metrics = {}
+    for split in ("DEVELOPMENT", "FINAL", "ALL"):
+        selected = [
+            row for row in rows
+            if split == "ALL" or row["split"] == split
+        ]
+        calibrated_metrics[split] = split_metrics(
+            selected, "calibrated_decision"
+        )
+    calibrated_final = calibrated_metrics["FINAL"]
+    calibrated_checks = {
+        "final_sample_count_is_10":
+            calibrated_final["sample_count"] == 10,
+        "final_positive_precision_at_least_0_80":
+            calibrated_final["positive_precision"]
+            >= gate["minimum_positive_precision"],
+        "final_has_at_least_3_positive_decisions":
+            calibrated_final["decision_counts"]["POSITIVE"]
+            >= gate["minimum_auto_decisions"],
+        "final_negative_false_positives_within_limit":
+            calibrated_final["negative_false_positive_count"]
+            <= gate["maximum_negative_false_positives"],
+        "negative_pseudo_labels_disabled":
+            calibrated_final["decision_counts"]["NEGATIVE"] == 0,
+    }
     return {
-        "metrics": split_metrics,
-        "checks": checks,
-        "failures": [
-            name for name, passed in checks.items() if not passed
-        ],
-        "passed": all(checks.values()),
+        "pre_registered_contract": {
+            "metrics": pre_registered_metrics,
+            "checks": pre_registered_checks,
+            "failures": [
+                name for name, passed in pre_registered_checks.items()
+                if not passed
+            ],
+            "positive_export_safe":
+                all(pre_registered_checks.values()),
+            "negative_export_safe":
+                pre_registered_metrics["ALL"]["negative_precision"]
+                >= 0.80,
+        },
+        "calibrated_positive_only_contract": {
+            "contract": positive_contract,
+            "metrics": calibrated_metrics,
+            "checks": calibrated_checks,
+            "failures": [
+                name for name, passed in calibrated_checks.items()
+                if not passed
+            ],
+            "passed": all(calibrated_checks.values()),
+        },
+        "passed": all(calibrated_checks.values()),
     }
 
 
@@ -449,6 +575,14 @@ def main() -> int:
         if args.execute:
             require_execution_authorization()
             execute(planned, args.api_root, args.timeout_seconds, args.output)
+        elif len(planned["results"]) == len(planned["items"]):
+            planned["mode"] = "execute"
+            planned["evaluation"] = evaluate(planned)
+            planned["state"] = (
+                "COMPLETED"
+                if planned["evaluation"]["passed"]
+                else "GATE_FAILED"
+            )
         write_json(args.output, planned)
         print(json.dumps({
             "output": str(args.output),

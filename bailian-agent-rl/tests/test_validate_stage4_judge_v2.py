@@ -63,6 +63,34 @@ class Stage4JudgeV2ValidationTest(unittest.TestCase):
                 "assessmentNamespace": "old-v1-directory",
             })
 
+    def test_positive_only_calibration_uses_development_precision(self) -> None:
+        scores = {
+            dimension: {"score": 0.8, "confidence": 0.9}
+            for dimension in judge_v2.DIMENSIONS
+        }
+        rows = [
+            {
+                "split": "DEVELOPMENT",
+                "answer_chars": 305,
+                "human_class": "POSITIVE",
+                "scores": scores,
+            }
+            for _ in range(10)
+        ] + [
+            {
+                "split": "DEVELOPMENT",
+                "answer_chars": 280,
+                "human_class": "HOLDOUT",
+                "scores": scores,
+            }
+            for _ in range(3)
+        ]
+
+        contract = judge_v2.calibrated_positive_contract(rows)
+
+        self.assertEqual(305, contract["minimum_answer_chars"])
+        self.assertFalse(contract["negative_pseudo_labels_enabled"])
+
 
 if __name__ == "__main__":
     unittest.main()

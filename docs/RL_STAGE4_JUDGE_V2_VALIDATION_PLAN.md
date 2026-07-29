@@ -60,3 +60,9 @@ Dry Run 已生成：
 `tmp/agent-rl/alignment-plans/policy-v7-stage4-judge-v2-validation-40.json`。
 真实执行仍要求 `--execute` 与 `AGENT_RL_JUDGE_ALLOW_MODEL_CALLS=true` 双重授权。
 
+## 执行状态
+
+该计划已经真实执行完成，160/160 个 Judge 输出完整。预注册正向规则通过，但负向规则
+不安全；随后仅用 Development 30 条校准的正向-only 契约在 Final 10 条上达到 100%
+正向精度且负向误放行为 0。完整结果见
+[`RL_STAGE4_JUDGE_V2_VALIDATION_REPORT.md`](RL_STAGE4_JUDGE_V2_VALIDATION_REPORT.md)。

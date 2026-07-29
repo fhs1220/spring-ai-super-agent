@@ -104,6 +104,11 @@ Stage 5 已独立冻结不依赖 RLAIF 的两臂：119 条 RLVR v3 合格唯一�
 119 条并恢复 RLAIF 数据导出。详见
 [`RL_STAGE4_JUDGE_V2_VALIDATION_PLAN.md`](RL_STAGE4_JUDGE_V2_VALIDATION_PLAN.md)。
 
+Judge v2 的 40×4 真实验证现已完成。Development 自动校准的正向-only 契约在 Final
+10 条上放行 6 条、精度 1.0、负向误放行 0；负伪标签因精度不足被永久关闭。下一步只评审
+剩余 79 条尚无 v2 结果的轨迹，复用已完成的 40 条，再检查 RLAIF 数据量门禁。详见
+[`RL_STAGE4_JUDGE_V2_VALIDATION_REPORT.md`](RL_STAGE4_JUDGE_V2_VALIDATION_REPORT.md)。
+
 ## 授权边界
 
 以下三类操作分别需要显式授权，不能由“继续开发”自动推定：
