@@ -11,9 +11,11 @@
 并完成剩余 7 条，但原超时作为审计证据保留，超时门禁为 1（要求 0）。这不是质量违规，
 也不能在事后删除或改写为 0。
 
-因此 Stage 2 当前状态是“100 条质量验收全部通过、严格运行门禁因一次已归因的外部计费
-中断未通过”。若坚持原始零超时定义，需要新 Batch 干净重跑；若项目治理接受有证据的外部
-事件豁免，则必须单独记录 waiver，不能把当前 Manifest 描述成原门禁通过。
+因此 Stage 2 的原始严格门禁没有通过。项目负责人随后批准只覆盖该已归因计费中断的
+waiver `RL-S2-2026-07-29-001`，Stage 2 治理状态为
+`COMPLETED_WITH_EXTERNAL_INCIDENT_WAIVER`。Waiver 不修改 Manifest，也不能把当前
+Batch 描述成原始零超时门禁通过。决策见
+[`RL_STAGE2_EXTERNAL_INCIDENT_WAIVER.md`](RL_STAGE2_EXTERNAL_INCIDENT_WAIVER.md)。
 
 下文保留 v5、v6 的失败证据与离线修复过程，最后一节为最新 v7 结果。
 
@@ -294,3 +296,6 @@ Multi 的 RLVR 均值比 Single 高 0.047810，调用和费用分别约为 Singl
 - v7 Batch 通过了原始零超时 Release Gate；
 - Multi 相对 Single 的分数差是因果收益；
 - Stage 3、Judge、训练和训练后正式评测已经完成。
+
+在正式外部事件 waiver 下，Stage 2 允许进入 Stage 3；后续阶段的新超时或质量失败不在
+本次豁免范围内。

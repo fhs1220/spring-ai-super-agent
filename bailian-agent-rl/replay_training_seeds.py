@@ -94,6 +94,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--maximum-timeouts", type=int, default=0)
     parser.add_argument("--maximum-rlvr-violations", type=int, default=0)
     parser.add_argument(
+        "--minimum-qualified-seeds",
+        type=int,
+        help=(
+            "Enable collection mode and require this many unique seeds to have "
+            "all planned rounds pass the per-trajectory qualification rules."
+        ),
+    )
+    parser.add_argument(
+        "--minimum-qualified-rlvr",
+        type=float,
+        default=0.70,
+        help="Minimum RLVR score for every trajectory of a qualified seed.",
+    )
+    parser.add_argument(
         "--execute",
         action="store_true",
         help="Perform real local Agentic RAG calls, which may incur model cost.",
@@ -588,6 +602,23 @@ def load_partial_results(
             raise ValueError(
                 f"Existing replay manifest {field} does not match the plan"
             )
+    existing_gate_configuration = existing.get("gate_configuration")
+    planned_gate_configuration = summary.get("gate_configuration")
+    if (
+        existing_gate_configuration is None
+        and isinstance(planned_gate_configuration, dict)
+        and planned_gate_configuration.get("profile") == "collection"
+    ):
+        raise ValueError(
+            "Existing replay manifest has no collection gate_configuration"
+        )
+    if (
+        existing_gate_configuration is not None
+        and existing_gate_configuration != planned_gate_configuration
+    ):
+        raise ValueError(
+            "Existing replay manifest gate_configuration does not match the plan"
+        )
     results = existing.get("results")
     if not isinstance(results, list):
         raise ValueError("Existing replay manifest results must be an array")
@@ -724,6 +755,153 @@ def rlvr_violation_limit_exceeded(
     return rlvr_violation_count(results) > maximum_rlvr_violations
 
 
+def qualification_reasons(
+    results: list[dict[str, Any]],
+    *,
+    expected_rounds: int,
+    minimum_qualified_rlvr: float,
+) -> list[str]:
+    reasons: list[str] = []
+    if len(results) != expected_rounds:
+        reasons.append("incomplete_rounds")
+    if any(result.get("status") != "COMPLETED" for result in results):
+        reasons.append("status_not_completed")
+    if any(result.get("route_expectation_matched") is not True for result in results):
+        reasons.append("route_mismatch")
+    if any(
+        not isinstance(result.get("rlvr"), dict)
+        or result["rlvr"].get("hard_gate_passed") is not True
+        for result in results
+    ):
+        reasons.append("rlvr_hard_gate_failed")
+    if any(
+        isinstance(result.get("rlvr"), dict)
+        and len(result["rlvr"].get("violations", [])) > 0
+        for result in results
+    ):
+        reasons.append("rlvr_violation")
+    if any(
+        not isinstance(result.get("rlvr"), dict)
+        or not isinstance(result["rlvr"].get("total"), (int, float))
+        or float(result["rlvr"]["total"]) < minimum_qualified_rlvr
+        for result in results
+    ):
+        reasons.append("rlvr_below_minimum")
+
+    def timeout_count(result: dict[str, Any], field: str, key: str) -> int:
+        value = result.get(field)
+        return int(value.get(key) or 0) if isinstance(value, dict) else 0
+
+    if any(
+        timeout_count(result, "telemetry", "timeout_count") > 0
+        or timeout_count(result, "recovery", "prior_timeout_count") > 0
+        for result in results
+    ):
+        reasons.append("timeout")
+    return reasons
+
+
+def add_collection_summary(
+    summary: dict[str, Any],
+    *,
+    expected_rounds: int,
+    minimum_qualified_rlvr: float,
+) -> None:
+    if expected_rounds < 1:
+        raise ValueError("expected rounds must be a positive integer")
+    if not 0.0 <= minimum_qualified_rlvr <= 1.0:
+        raise ValueError("minimum-qualified-rlvr must be between 0 and 1")
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for result in summary.get("results", []):
+        seed_id = result.get("seed_id")
+        if isinstance(seed_id, str) and seed_id:
+            grouped.setdefault(seed_id, []).append(result)
+
+    qualified_seed_ids: list[str] = []
+    rejected_seeds: list[dict[str, Any]] = []
+    reason_counts: dict[str, int] = {}
+    for seed_id, seed_results in grouped.items():
+        reasons = qualification_reasons(
+            seed_results,
+            expected_rounds=expected_rounds,
+            minimum_qualified_rlvr=minimum_qualified_rlvr,
+        )
+        if not reasons:
+            qualified_seed_ids.append(seed_id)
+            continue
+        rejected_seeds.append({"seed_id": seed_id, "reasons": reasons})
+        for reason in reasons:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    expected_seed_count = int(summary.get("seed_count") or 0)
+    missing_seed_count = max(expected_seed_count - len(grouped), 0)
+    if missing_seed_count:
+        reason_counts["not_evaluated"] = missing_seed_count
+    summary["collection_summary"] = {
+        "schema_version": "paired-high-confidence-v1",
+        "expected_seed_count": expected_seed_count,
+        "evaluated_seed_count": len(grouped),
+        "qualified_seed_count": len(qualified_seed_ids),
+        "rejected_seed_count": len(rejected_seeds),
+        "not_evaluated_seed_count": missing_seed_count,
+        "required_rounds_per_seed": expected_rounds,
+        "minimum_rlvr_per_trajectory": minimum_qualified_rlvr,
+        "qualified_seed_ids": qualified_seed_ids,
+        "rejected_seeds": rejected_seeds,
+        "qualification_reason_counts": reason_counts,
+    }
+
+
+def add_collection_gate(
+    summary: dict[str, Any],
+    *,
+    minimum_qualified_seeds: int,
+) -> None:
+    if minimum_qualified_seeds < 1:
+        raise ValueError("minimum-qualified-seeds must be a positive integer")
+    planned = int(summary.get("planned_agent_runs") or 0)
+    results = summary.get("results")
+    results = results if isinstance(results, list) else []
+    completed = sum(
+        1 for result in results if result.get("status") == "COMPLETED"
+    )
+    collection = summary.get("collection_summary")
+    collection = collection if isinstance(collection, dict) else {}
+    qualified = int(collection.get("qualified_seed_count") or 0)
+    expected_seeds = int(collection.get("expected_seed_count") or 0)
+    evaluated_seeds = int(collection.get("evaluated_seed_count") or 0)
+    checks = {
+        "all_runs_completed": planned > 0 and completed == planned,
+        "all_seeds_evaluated": (
+            expected_seeds > 0 and evaluated_seeds == expected_seeds
+        ),
+        "minimum_qualified_seeds_met": qualified >= minimum_qualified_seeds,
+    }
+    failures = [name for name, passed in checks.items() if not passed]
+    summary["replay_gate"] = {
+        "profile": "collection",
+        "passed": not failures,
+        "checks": checks,
+        "failures": failures,
+        "thresholds": {
+            "minimum_qualified_seeds": minimum_qualified_seeds,
+            "minimum_rlvr_per_trajectory": collection.get(
+                "minimum_rlvr_per_trajectory"
+            ),
+            "required_rounds_per_seed": collection.get(
+                "required_rounds_per_seed"
+            ),
+        },
+        "observed": {
+            "planned_agent_runs": planned,
+            "completed_agent_runs": completed,
+            "expected_seed_count": expected_seeds,
+            "evaluated_seed_count": evaluated_seeds,
+            "qualified_seed_count": qualified,
+        },
+    }
+
+
 def add_replay_gate(
     summary: dict[str, Any],
     *,
@@ -828,6 +1006,21 @@ def main() -> int:
         batch_id = normalize_batch_id(args.batch_id)
         seeds = load_seeds(args.seeds)
         plan = build_plan(seeds, batch_id, args.rounds, args.limit)
+        collection_mode = args.minimum_qualified_seeds is not None
+        if collection_mode:
+            if args.minimum_qualified_seeds < 1:
+                raise ValueError(
+                    "minimum-qualified-seeds must be a positive integer"
+                )
+            selected_seed_count = len({item["seed_id"] for item in plan})
+            if args.minimum_qualified_seeds > selected_seed_count:
+                raise ValueError(
+                    "minimum-qualified-seeds cannot exceed selected seed count"
+                )
+            if not 0.0 <= args.minimum_qualified_rlvr <= 1.0:
+                raise ValueError(
+                    "minimum-qualified-rlvr must be between 0 and 1"
+                )
         summary: dict[str, Any] = {
             "schema_version": REPLAY_SCHEMA_VERSION,
             "mode": "execute" if args.execute else "dry-run",
@@ -842,6 +1035,22 @@ def main() -> int:
             "billable_operations": "unknown_until_execution" if args.execute else 0,
             "policy_version": args.policy_version,
             "results": [],
+            "gate_configuration": (
+                {
+                    "profile": "collection",
+                    "minimum_qualified_seeds": args.minimum_qualified_seeds,
+                    "minimum_rlvr_per_trajectory": args.minimum_qualified_rlvr,
+                    "required_rounds_per_seed": args.rounds,
+                }
+                if collection_mode
+                else {
+                    "profile": "release",
+                    "minimum_rlvr_average": args.minimum_rlvr_average,
+                    "maximum_route_mismatches": args.maximum_route_mismatches,
+                    "maximum_timeouts": args.maximum_timeouts,
+                    "maximum_rlvr_violations": args.maximum_rlvr_violations,
+                }
+            ),
         }
         expected_modes: dict[str, int] = {}
         expected_domains: dict[str, int] = {}
@@ -877,7 +1086,7 @@ def main() -> int:
         preflight_server(args.api_root, args.timeout_seconds)
         seeds_by_id = {seed["seed_id"]: seed for seed in seeds}
         completed_prefix = load_partial_results(args.output, summary, plan)
-        if rlvr_violation_limit_exceeded(
+        if not collection_mode and rlvr_violation_limit_exceeded(
             summary["results"],
             args.maximum_rlvr_violations,
         ):
@@ -900,7 +1109,7 @@ def main() -> int:
                         f"{expected_policy!r}, got {result['policy_version']!r}; "
                         "stopped after the first mismatched trajectory"
                     )
-                if rlvr_violation_limit_exceeded(
+                if not collection_mode and rlvr_violation_limit_exceeded(
                     summary["results"],
                     args.maximum_rlvr_violations,
                 ):
@@ -909,13 +1118,24 @@ def main() -> int:
                     break
         summary["completed"] = len(summary["results"]) == len(plan)
         add_execution_summary(summary)
-        add_replay_gate(
-            summary,
-            minimum_rlvr_average=args.minimum_rlvr_average,
-            maximum_route_mismatches=args.maximum_route_mismatches,
-            maximum_timeouts=args.maximum_timeouts,
-            maximum_rlvr_violations=args.maximum_rlvr_violations,
-        )
+        if collection_mode:
+            add_collection_summary(
+                summary,
+                expected_rounds=args.rounds,
+                minimum_qualified_rlvr=args.minimum_qualified_rlvr,
+            )
+            add_collection_gate(
+                summary,
+                minimum_qualified_seeds=args.minimum_qualified_seeds,
+            )
+        else:
+            add_replay_gate(
+                summary,
+                minimum_rlvr_average=args.minimum_rlvr_average,
+                maximum_route_mismatches=args.maximum_route_mismatches,
+                maximum_timeouts=args.maximum_timeouts,
+                maximum_rlvr_violations=args.maximum_rlvr_violations,
+            )
         write_manifest(args.output, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         if not summary["replay_gate"]["passed"]:

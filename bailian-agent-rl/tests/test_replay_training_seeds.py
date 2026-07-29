@@ -155,6 +155,41 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
         self.assertEqual([completed], summary["results"])
         self.assertEqual(1, summary["resumed_from_completed_agent_runs"])
 
+    def test_collection_resume_requires_same_gate_configuration(self) -> None:
+        plan = replay.build_plan(
+            [seed("a" * 20, "问题一")],
+            "batch-001",
+            2,
+            None,
+        )
+        summary = {
+            "batch_id": "batch-001",
+            "plan_fingerprint": replay.plan_fingerprint(plan),
+            "planned_agent_runs": 2,
+            "policy_version": "policy-v1",
+            "gate_configuration": {
+                "profile": "collection",
+                "minimum_qualified_seeds": 1,
+                "minimum_rlvr_per_trajectory": 0.7,
+                "required_rounds_per_seed": 2,
+            },
+            "results": [],
+        }
+        existing = {
+            key: value
+            for key, value in summary.items()
+            if key != "gate_configuration"
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(existing), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "no collection gate_configuration",
+            ):
+                replay.load_partial_results(path, summary, plan)
+
     def test_adds_auditable_execution_summary(self) -> None:
         summary = {
             "results": [
@@ -260,6 +295,76 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
         )
         self.assertIn(
             "timeouts_within_limit",
+            summary["replay_gate"]["failures"],
+        )
+
+    def test_collection_gate_filters_bad_candidates_without_failing_batch(self) -> None:
+        good_round_one = replay_result("SINGLE_AGENT", 0.76)
+        good_round_one["seed_id"] = "seed-" + "a" * 20
+        good_round_two = replay_result("SINGLE_AGENT", 0.74)
+        good_round_two["seed_id"] = "seed-" + "a" * 20
+        low_score = replay_result("ADAPTIVE_MULTI_AGENT", 0.69)
+        low_score["seed_id"] = "seed-" + "b" * 20
+        low_score_second_round = replay_result("ADAPTIVE_MULTI_AGENT", 0.78)
+        low_score_second_round["seed_id"] = "seed-" + "b" * 20
+        summary = {
+            "seed_count": 2,
+            "planned_agent_runs": 4,
+            "results": [
+                good_round_one,
+                low_score,
+                good_round_two,
+                low_score_second_round,
+            ],
+        }
+
+        replay.add_execution_summary(summary)
+        replay.add_collection_summary(
+            summary,
+            expected_rounds=2,
+            minimum_qualified_rlvr=0.70,
+        )
+        replay.add_collection_gate(summary, minimum_qualified_seeds=1)
+
+        self.assertTrue(summary["replay_gate"]["passed"])
+        self.assertEqual("collection", summary["replay_gate"]["profile"])
+        self.assertEqual(
+            1,
+            summary["collection_summary"]["qualified_seed_count"],
+        )
+        self.assertEqual(
+            {"rlvr_below_minimum": 1},
+            summary["collection_summary"]["qualification_reason_counts"],
+        )
+
+    def test_collection_gate_requires_all_rounds_and_minimum_seed_count(self) -> None:
+        only_round = replay_result("SINGLE_AGENT", 0.8)
+        only_round["seed_id"] = "seed-" + "a" * 20
+        summary = {
+            "seed_count": 2,
+            "planned_agent_runs": 4,
+            "results": [only_round],
+        }
+
+        replay.add_execution_summary(summary)
+        replay.add_collection_summary(
+            summary,
+            expected_rounds=2,
+            minimum_qualified_rlvr=0.70,
+        )
+        replay.add_collection_gate(summary, minimum_qualified_seeds=1)
+
+        self.assertFalse(summary["replay_gate"]["passed"])
+        self.assertEqual(
+            {"incomplete_rounds": 1, "not_evaluated": 1},
+            summary["collection_summary"]["qualification_reason_counts"],
+        )
+        self.assertEqual(
+            [
+                "all_runs_completed",
+                "all_seeds_evaluated",
+                "minimum_qualified_seeds_met",
+            ],
             summary["replay_gate"]["failures"],
         )
 

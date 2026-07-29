@@ -15,8 +15,9 @@
 已得到 100/100 条结果：Single/Multi 各 50、路由偏差 0、RLVR 平均 0.759502、硬门禁
 100/100、违规 0。第 94 个逻辑运行时百炼返回 `Arrearage`，充值后从 93 条已完成前缀
 恢复并完成剩余 7 条；原事件按审计规则计为 1 次恢复超时，所以严格 Release Gate 仅因
-`timeouts_within_limit` 未通过。质量与路由验收已闭环，但原始“零超时”退出定义尚未满足。
-证据见
+`timeouts_within_limit` 未通过。项目负责人已接受仅覆盖该外部计费中断的正式 waiver，
+Stage 2 状态为 `COMPLETED_WITH_EXTERNAL_INCIDENT_WAIVER`。原 Manifest 的失败状态保持
+不变。证据见
 [`RLVR_V3_STAGE2_50X2_REPORT.md`](RLVR_V3_STAGE2_50X2_REPORT.md)；Stage 1 证据见
 [`RLVR_V3_STRATIFIED_PILOT_REPORT.md`](RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
 自动 Alignment Assessment 仍为 0，尚无百炼训练数据包、训练任务或训练后模型资产。
@@ -44,7 +45,7 @@ RLVR、Judge 和轨迹筛选淘汰预留余量。
 是先训练并部署 A/B/C，再用其中的新策略对匹配问题重新回放，最后生成 D 的跨策略奖励轨迹
 数据。
 
-## Stage 2 当前决策
+## Stage 2 决策
 
 已完成的 v7 证据身份：
 
@@ -54,15 +55,22 @@ RLVR、Judge 和轨迹筛选淘汰预留余量。
 - 完成运行：100/100（Single/Multi 各 50）
 - 质量与路由：全部通过
 - 严格门禁：仅 `timeout_count=1` 未通过，根因为有日志证据的百炼 `Arrearage`
+- 治理状态：`COMPLETED_WITH_EXTERNAL_INCIDENT_WAIVER`
 
-下一步不是自动增加新的工程阶段，而是在两种治理选择中确定一种：
+Waiver `RL-S2-2026-07-29-001` 只允许忽略该已归因的外部计费事件来推进阶段，不修改
+Manifest，也不允许豁免质量、路由或后续阶段失败。完整决策见
+[`RL_STAGE2_EXTERNAL_INCIDENT_WAIVER.md`](RL_STAGE2_EXTERNAL_INCIDENT_WAIVER.md)。
 
-1. 保持原始零超时门禁：使用新 Batch 完整重跑 50×2；这是新的真实模型费用，必须单独授权。
-2. 接受外部事件 waiver：保留当前 Manifest 的失败结论，新增正式豁免记录后进入 Stage 3；
-   waiver 只能豁免已归因的计费中断，不能豁免任何 RLVR、路由或模型质量失败。
+## Stage 3 当前状态
 
-在做出该决定前，不启动新的回放。无论选择哪一种，Stage 3、Judge、四个训练资产、正式
-评测和灰度验证仍是原计划中的后续阶段，没有新增阶段。
+首批 150 个唯一问题 × 2 轮的采集计划已冻结，计划指纹为
+`3230c4faf444af17f09aa70f3b44f0cca311e119729132dd373775cae2347c94`。计划共 300 条，
+Single/Multi 各 150；Dry Run 调用和费用为 0。新增 `collection` 门禁：完整采集候选后，
+仅保留两轮均无违规、无超时、路由匹配且每轮 RLVR ≥ 0.70 的问题，要求至少 82 个。
+
+按 Stage 2 实测线性预测约 1,902 次底层调用、3,317,919 Token、¥1.0848528，建议授权
+预算预留到约 ¥1.31。真实执行仍需要单独明确授权。完整计划见
+[`RL_STAGE3_COLLECTION_PLAN.md`](RL_STAGE3_COLLECTION_PLAN.md)。
 
 ## 授权边界
 
