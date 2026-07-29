@@ -20,7 +20,9 @@ Stage 2 状态为 `COMPLETED_WITH_EXTERNAL_INCIDENT_WAIVER`。原 Manifest 的�
 不变。证据见
 [`RLVR_V3_STAGE2_50X2_REPORT.md`](RLVR_V3_STAGE2_50X2_REPORT.md)；Stage 1 证据见
 [`RLVR_V3_STRATIFIED_PILOT_REPORT.md`](RLVR_V3_STRATIFIED_PILOT_REPORT.md)。
-自动 Alignment Assessment 仍为 0，尚无百炼训练数据包、训练任务或训练后模型资产。
+Stage 3 随后完成 150 个问题 × 2 轮的真实采集，得到 300/300 条轨迹和 119 个高置信
+问题，Collection Gate 通过。自动 Alignment Assessment 仍为 0，尚无百炼训练数据包、
+训练任务或训练后模型资产。
 
 ## 分阶段执行
 
@@ -63,14 +65,15 @@ Manifest，也不允许豁免质量、路由或后续阶段失败。完整决策
 
 ## Stage 3 当前状态
 
-首批 150 个唯一问题 × 2 轮的采集计划已冻结，计划指纹为
+首批 150 个唯一问题 × 2 轮已完成，计划指纹为
 `3230c4faf444af17f09aa70f3b44f0cca311e119729132dd373775cae2347c94`。计划共 300 条，
-Single/Multi 各 150；Dry Run 调用和费用为 0。新增 `collection` 门禁：完整采集候选后，
-仅保留两轮均无违规、无超时、路由匹配且每轮 RLVR ≥ 0.70 的问题，要求至少 82 个。
+Single/Multi 各 150，路由偏差 0。119 个问题满足两轮均无违规、无超时、路由匹配且
+每轮 RLVR ≥ 0.70 的高置信契约，超过 82 个门槛；31 个问题被淘汰。实际为 1,864 次调用、
+3,233,393 Token、估算 ¥1.0572933。
 
-按 Stage 2 实测线性预测约 1,902 次底层调用、3,317,919 Token、¥1.0848528，建议授权
-预算预留到约 ¥1.31。真实执行仍需要单独明确授权。完整计划见
-[`RL_STAGE3_COLLECTION_PLAN.md`](RL_STAGE3_COLLECTION_PLAN.md)。
+Stage 3 已完成，不自动执行剩余 150 个种子。完整结果见
+[`RL_STAGE3_COLLECTION_REPORT.md`](RL_STAGE3_COLLECTION_REPORT.md)。下一步是 Stage 4
+的四 Judge RLAIF 与 20–30 条人工锚点；Judge 模型调用仍需单独授权。
 
 ## 授权边界
 

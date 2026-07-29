@@ -2,9 +2,9 @@
 
 ## 结论
 
-Stage 3 已完成离线冻结和 Dry Run，未启动后端、未调用模型、未产生费用。首批计划采集
-150 个唯一问题，每题 2 轮，共 300 条候选轨迹；Single/Multi 各 150。候选中的坏样本
-会被逐题筛除，不再沿用 Stage 2“首个违规即终止整批”的 Release 验收逻辑。
+Stage 3 已完成离线冻结、Dry Run 和真实执行。150 个唯一问题每题 2 轮，共得到 300 条
+候选轨迹；Single/Multi 各 150。最终 119 个问题通过高置信筛选，超过 82 个退出门槛。
+完整结果见 [`RL_STAGE3_COLLECTION_REPORT.md`](RL_STAGE3_COLLECTION_REPORT.md)。
 
 ## 冻结身份
 
@@ -71,7 +71,5 @@ python3 bailian-agent-rl/replay_training_seeds.py \
   --output tmp/agent-rl/replays/policy-v7-v2-stage3-150x2.json
 ```
 
-真实执行需在相同参数后增加 `--execute`，同时设置
-`AGENT_RL_REPLAY_ALLOW_MODEL_CALLS=true` 并启动 v7 后端。它会产生约 300 条真实模型
-操作，必须再次取得明确授权；本次仅完成离线准备。
-
+真实执行已按相同参数和显式授权完成。该命令与冻结身份保留在此，供审计复现；不得使用
+相同 Batch 重写现有结果。
