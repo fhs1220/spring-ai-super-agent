@@ -116,3 +116,7 @@ RL 部分已经形成完整闭环：冻结 Benchmark、真实 60 条配对回放
 
 若目标是把 v9 真正升级为可发布策略，则需要一个新的版本修复上述两条控制流缺陷，并在
 新的明确授权下进行独立验证；这属于后续版本，不是本次 v9 实验的补跑。
+
+该后续修复现已作为 v10 离线完成；v9 的结论保持不变。工程证据见
+[`RL_PRECISION_UPGRADE_V10_REPORT.md`](RL_PRECISION_UPGRADE_V10_REPORT.md)，唯一真实验收
+见 [`RL_V10_PRECISION_VALIDATION_PLAN.md`](RL_V10_PRECISION_VALIDATION_PLAN.md)。

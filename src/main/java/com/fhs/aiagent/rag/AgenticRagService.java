@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -57,7 +58,9 @@ import java.util.regex.Pattern;
 @Component
 public class AgenticRagService {
 
-    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v9";
+    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v10";
+
+    private static final int MAXIMUM_CONTRACT_REPAIR_ATTEMPTS = 2;
 
     private static final int DEFAULT_MAXIMUM_ANSWER_CHARS = 1600;
 
@@ -99,6 +102,17 @@ public class AgenticRagService {
 
     private static final Pattern NUMBERED_ACTION = Pattern.compile(
             "(?m)^\\s*(?:#{1,6}\\s*)?(?:\\d+[.、)]|[-*])\\s*");
+
+    private static final Pattern CANDIDATE_TOKEN = Pattern.compile(
+            "[\\u4e00-\\u9fff]|[a-z0-9]+");
+
+    private static final Pattern CONTENT_WORD = Pattern.compile(
+            "[a-z0-9]{2,}|[\\u4e00-\\u9fff]{2,}");
+
+    private static final Set<String> SEMANTIC_STOP_TOKENS = Set.of(
+            "我们", "你们", "他们", "一个", "这个", "可以",
+            "需要", "进行", "以及", "如果", "然后",
+            "that", "this", "with", "from", "have");
 
     private static final List<String> FOLLOW_UP_PHRASES = List.of(
             "请你详细描述", "请详细描述", "请补充更多",
@@ -993,19 +1007,39 @@ public class AgenticRagService {
                     ),
                     reviewStartedAt);
         }
-        if (revised == null || revised.isBlank()) {
+        if (revised != null && !revised.isBlank()) {
+            revised = normalizeCitationSyntax(revised);
+        }
+        int contractRepairAttempt = 0;
+        while (contractRepairAttempt < MAXIMUM_CONTRACT_REPAIR_ATTEMPTS) {
+            String repairBase = revised == null || revised.isBlank()
+                    ? normalizedDraft
+                    : revised;
+            AnswerVerificationContract.ContractCheck repairBaseCheck =
+                    verificationContract.check(repairBase, context);
+            boolean repairRequired = revised == null
+                    || revised.isBlank()
+                    || !repairBaseCheck.passed();
+            if (!repairRequired) {
+                break;
+            }
+            contractRepairAttempt++;
             Instant reviseStartedAt = recorder.startStep();
             emit(progressListener, "REVISE", "STARTED", "答案修正",
-                    "正在重写未通过审查的内容", List.of(), reviseStartedAt);
+                    "正在重写未通过审查或逐项契约的内容",
+                    List.of("受限修正：" + contractRepairAttempt
+                            + "/" + MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
+                    reviseStartedAt);
+            String repaired;
             try {
-                revised = revise(
+                repaired = revise(
                         question,
                         context,
-                        normalizedDraft,
+                        repairBase,
                         minimumAnswerChars,
                         maximumAnswerChars,
                         verificationContract,
-                        draftContractCheck.missingRequirements(),
+                        repairBaseCheck.missingRequirements(),
                         telemetry);
             } catch (RuntimeException exception) {
                 if (AgentRunCancelledException.isCancellation(exception)) {
@@ -1015,44 +1049,59 @@ public class AgenticRagService {
                         AgentStepType.REVISE,
                         reviseStartedAt,
                         false,
-                        Map.of("answerLength", normalizedDraft.length()),
                         Map.of(
-                                "revised", false,
-                                "taskCompleted", false,
-                                "answer", "",
-                                "answerLength", 0,
-                                "verificationContractVersion",
-                                AnswerVerificationContract.VERSION,
-                                "verificationContractPassed",
-                                draftContractCheck.passed(),
-                                "missingRequirements",
-                                draftContractCheck.missingRequirements(),
-                                "fallbackUsed", true
+                                "answerLength", repairBase.length(),
+                                "attempt", contractRepairAttempt,
+                                "maximumAttempts",
+                                MAXIMUM_CONTRACT_REPAIR_ATTEMPTS
+                        ),
+                        Map.ofEntries(
+                                Map.entry("revised", false),
+                                Map.entry("taskCompleted", false),
+                                Map.entry("answer", ""),
+                                Map.entry("answerLength", 0),
+                                Map.entry("attempt", contractRepairAttempt),
+                                Map.entry("maximumAttempts",
+                                        MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
+                                Map.entry("verificationContractVersion",
+                                        AnswerVerificationContract.VERSION),
+                                Map.entry("verificationContractPassed",
+                                        repairBaseCheck.passed()),
+                                Map.entry("missingRequirements",
+                                        repairBaseCheck.missingRequirements()),
+                                Map.entry("fallbackUsed", true)
                         )
                 );
                 emit(progressListener, "REVISE", "FAILED", "答案修正",
-                        "修正不可用，保留初稿", List.of(), reviseStartedAt);
-                log.warn("[AgenticRAG][降级] 修正 Agent 失败，保留初稿: {}",
-                        exception.getMessage());
-                return normalizedDraft;
+                        "修正不可用，保留当前最佳候选",
+                        List.of("受限修正：" + contractRepairAttempt
+                                + "/" + MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
+                        reviseStartedAt);
+                log.warn("[AgenticRAG][降级] 第 {} 次修正 Agent 失败，"
+                                + "保留当前最佳候选: {}",
+                        contractRepairAttempt, exception.getMessage());
+                break;
             }
-            boolean reviseSucceeded = revised != null && !revised.isBlank();
-            revised = reviseSucceeded
-                    ? normalizeCitationSyntax(revised)
-                    : revised;
+            boolean reviseSucceeded = repaired != null && !repaired.isBlank();
+            repaired = reviseSucceeded
+                    ? normalizeCitationSyntax(repaired)
+                    : repaired;
             boolean revisedCitationContractPassed = reviseSucceeded
-                    && satisfiesCitationContract(revised, context);
-            boolean revisedAnswerLengthContractPassed = reviseSucceeded
-                    && verificationContract.check(revised, context)
-                    .missingRequirements().stream()
-                    .noneMatch(value -> value.startsWith("答案不"));
+                    && satisfiesCitationContract(repaired, context);
             AnswerVerificationContract.ContractCheck revisedContractCheck =
-                    verificationContract.check(revised, context);
+                    verificationContract.check(repaired, context);
+            boolean revisedAnswerLengthContractPassed = reviseSucceeded
+                    && revisedContractCheck.missingRequirements().stream()
+                    .noneMatch(value -> value.startsWith("答案不"));
             recorder.record(
                     AgentStepType.REVISE,
                     reviseStartedAt,
                     reviseSucceeded,
-                    Map.of("answerLength", normalizedDraft.length()),
+                    Map.of(
+                            "answerLength", repairBase.length(),
+                            "attempt", contractRepairAttempt,
+                            "maximumAttempts", MAXIMUM_CONTRACT_REPAIR_ATTEMPTS
+                    ),
                     Map.ofEntries(
                             Map.entry("revised", reviseSucceeded),
                             Map.entry("taskCompleted", reviseSucceeded),
@@ -1068,16 +1117,32 @@ public class AgenticRagService {
                                     revisedContractCheck.passed()),
                             Map.entry("missingRequirements",
                                     revisedContractCheck.missingRequirements()),
-                            Map.entry("answer", reviseSucceeded ? revised : ""),
+                            Map.entry("attempt", contractRepairAttempt),
+                            Map.entry("maximumAttempts",
+                                    MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
+                            Map.entry("answer", reviseSucceeded ? repaired : ""),
                             Map.entry("answerLength",
-                                    reviseSucceeded ? revised.length() : 0)
+                                    reviseSucceeded ? repaired.length() : 0)
                     )
             );
             emit(progressListener, "REVISE", reviseSucceeded ? "COMPLETED" : "FAILED",
                     "答案修正",
                     reviseSucceeded ? "修正答案已生成" : "修正结果为空，保留初稿",
-                    List.of(),
+                    List.of(
+                            "受限修正：" + contractRepairAttempt
+                                    + "/" + MAXIMUM_CONTRACT_REPAIR_ATTEMPTS,
+                            "逐项契约：" + revisedContractCheck.passed(),
+                            "缺失项：" + String.join(
+                                    "；", revisedContractCheck.missingRequirements())
+                    ),
                     reviseStartedAt);
+            if (!reviseSucceeded) {
+                break;
+            }
+            revised = repaired;
+            if (revisedContractCheck.passed()) {
+                break;
+            }
         }
         if (revised == null || revised.isBlank()) {
             log.warn("[AgenticRAG][修正] 修正模型未返回有效答案，保留初稿");
@@ -1108,7 +1173,7 @@ public class AgenticRagService {
                 true,
                 Map.of(
                         "candidateCount", 2,
-                        "selectorVersion", "deterministic-rlvr-selector-v2",
+                        "selectorVersion", "deterministic-rlvr-selector-v3",
                         "verificationContractVersion",
                         AnswerVerificationContract.VERSION
                 ),
@@ -1427,12 +1492,12 @@ public class AgenticRagService {
                 question, context, normalizedDraft, effectiveContract);
         int revisedScore = deterministicCandidateScore(
                 question, context, normalizedRevised, effectiveContract);
-        if (draftScore > revisedScore) {
+        if (revisedScore > draftScore) {
             return new CandidateSelection(
-                    normalizedDraft, "DRAFT", draftScore, revisedScore);
+                    normalizedRevised, "REVISED", draftScore, revisedScore);
         }
         return new CandidateSelection(
-                normalizedRevised, "REVISED", draftScore, revisedScore);
+                normalizedDraft, "DRAFT", draftScore, revisedScore);
     }
 
     private static int deterministicCandidateScore(
@@ -1501,7 +1566,85 @@ public class AgenticRagService {
                 .noneMatch(answer::contains)) {
             score += 2;
         }
-        return score;
+        return score * 100_000 + semanticTieBreakScore(answer, context);
+    }
+
+    private static int semanticTieBreakScore(String answer, String context) {
+        double referenceQuality = tokenF1(answer, context);
+        double groundingQuality = groundingScore(answer, context);
+        return (int) Math.round(
+                (0.10 * referenceQuality + 0.20 * groundingQuality)
+                        * 100_000);
+    }
+
+    private static double tokenF1(String candidate, String reference) {
+        List<String> candidateTokens = candidateTokens(candidate);
+        List<String> referenceTokens = candidateTokens(reference);
+        if (candidateTokens.isEmpty() || referenceTokens.isEmpty()) {
+            return 0;
+        }
+        Map<String, Integer> candidateCounts = tokenCounts(candidateTokens);
+        Map<String, Integer> referenceCounts = tokenCounts(referenceTokens);
+        int overlap = candidateCounts.entrySet().stream()
+                .mapToInt(entry -> Math.min(
+                        entry.getValue(),
+                        referenceCounts.getOrDefault(entry.getKey(), 0)))
+                .sum();
+        if (overlap == 0) {
+            return 0;
+        }
+        double precision = (double) overlap / candidateTokens.size();
+        double recall = (double) overlap / referenceTokens.size();
+        return 2 * precision * recall / (precision + recall);
+    }
+
+    private static List<String> candidateTokens(String text) {
+        Matcher matcher = CANDIDATE_TOKEN.matcher(
+                Objects.toString(text, "").toLowerCase(Locale.ROOT));
+        List<String> tokens = new ArrayList<>();
+        while (matcher.find()) {
+            tokens.add(matcher.group());
+        }
+        return tokens;
+    }
+
+    private static Map<String, Integer> tokenCounts(List<String> tokens) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        tokens.forEach(token -> counts.merge(token, 1, Integer::sum));
+        return counts;
+    }
+
+    private static double groundingScore(String answer, String context) {
+        List<String> answerUnits = contentUnits(answer);
+        Set<String> contextUnits = new LinkedHashSet<>(contentUnits(context));
+        if (answerUnits.isEmpty() || contextUnits.isEmpty()) {
+            return 0;
+        }
+        long supported = answerUnits.stream()
+                .filter(contextUnits::contains)
+                .count();
+        return Math.min(1.0, (double) supported / answerUnits.size());
+    }
+
+    private static List<String> contentUnits(String text) {
+        Matcher matcher = CONTENT_WORD.matcher(
+                Objects.toString(text, "").toLowerCase(Locale.ROOT));
+        List<String> units = new ArrayList<>();
+        while (matcher.find()) {
+            String word = matcher.group();
+            if (SEMANTIC_STOP_TOKENS.contains(word)) {
+                continue;
+            }
+            if (word.chars().allMatch(value -> value >= 0x4e00
+                    && value <= 0x9fff)) {
+                for (int index = 0; index < word.length() - 1; index++) {
+                    units.add(word.substring(index, index + 2));
+                }
+            } else {
+                units.add(word);
+            }
+        }
+        return units;
     }
 
     private static boolean containsFirstDay(String answer) {

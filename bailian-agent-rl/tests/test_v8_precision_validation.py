@@ -192,8 +192,14 @@ class V8PrecisionValidationTest(unittest.TestCase):
                 },
                 {
                     "type": "REVISE",
+                    "input": {
+                        "attempt": 1,
+                        "maximumAttempts": 2,
+                    },
                     "output": {
                         "answer": revision,
+                        "attempt": 1,
+                        "maximumAttempts": 2,
                         "verificationContractPassed": True,
                         "missingRequirements": [],
                     },
@@ -217,6 +223,8 @@ class V8PrecisionValidationTest(unittest.TestCase):
 
         self.assertTrue(evidence["verification_contract_trace_valid"])
         self.assertTrue(evidence["contract_forced_revision"])
+        self.assertTrue(evidence["bounded_repair_trace_valid"])
+        self.assertEqual(1, evidence["revision_attempt_count"])
         self.assertFalse(evidence["draft_contract_passed"])
         self.assertTrue(evidence["selected_contract_passed"])
         self.assertEqual(

@@ -192,6 +192,12 @@ v9 最终验证已经冻结为唯一一次 30 题 × 2 轮真实回放，费用�
 5 次 RLVR 退化选择和 1 次已恢复超时。实验按预设门禁终结，v9 不发布。完整报告见
 [`RL_V9_PRECISION_VALIDATION_REPORT.md`](RL_V9_PRECISION_VALIDATION_REPORT.md)。
 
+v10 已针对该失败结论完成离线修复：Reviewer 修订不再绕过契约，契约修正限制为最多
+两次，Selector v3 增加与 RLVR v3 对齐的上下文代理/grounding tie-break。历史反事实审计
+覆盖 34/34 条契约失败，并把 5 次历史退化选择降为 0；该结果不替代真实验证。唯一一次
+v10 30×2 验收已冻结，等待独立授权，见
+[`RL_V10_PRECISION_VALIDATION_PLAN.md`](RL_V10_PRECISION_VALIDATION_PLAN.md)。
+
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。
 除非预算或云端资源条件变化，不继续用固定 Benchmark 反复调参，也不宣称百炼 RL 已完成。

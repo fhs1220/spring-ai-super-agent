@@ -364,17 +364,20 @@ class AgenticRagServiceTest {
                 .chatMemoryRepository(new InMemoryChatMemoryRepository())
                 .maxMessages(20)
                 .build();
-        String validDraft = longEnough(
+        String incompleteDraft = longEnough(
                 "先暂停情绪，再共同协商并约定复盘。[来源 1]");
         String validRevision = longEnough(
-                "先描述事实和感受，再共同协商并约定复盘。[来源 1]");
+                "1. 先描述事实和感受。[来源 1]\n"
+                        + "2. 再共同协商解决方案。[来源 1]\n"
+                        + "3. 约定时间复盘结果。[来源 1]");
         when(chatModel.call(any(Prompt.class))).thenReturn(
                 response("{\"subQueries\":[\"夫妻沟通\"]}"),
                 response("{\"sufficient\":true,\"missingInfo\":\"\","
                         + "\"followUpQueries\":[]}"),
-                response(validDraft),
+                response(incompleteDraft),
                 response("{\"grounded\":false,\"taskCompleted\":false,"
-                        + "\"revisedAnswer\":\"" + validRevision + "\"}")
+                        + "\"revisedAnswer\":\""
+                        + jsonEscape(validRevision) + "\"}")
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -393,7 +396,7 @@ class AgenticRagServiceTest {
         );
 
         AgenticRagResult result = service.doAgenticRagWithTrace(
-                "夫妻争吵后怎么沟通？",
+                "不要追问，直接给出三项夫妻争吵后的沟通行动。",
                 "review-revision-audit",
                 "你是恋爱心理顾问。"
         );
@@ -542,9 +545,131 @@ class AgenticRagServiceTest {
     }
 
     @Test
+    void reviewerRevisionThatStillMissesTheContractForcesRepair() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        String incompleteDraft = longEnough(
+                "先暂停情绪并共同沟通。[来源 1]");
+        String incompleteReviewerRevision = longEnough(
+                "1. 描述事实和感受。[来源 1]\n"
+                        + "2. 共同协商解决方案。[来源 1]");
+        String completeRepair = longEnough(
+                "1. 描述事实和感受。[来源 1]\n"
+                        + "2. 共同协商解决方案。[来源 1]\n"
+                        + "3. 约定时间复盘结果。[来源 1]");
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"夫妻沟通\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response(incompleteDraft),
+                response("{\"grounded\":false,\"taskCompleted\":false,"
+                        + "\"revisedAnswer\":\""
+                        + jsonEscape(incompleteReviewerRevision) + "\"}"),
+                response(completeRepair)
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "冲突后应描述事实和感受，再共同协商并约定复盘。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        InMemoryAgentTrajectoryRepository trajectoryRepository =
+                new InMemoryAgentTrajectoryRepository();
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory,
+                trajectoryRepository,
+                new AgentRewardCalculator()
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "不要追问，直接给出三项夫妻争吵后的沟通行动。",
+                "review-revision-contract-repair",
+                "你是恋爱心理顾问。"
+        );
+
+        assertThat(result.answer()).isEqualTo(completeRepair);
+        assertThat(result.trace().steps())
+                .extracting(step -> step.phase())
+                .containsSubsequence(
+                        "GENERATE", "REVIEW", "REVISE", "RLVR_SELECT");
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.REVISE)
+                .findFirst().orElseThrow().output())
+                .containsEntry("attempt", 1)
+                .containsEntry("verificationContractPassed", true);
+        verify(chatModel, times(5)).call(any(Prompt.class));
+    }
+
+    @Test
+    void contractRepairIsBoundedAndRetriesOnce() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        String incompleteDraft = longEnough(
+                "先暂停情绪并共同沟通。[来源 1]");
+        String incompleteFirstRepair = longEnough(
+                "1. 描述事实和感受。[来源 1]\n"
+                        + "2. 共同协商解决方案。[来源 1]");
+        String completeSecondRepair = longEnough(
+                "1. 描述事实和感受。[来源 1]\n"
+                        + "2. 共同协商解决方案。[来源 1]\n"
+                        + "3. 约定时间复盘结果。[来源 1]");
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"夫妻沟通\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response(incompleteDraft),
+                response("{\"grounded\":true,\"taskCompleted\":true,"
+                        + "\"revisedAnswer\":null}"),
+                response(incompleteFirstRepair),
+                response(completeSecondRepair)
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "冲突后应描述事实和感受，再共同协商并约定复盘。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        InMemoryAgentTrajectoryRepository trajectoryRepository =
+                new InMemoryAgentTrajectoryRepository();
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory,
+                trajectoryRepository,
+                new AgentRewardCalculator()
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "不要追问，直接给出三项夫妻争吵后的沟通行动。",
+                "bounded-contract-repair",
+                "你是恋爱心理顾问。"
+        );
+
+        assertThat(result.answer()).isEqualTo(completeSecondRepair);
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.REVISE)
+                .map(step -> step.output().get("attempt"))
+                .toList())
+                .containsExactly(1, 2);
+        verify(chatModel, times(6)).call(any(Prompt.class));
+    }
+
+    @Test
     void mirrorsSeedAnswerLengthContracts() {
         assertThat(AgenticRagService.DEFAULT_POLICY_VERSION)
-                .isEqualTo("agentic-rag-v9");
+                .isEqualTo("agentic-rag-v10");
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(
@@ -602,6 +727,30 @@ class AgenticRagServiceTest {
         assertThat(selection.selectedCandidate()).isEqualTo("REVISED");
         assertThat(selection.answer()).isEqualTo(validRevision);
         assertThat(selection.revisedScore()).isGreaterThan(selection.draftScore());
+    }
+
+    @Test
+    void rlvrCandidateSelectorUsesGroundingToBreakContractScoreTies() {
+        String context = "[来源 1 | 已婚篇.md]\n"
+                + "应共同沟通、明确分工并定期复盘。";
+        String draft = longEnough(
+                "1. 共同沟通。[来源 1]\n"
+                        + "2. 明确分工。[来源 1]\n"
+                        + "3. 定期复盘。[来源 1]");
+        String lessGroundedRevision = draft.replace(
+                "共同沟通", "重新考虑");
+
+        AgenticRagService.CandidateSelection selection =
+                AgenticRagService.selectHigherPrecisionCandidate(
+                        "不要追问，直接给出三项行动。",
+                        context,
+                        draft,
+                        lessGroundedRevision);
+
+        assertThat(selection.draftScore()).isGreaterThan(
+                selection.revisedScore());
+        assertThat(selection.selectedCandidate()).isEqualTo("DRAFT");
+        assertThat(selection.answer()).isEqualTo(draft);
     }
 
     @Test
@@ -681,5 +830,13 @@ class AgenticRagServiceTest {
             answer.append(padding);
         }
         return answer.toString();
+    }
+
+    private static String jsonEscape(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 }

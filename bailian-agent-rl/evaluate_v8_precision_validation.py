@@ -169,13 +169,11 @@ def candidate_evidence(
         ),
         None,
     )
-    revise_step = next(
-        (
-            step for step in reversed(steps)
-            if isinstance(step, dict) and step.get("type") == "REVISE"
-        ),
-        None,
-    )
+    revise_steps = [
+        step for step in steps
+        if isinstance(step, dict) and step.get("type") == "REVISE"
+    ]
+    revise_step = revise_steps[-1] if revise_steps else None
     review_output = (
         review.get("output")
         if isinstance(review, dict)
@@ -199,10 +197,23 @@ def candidate_evidence(
         and "missingRequirements" in review_output
     )
     revise_contract_traced = (
-        revise_step is None
-        or (
-            "verificationContractPassed" in revise_output
-            and "missingRequirements" in revise_output
+        all(
+            isinstance(step.get("output"), dict)
+            and "verificationContractPassed" in step["output"]
+            and "missingRequirements" in step["output"]
+            for step in revise_steps
+        )
+    )
+    bounded_repair_trace_valid = (
+        not revise_steps
+        or all(
+            isinstance(step.get("input"), dict)
+            and step["input"].get("attempt") == index
+            and step["input"].get("maximumAttempts") == 2
+            and isinstance(step.get("output"), dict)
+            and step["output"].get("attempt") == index
+            and step["output"].get("maximumAttempts") == 2
+            for index, step in enumerate(revise_steps, start=1)
         )
     )
     selection_contract_traced = (
@@ -235,6 +246,8 @@ def candidate_evidence(
             review_output.get("verificationContractPassed") is False
             and revise_step is not None
         ),
+        "revision_attempt_count": len(revise_steps),
+        "bounded_repair_trace_valid": bounded_repair_trace_valid,
         "selected_contract_passed": (
             selection_output.get("verificationContractPassed")
             if selection is not None
@@ -380,6 +393,10 @@ def evaluate(
         row for row in candidate_rows
         if row["verification_contract_trace_valid"]
     ]
+    bounded_repair_trace_rows = [
+        row for row in candidate_rows
+        if row["bounded_repair_trace_valid"]
+    ]
     final_contract_passed = sum(
         row["selected_contract_passed"] is True
         for row in candidate_rows
@@ -426,6 +443,10 @@ def evaluate(
     if gates.get("require_verification_contract_trace") is True:
         checks["verification_contract_trace_integrity"] = (
             len(contract_trace_rows) == len(candidate_rows)
+        )
+    if gates.get("require_bounded_contract_repair_trace") is True:
+        checks["bounded_contract_repair_trace_integrity"] = (
+            len(bounded_repair_trace_rows) == len(candidate_rows)
         )
     if "minimum_final_contract_pass_rate" in gates:
         checks["final_contract_pass_rate_at_least_minimum"] = (
@@ -480,6 +501,14 @@ def evaluate(
             ),
             "verification_contract_trace_valid_count":
                 len(contract_trace_rows),
+            "bounded_repair_trace_valid_count":
+                len(bounded_repair_trace_rows),
+            "repair_attempt_count": sum(
+                row["revision_attempt_count"] for row in candidate_rows
+            ),
+            "maximum_repair_attempt_count": max(
+                row["revision_attempt_count"] for row in candidate_rows
+            ),
             "route_mismatches": route_mismatches,
             "timeouts": timeouts,
             "rlvr_violation_trajectories": violations,
