@@ -118,6 +118,17 @@ def trajectory_metrics(trajectory: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def replay_timeout_count(result: dict[str, Any]) -> int:
+    telemetry = result.get("telemetry")
+    telemetry = telemetry if isinstance(telemetry, dict) else {}
+    recovery = result.get("recovery")
+    recovery = recovery if isinstance(recovery, dict) else {}
+    return (
+        int(telemetry.get("timeout_count") or 0)
+        + int(recovery.get("prior_timeout_count") or 0)
+    )
+
+
 def score_answer(
     answer: str,
     seed: dict[str, Any],
@@ -377,10 +388,7 @@ def evaluate(
         result.get("route_expectation_matched") is not True
         for result in results
     )
-    timeouts = sum(
-        int(result.get("telemetry", {}).get("timeout_count") or 0)
-        for result in results
-    )
+    timeouts = sum(replay_timeout_count(result) for result in results)
     violations = sum(bool(result["rlvr"].get("violations")) for result in results)
     regressions = sum(
         row["rlvr_regressive_selection"] for row in selector_rows

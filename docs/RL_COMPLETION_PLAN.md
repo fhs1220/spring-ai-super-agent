@@ -187,6 +187,11 @@ v9 最终验证已经冻结为唯一一次 30 题 × 2 轮真实回放，费用�
 20～40 分钟完成回放，随后用零调用评测器直接给出最终结论。详见
 [`RL_V9_PRECISION_VALIDATION_PLAN.md`](RL_V9_PRECISION_VALIDATION_PLAN.md)。
 
+该冻结验证已完成 60/60，最终为 `NOT_PROMOTED`。整体 RLVR 从 0.697469 提升到
+0.753685，平均差 +0.056216 且配对置信区间为正；但逐项契约仅 26/60 通过，并出现
+5 次 RLVR 退化选择和 1 次已恢复超时。实验按预设门禁终结，v9 不发布。完整报告见
+[`RL_V9_PRECISION_VALIDATION_REPORT.md`](RL_V9_PRECISION_VALIDATION_REPORT.md)。
+
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。
 除非预算或云端资源条件变化，不继续用固定 Benchmark 反复调参，也不宣称百炼 RL 已完成。

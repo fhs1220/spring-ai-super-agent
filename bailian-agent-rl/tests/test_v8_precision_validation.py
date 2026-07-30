@@ -125,6 +125,14 @@ class V8PrecisionValidationTest(unittest.TestCase):
         self.assertEqual(122, ceiling["maximum_tokens"])
         self.assertEqual(0.24, ceiling["maximum_estimated_cost_cny"])
 
+    def test_evaluation_counts_recovered_timeout(self) -> None:
+        result = {
+            "telemetry": {"timeout_count": 0},
+            "recovery": {"prior_timeout_count": 1},
+        }
+
+        self.assertEqual(1, evaluate.replay_timeout_count(result))
+
     def test_candidate_evidence_detects_non_regressive_draft_selection(self) -> None:
         item = seed(1, "SINGLE_AGENT", "actions")
         draft = "1. 共同协商。[来源 1]\n2. 明确分工。[来源 1]\n3. 定期复盘。[来源 1]"

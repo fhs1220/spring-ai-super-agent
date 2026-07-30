@@ -1,6 +1,23 @@
 # RL v9 最终精准度验证计划
 
-## 当前状态
+## 最终状态
+
+本计划已于 2026-07-30 按冻结身份执行完毕：
+
+```text
+STATE: COMPLETED
+DECISION: NOT_PROMOTED
+COMPLETED TRAJECTORIES: 60/60
+MODEL CALLS: 369
+ESTIMATED COST: ¥0.2223954
+```
+
+v9 的 RLVR v3 相对 v7 平均提升 `+0.056216`，配对 95% CI 为
+`[+0.019671, +0.102561]`；但最终契约通过率仅 `26/60`，出现 5 次 RLVR 退化选择和
+1 次已恢复模型超时，因此严格门禁拒绝发布。完整结果见
+[`RL_V9_PRECISION_VALIDATION_REPORT.md`](RL_V9_PRECISION_VALIDATION_REPORT.md)。
+
+## 冻结前状态
 
 `agentic-rag-v9` 的唯一一次最终真实验证已经离线冻结：
 
