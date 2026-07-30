@@ -207,10 +207,12 @@ v11 随后完成零调用结构化升级：识别已有行内编号和七天标�
 所以状态为 `DO_NOT_AUTHORIZE_YET`，不冻结新回放。详见
 [`RL_PRECISION_UPGRADE_V11_REPORT.md`](RL_PRECISION_UPGRADE_V11_REPORT.md)。
 
-v12 已继续离线实现结构化修正载荷和确定性渲染器，覆盖 v11 剩余 8 条中的全部 12 个
-缺失要求实例，同时保持禁用词、引用和长度硬门禁不变。只冻结了对应 6 个唯一种子的
-6×2 定向计划，费用上限 ¥0.079989；尚未执行真实回放。详见
-[`RL_PRECISION_UPGRADE_V12_REPORT.md`](RL_PRECISION_UPGRADE_V12_REPORT.md)。
+v12 已继续离线实现结构化修正载荷和确定性渲染器，并完成对应 6 个唯一种子的 6×2
+定向真实回放。12/12 轨迹完成，平均 RLVR 0.758128，路由偏差、超时和 RLVR 违规均为
+0，实际 73 次调用、140,330 Token、估算 ¥0.0461085；但最终逐项契约只通过 7/12，
+另有 1 次结构化解析失败。标准回放门禁通过，专用定向门禁判定
+`TARGETED_FIX_NOT_VALIDATED`，v12 不发布且不补跑本批次。详见
+[`RL_V12_TARGETED_VALIDATION_REPORT.md`](RL_V12_TARGETED_VALIDATION_REPORT.md)。
 
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。

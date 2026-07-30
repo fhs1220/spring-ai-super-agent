@@ -1,21 +1,23 @@
-# RL 精准度升级 v12 离线工程报告
+# RL 精准度升级 v12 工程与定向验证报告
 
 ## 结论
 
 ```text
-STATE: IMPLEMENTED_OFFLINE
+STATE: TARGETED_FIX_NOT_VALIDATED
 POLICY: agentic-rag-v12
 CONTRACT: answer-verification-contract-v3
 REPAIR RENDERER: deterministic-contract-repair-renderer-v1
 SELECTOR: deterministic-rlvr-selector-v5
-OFFLINE DECISION: READY_FOR_TARGETED_PILOT_ONLY
-REAL REPLAY: NOT_EXECUTED
-MODEL CALLS: 0
+STANDARD REPLAY GATE: PASSED
+TARGETED CONTRACT GATE: FAILED
+REAL REPLAY: COMPLETED 12/12
+MODEL CALLS: 73
 ```
 
 v12 已把修正阶段从自由文本升级为“完整答案、逐概念证据、行动项、假设”四部分结构化载荷，
 并由确定性渲染器组织为用户答案。离线审计覆盖了 v11 剩余的全部 8 条失败，但这只证明
-机制能够承接这些缺失项，不代表历史答案已经从 52/60 变成 60/60。
+机制能够承接这些缺失项，不代表历史答案已经从 52/60 变成 60/60。随后的 6×2 真实
+定向验证只有 7/12 条最终契约通过，因此 v12 不发布。
 
 ## 修复机制
 
@@ -76,14 +78,33 @@ RLVR 复核。
 | 模型调用上限 | 126 |
 | Token 上限 | 239,769 |
 | 费用上限 | ¥0.079989 |
-| 当前真实调用 | 0 |
+| 实际真实调用 | 73 |
+| 实际 Token | 140,330 |
+| 实际费用 | ¥0.0461085 |
 
 上限按 v10 实际单轨迹消耗乘 1.5 安全系数计算，不是已发生费用。冻结产物：
 
 `tmp/agent-rl/precision-validation/policy-v12-targeted-6x2/manifest.json`
 
-同时提供专用零调用评估器；未来只允许给出
-`TARGETED_FIX_VALIDATED`，不会把 6×2 定向结果冒充完整策略发布验证。
+同时提供专用零调用评估器；评估结果为 `TARGETED_FIX_NOT_VALIDATED`，不会把标准 RLVR
+门禁通过或 6×2 定向结果冒充完整策略发布验证。
+
+## 真实定向验证结果
+
+| 指标 | 结果 |
+|---|---:|
+| 完成轨迹 | 12/12 |
+| Single / Adaptive Multi | 10 / 2 |
+| RLVR 平均 | 0.758128 |
+| 同题 v10 基线 | 0.757762 |
+| 平均差 | +0.000365 |
+| 最终契约通过 | 7/12 |
+| 结构化解析失败 | 1 |
+| 路由偏差 / 超时 / RLVR 违规 | 0 / 0 / 0 |
+
+标准回放门禁全部通过，但专用契约门禁要求 12/12、解析失败为 0，所以最终判定失败。
+详细证据见
+[`RL_V12_TARGETED_VALIDATION_REPORT.md`](RL_V12_TARGETED_VALIDATION_REPORT.md)。
 
 ## 工程验证
 
@@ -98,9 +119,8 @@ RLVR 复核。
 
 ## 决策
 
-v12 离线工程已完成，下一步只有一个：经用户明确授权后执行
-`policy-v12-targeted-6x2` 的 12 条真实轨迹，再用专用评估器判断这 8 类历史失败是否真正
-消失。未获得授权前不启动服务、不调用模型、不产生费用。
+v12 离线工程已完成，但真实定向修复没有通过。失败集中在模型漏交概念证据、证据无法按
+原始表达匹配和一次结构化解析回退；同一冻结批次不补跑。后续先离线改为稳定要求 ID、
+逐要求结构化验证和行动编号归一化，完成历史反事实审计后再决定是否冻结新的独立小批次。
 
-即使定向试验全部通过，其结论也只是“v11 剩余修复已验证”，不是重新宣称完整 60 条
-Benchmark 或云端百炼 RL 已完成。
+本次结论不是完整 60 条 Benchmark 重新验证，也不代表云端百炼 RL 已完成。
