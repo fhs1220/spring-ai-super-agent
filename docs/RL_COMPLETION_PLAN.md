@@ -1,8 +1,25 @@
 # RL 完成执行计划
 
+## 当前终态
+
+```text
+PROJECT STATUS: COMPLETE_WITH_QUANTIFIED_EVIDENCE
+RL ENGINEERING: COMPLETE
+LOCAL TRAIN/EVALUATE LOOP: COMPLETE
+CLOUD A/B/C/D: COST_BLOCKED
+PRECISION RESEARCH: CLOSED AFTER V13 OFFLINE HARDENING
+AUTOMATIC NEXT STAGE: NONE
+```
+
+截至 2026-07-30，本计划不再是持续扩张的待办清单。Stage 1–5、Judge v2、真实数据闭环、
+低预算本地参数训练和固定训练前后评测均已完成；云端四臂训练因官方最低资源成本超过用户
+预算保持 `COST_BLOCKED`。v8–v12 的额外精准度研究保留全部成功与失败数据，v13 完成最后
+一次零调用协议加固后停止版本链。最终收尾见
+[`RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md`](RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md)。
+
 ## 完成定义
 
-“RL 完成”不是只有 Reward、轨迹和提交脚本，而是以下证据全部闭环：
+下面六项是最初定义的“无限预算、完整云生产发布”目标，不再代表当前自动待办：
 
 1. 分层真实轨迹通过 RLVR 与路由门禁；
 2. RLAIF 评审和人工锚点形成可审计标签；
@@ -10,6 +27,10 @@
 4. 四个不同训练方案产生四个不可变模型资产；
 5. 同一固定 Benchmark 的正式配对评测通过统计和成本门禁；
 6. 胜出资产经过 SHADOW、Canary、监控和可回滚发布。
+
+当前项目采用低预算完成口径：前三项已用真实数据闭环，第四至六项的工程、配置、门禁和
+回滚路径已实现；本地代理完成了真实参数更新和固定评测，但没有质量提升，所以未发布。
+云端四资产训练与灰度只因预算阻断，不用继续执行来证明当前项目的工程能力。
 
 截至 2026-07-29，工程链路、300 条 v2 离线种子和 Stage 1 已完成。Stage 2 的 v7 Batch
 已得到 100/100 条结果：Single/Multi 各 50、路由偏差 0、RLVR 平均 0.759502、硬门禁
@@ -213,6 +234,12 @@ v12 已继续离线实现结构化修正载荷和确定性渲染器，并完成�
 另有 1 次结构化解析失败。标准回放门禁通过，专用定向门禁判定
 `TARGETED_FIX_NOT_VALIDATED`，v12 不发布且不补跑本批次。详见
 [`RL_V12_TARGETED_VALIDATION_REPORT.md`](RL_V12_TARGETED_VALIDATION_REPORT.md)。
+
+v13 最后进行一次零调用工程收尾：契约升级为稳定要求 ID，修正轨迹记录输入与未解决 ID，
+统一模型自带行动编号，超长结构字段改为安全截断后重新经过硬门禁，并保留旧 JSON 字段
+兼容。专项测试 37/37、Java 全量 153/153、Python 全量 111/111 通过。v13 未执行真实
+回放，因此不宣称提分；精准度版本链到此关闭，详见
+[`RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md`](RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md)。
 
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。

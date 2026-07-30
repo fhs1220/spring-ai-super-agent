@@ -6,6 +6,7 @@ import com.fhs.aiagent.rag.multiagent.MultiAgentRoutingMode;
 import com.fhs.aiagent.rl.model.AgentStepType;
 import com.fhs.aiagent.rl.model.AgenticRagResult;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
@@ -606,7 +607,7 @@ class AgenticRagServiceTest {
                 .containsEntry("verificationContractPassed", true)
                 .containsEntry(
                         "contractRepairRendererVersion",
-                        "deterministic-contract-repair-renderer-v1");
+                        "deterministic-contract-repair-renderer-v2");
         assertThat(trajectoryRepository.findById(result.trajectoryId())
                 .orElseThrow().steps().stream()
                 .filter(step -> step.type() == AgentStepType.RLVR_SELECT)
@@ -632,11 +633,11 @@ class AgenticRagServiceTest {
                   "answer": "可以从低风险的小事开始，并根据反馈调整。[来源 1]",
                   "evidence": [
                     {
-                      "requirement": "用心",
+                      "requirementId": "concept-01",
                       "content": "提前了解并记录对方真正重视的偏好，再据此准备。"
                     },
                     {
-                      "requirement": "边界|舒适",
+                      "requirementId": "concept-02",
                       "content": "先确认双方可接受的范围，不以惊喜为名施加压力。"
                     }
                   ],
@@ -711,8 +712,24 @@ class AgenticRagServiceTest {
                 .containsEntry("structuredEvidenceAccepted", true)
                 .containsEntry("renderedConceptSections", 2)
                 .containsEntry("renderedActionItems", 3)
+                .containsEntry(
+                        "unresolvedRepairRequirementIds", List.of())
                 .containsEntry("verificationContractPassed", true);
-        verify(chatModel, times(5)).call(any(Prompt.class));
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.RLVR_SELECT)
+                .findFirst().orElseThrow().input())
+                .containsEntry(
+                        "selectorVersion",
+                        "deterministic-rlvr-selector-v6");
+        ArgumentCaptor<Prompt> prompts =
+                ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel, times(5)).call(prompts.capture());
+        assertThat(prompts.getAllValues().get(4).getContents())
+                .contains(
+                        "concept-01 => 覆盖概念：用心",
+                        "concept-02 => 覆盖概念：边界|舒适",
+                        "requirementId");
     }
 
     @Test
@@ -777,7 +794,7 @@ class AgenticRagServiceTest {
     @Test
     void mirrorsSeedAnswerLengthContracts() {
         assertThat(AgenticRagService.DEFAULT_POLICY_VERSION)
-                .isEqualTo("agentic-rag-v12");
+                .isEqualTo("agentic-rag-v13");
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(

@@ -10,7 +10,7 @@ import java.util.Objects;
  * 模型修正阶段返回的结构化载荷。
  *
  * <p>载荷中的内容仍由模型生成；确定性渲染器只负责把已有内容组织成契约要求的标题和
- * 编号，不会补写事实、来源或删除禁用内容。</p>
+ * 编号。概念证据使用契约分配的稳定要求 ID，不会补写事实、来源或删除禁用内容。</p>
  */
 public record StructuredContractRepair(
         String answer,
@@ -40,7 +40,7 @@ public record StructuredContractRepair(
         }
         return values.stream()
                 .filter(Objects::nonNull)
-                .filter(value -> !value.requirement().isBlank())
+                .filter(value -> !value.requirementId().isBlank())
                 .distinct()
                 .limit(MAXIMUM_EVIDENCE)
                 .toList();
@@ -67,18 +67,22 @@ public record StructuredContractRepair(
 
     private static String boundedText(String value, int maximumChars) {
         String normalized = Objects.toString(value, "").trim();
-        if (normalized.codePointCount(0, normalized.length())
-                > maximumChars) {
-            throw new IllegalArgumentException(
-                    "structured repair content is too long");
+        int codePoints = normalized.codePointCount(0, normalized.length());
+        if (codePoints > maximumChars) {
+            int end = normalized.offsetByCodePoints(0, maximumChars);
+            return normalized.substring(0, end);
         }
         return normalized;
     }
 
-    public record Evidence(String requirement, String content) {
+    public record Evidence(
+            @JsonAlias({"requirement_id", "requirement"})
+            String requirementId,
+            String content) {
 
         public Evidence {
-            requirement = boundedText(requirement, MAXIMUM_CONTENT_CHARS);
+            requirementId = boundedText(
+                    requirementId, MAXIMUM_CONTENT_CHARS);
             content = boundedText(content, MAXIMUM_CONTENT_CHARS);
         }
     }

@@ -58,7 +58,7 @@ import java.util.regex.Pattern;
 @Component
 public class AgenticRagService {
 
-    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v12";
+    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v13";
 
     private static final int MAXIMUM_CONTRACT_REPAIR_ATTEMPTS = 1;
 
@@ -1019,6 +1019,9 @@ public class AgenticRagService {
                     : revised;
             AnswerVerificationContract.ContractCheck repairBaseCheck =
                     verificationContract.check(repairBase, context);
+            List<String> repairRequirementIds =
+                    verificationContract.repairRequirementIds(
+                            repairBaseCheck.missingRequirements());
             boolean repairRequired = revised == null
                     || revised.isBlank()
                     || !repairBaseCheck.passed();
@@ -1051,11 +1054,15 @@ public class AgenticRagService {
                         AgentStepType.REVISE,
                         reviseStartedAt,
                         false,
-                        Map.of(
-                                "answerLength", repairBase.length(),
-                                "attempt", contractRepairAttempt,
-                                "maximumAttempts",
-                                MAXIMUM_CONTRACT_REPAIR_ATTEMPTS
+                        Map.ofEntries(
+                                Map.entry("answerLength",
+                                        repairBase.length()),
+                                Map.entry("attempt",
+                                        contractRepairAttempt),
+                                Map.entry("maximumAttempts",
+                                        MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
+                                Map.entry("repairRequirementIds",
+                                        repairRequirementIds)
                         ),
                         Map.ofEntries(
                                 Map.entry("revised", false),
@@ -1067,10 +1074,15 @@ public class AgenticRagService {
                                         MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
                                 Map.entry("verificationContractVersion",
                                         AnswerVerificationContract.VERSION),
+                                Map.entry("contractRepairRendererVersion",
+                                        DeterministicContractRepairRenderer
+                                                .VERSION),
                                 Map.entry("verificationContractPassed",
                                         repairBaseCheck.passed()),
                                 Map.entry("missingRequirements",
                                         repairBaseCheck.missingRequirements()),
+                                Map.entry("unresolvedRepairRequirementIds",
+                                        repairRequirementIds),
                                 Map.entry("fallbackUsed", true)
                         )
                 );
@@ -1106,10 +1118,13 @@ public class AgenticRagService {
                     AgentStepType.REVISE,
                     reviseStartedAt,
                     reviseSucceeded,
-                    Map.of(
-                            "answerLength", repairBase.length(),
-                            "attempt", contractRepairAttempt,
-                            "maximumAttempts", MAXIMUM_CONTRACT_REPAIR_ATTEMPTS
+                    Map.ofEntries(
+                            Map.entry("answerLength", repairBase.length()),
+                            Map.entry("attempt", contractRepairAttempt),
+                            Map.entry("maximumAttempts",
+                                    MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
+                            Map.entry("repairRequirementIds",
+                                    repairRequirementIds)
                     ),
                     Map.ofEntries(
                             Map.entry("revised", reviseSucceeded),
@@ -1137,6 +1152,9 @@ public class AgenticRagService {
                                     revisedContractCheck.passed()),
                             Map.entry("missingRequirements",
                                     revisedContractCheck.missingRequirements()),
+                            Map.entry("unresolvedRepairRequirementIds",
+                                    renderedRepair
+                                            .unresolvedRequirementIds()),
                             Map.entry("attempt", contractRepairAttempt),
                             Map.entry("maximumAttempts",
                                     MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
@@ -1194,7 +1212,7 @@ public class AgenticRagService {
                 true,
                 Map.of(
                         "candidateCount", 2,
-                        "selectorVersion", "deterministic-rlvr-selector-v5",
+                        "selectorVersion", "deterministic-rlvr-selector-v6",
                         "verificationContractVersion",
                         AnswerVerificationContract.VERSION,
                         "structureNormalizerVersion",
@@ -1401,11 +1419,11 @@ public class AgenticRagService {
                 同时保留必要来源。
                 必须逐项执行结构化答案契约：
                 %s
-                确定性检查已发现以下缺失项，修订稿必须全部解决：
+                确定性检查已发现以下缺失项。每项都有稳定 ID，修订稿必须全部解决：
                 %s
                 返回结构化对象：
                 - answer：完整修正答案；
-                - evidence：每个必需概念各一项，requirement 必须原样填写契约表达，
+                - evidence：每个缺失概念各一项，requirementId 必须填写上面对应的稳定 ID，
                   content 必须是对该概念的具体解释或建议，不能只重复关键词；
                 - actionItems：契约要求行动项时，提供可直接执行的逐项内容；
                 - assumptions：契约要求假设或信息边界时填写具体说明，否则可为空。
@@ -1414,10 +1432,8 @@ public class AgenticRagService {
                 minimumAnswerChars,
                 maximumAnswerChars,
                 verificationContract.promptChecklist(),
-                missingRequirements.isEmpty()
-                        ? "（模型审查要求修订）"
-                        : String.join("\n",
-                        missingRequirements.stream().map("- "::concat).toList()));
+                verificationContract.repairPromptChecklist(
+                        missingRequirements));
         String user = "知识库上下文：\n%s\n\n用户问题：%s\n\n待修正答案：\n%s"
                 .formatted(context, question, draftAnswer);
         return telemetry.captureEntity(

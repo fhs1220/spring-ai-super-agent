@@ -12,9 +12,45 @@ class AnswerVerificationContractTest {
     @Test
     void versionsTheSemanticContractAndStructureNormalizer() {
         assertThat(AnswerVerificationContract.VERSION)
-                .isEqualTo("answer-verification-contract-v3");
+                .isEqualTo("answer-verification-contract-v4");
         assertThat(AnswerVerificationContract.STRUCTURE_NORMALIZER_VERSION)
                 .isEqualTo("deterministic-answer-structure-v1");
+    }
+
+    @Test
+    void assignsStableIdsToEveryMissingRepairRequirement() {
+        AnswerVerificationContract contract = new AnswerVerificationContract(
+                List.of("社交|沟通", "锻炼|健康"),
+                List.of("推荐课程"),
+                1,
+                1600,
+                false,
+                true,
+                true,
+                3
+        );
+        List<String> missing = List.of(
+                "覆盖概念：社交|沟通",
+                "覆盖概念：锻炼|健康",
+                "删除禁用短语：推荐课程",
+                "直接回答，不向用户追问",
+                "至少提供 3 个行动项",
+                "明确标注合理假设或信息边界"
+        );
+
+        assertThat(contract.repairRequirementIds(missing))
+                .containsExactly(
+                        "concept-01",
+                        "concept-02",
+                        "forbidden-01",
+                        "no-follow-up",
+                        "action-items",
+                        "assumptions");
+        assertThat(contract.repairPromptChecklist(missing))
+                .contains(
+                        "concept-01 => 覆盖概念：社交|沟通",
+                        "concept-02 => 覆盖概念：锻炼|健康",
+                        "action-items => 至少提供 3 个行动项");
     }
 
     @Test

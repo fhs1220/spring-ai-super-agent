@@ -29,7 +29,7 @@ public record AnswerVerificationContract(
         @JsonAlias("minimum_action_items") Integer minimumActionItems
 ) {
 
-    public static final String VERSION = "answer-verification-contract-v3";
+    public static final String VERSION = "answer-verification-contract-v4";
 
     public static final String STRUCTURE_NORMALIZER_VERSION =
             "deterministic-answer-structure-v1";
@@ -237,6 +237,88 @@ public record AnswerVerificationContract(
     }
 
     /**
+     * 为修正模型生成稳定、与自然语言表达解耦的要求 ID。
+     */
+    public List<RepairRequirement> repairRequirements() {
+        List<RepairRequirement> requirements = new ArrayList<>();
+        if (minimumAnswerChars != null) {
+            requirements.add(new RepairRequirement(
+                    "length-minimum",
+                    "答案不少于 " + minimumAnswerChars + " 字符"));
+        }
+        if (maximumAnswerChars != null) {
+            requirements.add(new RepairRequirement(
+                    "length-maximum",
+                    "答案不超过 " + maximumAnswerChars + " 字符"));
+        }
+        if (Boolean.TRUE.equals(citationRequired)) {
+            requirements.add(new RepairRequirement(
+                    "citation-evidence",
+                    "没有可满足引用契约的知识证据"));
+        }
+        requirements.add(new RepairRequirement(
+                "citation-format",
+                "使用有效的 [来源 n] 单编号引用"));
+        for (int index = 0; index < requiredConcepts.size(); index++) {
+            requirements.add(new RepairRequirement(
+                    conceptRequirementId(index),
+                    "覆盖概念：" + requiredConcepts.get(index)));
+        }
+        for (int index = 0; index < forbiddenPhrases.size(); index++) {
+            requirements.add(new RepairRequirement(
+                    "forbidden-%02d".formatted(index + 1),
+                    "删除禁用短语：" + forbiddenPhrases.get(index)));
+        }
+        if (Boolean.TRUE.equals(noFollowUp)) {
+            requirements.add(new RepairRequirement(
+                    "no-follow-up",
+                    "直接回答，不向用户追问"));
+        }
+        if (minimumActionItems != null && minimumActionItems > 0) {
+            requirements.add(new RepairRequirement(
+                    "action-items",
+                    "至少提供 " + minimumActionItems + " 个行动项"));
+        }
+        if (Boolean.TRUE.equals(mustMarkAssumptions)) {
+            requirements.add(new RepairRequirement(
+                    "assumptions",
+                    "明确标注合理假设或信息边界"));
+        }
+        return List.copyOf(requirements);
+    }
+
+    public String repairPromptChecklist(List<String> missingRequirements) {
+        List<String> missing = missingRequirements == null
+                ? List.of() : missingRequirements;
+        List<String> rows = repairRequirements().stream()
+                .filter(value -> missing.contains(value.requirement()))
+                .map(value -> "- " + value.id() + " => "
+                        + value.requirement())
+                .toList();
+        if (rows.size() != missing.size()) {
+            throw new IllegalArgumentException(
+                    "every missing requirement must have a stable ID");
+        }
+        return rows.isEmpty()
+                ? "（模型审查要求修订）"
+                : String.join("\n", rows);
+    }
+
+    public List<String> repairRequirementIds(
+            List<String> missingRequirements) {
+        List<String> missing = missingRequirements == null
+                ? List.of() : missingRequirements;
+        return repairRequirements().stream()
+                .filter(value -> missing.contains(value.requirement()))
+                .map(RepairRequirement::id)
+                .toList();
+    }
+
+    static String conceptRequirementId(int index) {
+        return "concept-%02d".formatted(index + 1);
+    }
+
+    /**
      * 只规范答案中已经存在的结构，不补写概念、事实、来源或行动内容。
      */
     public String normalizeStructure(String answer) {
@@ -375,5 +457,8 @@ public record AnswerVerificationContract(
     }
 
     public record ContractCheck(boolean passed, List<String> missingRequirements) {
+    }
+
+    public record RepairRequirement(String id, String requirement) {
     }
 }

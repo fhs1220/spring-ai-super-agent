@@ -23,14 +23,16 @@
 [`docs/TRAINING_DATA_PIPELINE.md`](docs/TRAINING_DATA_PIPELINE.md)，首次真实 RLVR v3
 试回放的量化证据见
 [`docs/RLVR_V3_PILOT_REPORT.md`](docs/RLVR_V3_PILOT_REPORT.md)，从分层回放到四臂训练、
-正式评测和灰度上线的剩余工作见
+正式评测和灰度上线的完成状态与预算边界见
 [`docs/RL_COMPLETION_PLAN.md`](docs/RL_COMPLETION_PLAN.md)。v2 首次单双 Agent 分层回放
 及引用门禁修复证据见
 [`docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md`](docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md)，
 50 题 × 2 轮的 Stage 2 真实扩量结果见
 [`docs/RLVR_V3_STAGE2_50X2_REPORT.md`](docs/RLVR_V3_STAGE2_50X2_REPORT.md)。低预算本地
 DPO-LoRA 的真实参数更新、固定 36 题训练前后对比和自动拒绝结论见
-[`docs/RL_LOCAL_POLICY_PROXY_REPORT.md`](docs/RL_LOCAL_POLICY_PROXY_REPORT.md)。
+[`docs/RL_LOCAL_POLICY_PROXY_REPORT.md`](docs/RL_LOCAL_POLICY_PROXY_REPORT.md)。RL 最终
+工程边界、真实量化快照和停止继续追加精准度版本的决策见
+[`docs/RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md`](docs/RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md)。
 
 ---
 
@@ -92,7 +94,7 @@ RAG Pipeline 包括：
 
 ### 自适应多 Agent
 
-`agentic-rag-v9` 使用“确定性 Complexity Router + 轨迹学习策略”判断任务是否值得启动多 Agent，
+`agentic-rag-v13` 使用“确定性 Complexity Router + 轨迹学习策略”判断任务是否值得启动多 Agent，
 并把同一份结构化答案契约贯穿 Generate、Review、Revise、RLVR Select 和在线 Reward；
 即使 Review 错误判断任务已完成，只要确定性逐项检查发现缺失，候选答案也必须进入 Revise：
 

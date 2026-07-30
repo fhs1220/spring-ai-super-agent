@@ -3,17 +3,21 @@ package com.fhs.aiagent.rag;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * 把模型提供的结构化修正内容确定性地组织为用户答案。
  */
 final class DeterministicContractRepairRenderer {
 
-    static final String VERSION = "deterministic-contract-repair-renderer-v1";
+    static final String VERSION = "deterministic-contract-repair-renderer-v2";
 
     private static final int MINIMUM_EVIDENCE_CHARS = 8;
 
     private static final int MINIMUM_ACTION_CHARS = 4;
+
+    private static final Pattern LEADING_ACTION_MARKERS = Pattern.compile(
+            "^\\s*(?:(?:10|[1-9])[.、)）]\\s*)+");
 
     private DeterministicContractRepairRenderer() {
     }
@@ -33,18 +37,27 @@ final class DeterministicContractRepairRenderer {
                     0,
                     0,
                     false,
-                    emptyCheck.missingRequirements());
+                    emptyCheck.missingRequirements(),
+                    effectiveContract.repairRequirementIds(
+                            emptyCheck.missingRequirements()));
         }
 
         String rendered = effectiveContract.normalizeStructure(repair.answer());
         int conceptSections = 0;
-        for (String expression : effectiveContract.requiredConcepts()) {
+        for (int index = 0;
+             index < effectiveContract.requiredConcepts().size();
+             index++) {
+            String expression =
+                    effectiveContract.requiredConcepts().get(index);
             String missingRequirement = "覆盖概念：" + expression;
             if (!effectiveContract.check(rendered, context)
                     .missingRequirements().contains(missingRequirement)) {
                 continue;
             }
-            String evidence = evidenceFor(repair, expression);
+            String evidence = evidenceFor(
+                    repair,
+                    AnswerVerificationContract.conceptRequirementId(index),
+                    expression);
             if (!hasSubstantiveContent(evidence, MINIMUM_EVIDENCE_CHARS)) {
                 continue;
             }
@@ -64,8 +77,11 @@ final class DeterministicContractRepairRenderer {
                 && effectiveContract.check(rendered, context)
                 .missingRequirements().contains(actionRequirement)) {
             List<String> actions = repair.actionItems().stream()
+                    .map(DeterministicContractRepairRenderer
+                            ::normalizeActionItem)
                     .filter(value -> hasSubstantiveContent(
                             value, MINIMUM_ACTION_CHARS))
+                    .distinct()
                     .limit(minimumActions)
                     .toList();
             if (actions.size() >= minimumActions) {
@@ -109,15 +125,19 @@ final class DeterministicContractRepairRenderer {
                 conceptSections,
                 renderedActions,
                 assumptionsRendered,
-                finalCheck.missingRequirements());
+                finalCheck.missingRequirements(),
+                effectiveContract.repairRequirementIds(
+                        finalCheck.missingRequirements()));
     }
 
     private static String evidenceFor(
             StructuredContractRepair repair,
+            String requirementId,
             String expression) {
         return repair.evidence().stream()
-                .filter(value -> value.requirement().equals(expression)
-                        || value.requirement().equals(
+                .filter(value -> value.requirementId().equals(requirementId)
+                        || value.requirementId().equals(expression)
+                        || value.requirementId().equals(
                         "覆盖概念：" + expression))
                 .map(StructuredContractRepair.Evidence::content)
                 .filter(value -> !value.isBlank())
@@ -131,6 +151,11 @@ final class DeterministicContractRepairRenderer {
         String normalized = Objects.toString(value, "").trim();
         return normalized.codePointCount(0, normalized.length())
                 >= minimumChars;
+    }
+
+    private static String normalizeActionItem(String value) {
+        return LEADING_ACTION_MARKERS.matcher(
+                Objects.toString(value, "").trim()).replaceFirst("").trim();
     }
 
     private static String appendSection(
@@ -153,12 +178,15 @@ final class DeterministicContractRepairRenderer {
             int renderedConceptSections,
             int renderedActionItems,
             boolean assumptionsRendered,
-            List<String> missingRequirements
+            List<String> missingRequirements,
+            List<String> unresolvedRequirementIds
     ) {
 
         RenderResult {
             missingRequirements = List.copyOf(
                     new ArrayList<>(missingRequirements));
+            unresolvedRequirementIds = List.copyOf(
+                    new ArrayList<>(unresolvedRequirementIds));
         }
 
         boolean contractPassed() {
