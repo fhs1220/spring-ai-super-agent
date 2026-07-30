@@ -917,7 +917,9 @@ public class AgenticRagService {
                             answerLengthContractPassed,
                             "minimumAnswerChars", minimumAnswerChars,
                             "maximumAnswerChars", maximumAnswerChars,
-                            "revised", reviewProvidedRevision
+                            "revised", reviewProvidedRevision,
+                            "revisedAnswer",
+                            reviewProvidedRevision ? revised : ""
                     )
             );
             emit(progressListener, "REVIEW", "COMPLETED", "答案审查",

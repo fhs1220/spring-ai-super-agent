@@ -357,6 +357,61 @@ class AgenticRagServiceTest {
     }
 
     @Test
+    void storesReviewProvidedRevisionForRlvrCandidateAudit() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        String validDraft = longEnough(
+                "先暂停情绪，再共同协商并约定复盘。[来源 1]");
+        String validRevision = longEnough(
+                "先描述事实和感受，再共同协商并约定复盘。[来源 1]");
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"夫妻沟通\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response(validDraft),
+                response("{\"grounded\":false,\"taskCompleted\":false,"
+                        + "\"revisedAnswer\":\"" + validRevision + "\"}")
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "冲突后应描述事实和感受，再共同协商。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        InMemoryAgentTrajectoryRepository trajectoryRepository =
+                new InMemoryAgentTrajectoryRepository();
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory,
+                trajectoryRepository,
+                new AgentRewardCalculator()
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "夫妻争吵后怎么沟通？",
+                "review-revision-audit",
+                "你是恋爱心理顾问。"
+        );
+
+        assertThat(result.answer()).isEqualTo(validRevision);
+        assertThat(result.trace().steps())
+                .extracting(step -> step.phase())
+                .containsSubsequence("GENERATE", "REVIEW", "RLVR_SELECT")
+                .doesNotContain("REVISE");
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.REVIEW)
+                .findFirst().orElseThrow().output())
+                .containsEntry("revisedAnswer", validRevision);
+        verify(chatModel, times(4)).call(any(Prompt.class));
+    }
+
+    @Test
     void deterministicMinimumLengthGateRevisesOtherwiseApprovedDraft() {
         ChatModel chatModel = mock(ChatModel.class);
         VectorStore vectorStore = mock(VectorStore.class);
