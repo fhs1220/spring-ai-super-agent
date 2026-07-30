@@ -201,6 +201,12 @@ v10 30×2 验收随后完成 60/60：RLVR 从 0.753685 提升到 0.761984，平�
 完整报告见
 [`RL_V10_PRECISION_VALIDATION_REPORT.md`](RL_V10_PRECISION_VALIDATION_REPORT.md)。
 
+v11 随后完成零调用结构化升级：识别已有行内编号和七天标题，加入四组安全语义别名，
+并删除 v10 中成功率为 0/25 的第二次模型重写。v10 历史轨迹反事实可把契约通过从
+35/60 提高到 52/60，同时每 60 条理论减少 25 次无收益调用；但仍有 8 条真实内容缺失，
+所以状态为 `DO_NOT_AUTHORIZE_YET`，不冻结新回放。详见
+[`RL_PRECISION_UPGRADE_V11_REPORT.md`](RL_PRECISION_UPGRADE_V11_REPORT.md)。
+
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。
 除非预算或云端资源条件变化，不继续用固定 Benchmark 反复调参，也不宣称百炼 RL 已完成。

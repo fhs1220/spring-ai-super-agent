@@ -58,9 +58,9 @@ import java.util.regex.Pattern;
 @Component
 public class AgenticRagService {
 
-    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v10";
+    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v11";
 
-    private static final int MAXIMUM_CONTRACT_REPAIR_ATTEMPTS = 2;
+    private static final int MAXIMUM_CONTRACT_REPAIR_ATTEMPTS = 1;
 
     private static final int DEFAULT_MAXIMUM_ANSWER_CHARS = 1600;
 
@@ -866,7 +866,8 @@ public class AgenticRagService {
                                    AgentTrajectoryRecorder recorder,
                                    AgentTelemetryCollector telemetry,
                                    AgentProgressListener progressListener) {
-        String normalizedDraft = normalizeCitationSyntax(draftAnswer);
+        String normalizedDraft = verificationContract.normalizeStructure(
+                normalizeCitationSyntax(draftAnswer));
         AnswerVerificationContract.ContractCheck draftContractCheck =
                 verificationContract.check(normalizedDraft, context);
         boolean citationContractPassed =
@@ -1008,7 +1009,8 @@ public class AgenticRagService {
                     reviewStartedAt);
         }
         if (revised != null && !revised.isBlank()) {
-            revised = normalizeCitationSyntax(revised);
+            revised = verificationContract.normalizeStructure(
+                    normalizeCitationSyntax(revised));
         }
         int contractRepairAttempt = 0;
         while (contractRepairAttempt < MAXIMUM_CONTRACT_REPAIR_ATTEMPTS) {
@@ -1084,7 +1086,8 @@ public class AgenticRagService {
             }
             boolean reviseSucceeded = repaired != null && !repaired.isBlank();
             repaired = reviseSucceeded
-                    ? normalizeCitationSyntax(repaired)
+                    ? verificationContract.normalizeStructure(
+                    normalizeCitationSyntax(repaired))
                     : repaired;
             boolean revisedCitationContractPassed = reviseSucceeded
                     && satisfiesCitationContract(repaired, context);
@@ -1148,7 +1151,8 @@ public class AgenticRagService {
             log.warn("[AgenticRAG][修正] 修正模型未返回有效答案，保留初稿");
             return normalizedDraft;
         }
-        revised = normalizeCitationSyntax(revised);
+        revised = verificationContract.normalizeStructure(
+                normalizeCitationSyntax(revised));
         if (!satisfiesCitationContract(revised, context)) {
             log.warn("[AgenticRAG][修正] 修正答案仍未通过引用契约，将由 RLVR 门禁拒绝");
         }
@@ -1173,21 +1177,28 @@ public class AgenticRagService {
                 true,
                 Map.of(
                         "candidateCount", 2,
-                        "selectorVersion", "deterministic-rlvr-selector-v3",
+                        "selectorVersion", "deterministic-rlvr-selector-v4",
                         "verificationContractVersion",
-                        AnswerVerificationContract.VERSION
+                        AnswerVerificationContract.VERSION,
+                        "structureNormalizerVersion",
+                        AnswerVerificationContract.STRUCTURE_NORMALIZER_VERSION
                 ),
-                Map.of(
-                        "selectedCandidate", selection.selectedCandidate(),
-                        "draftScore", selection.draftScore(),
-                        "revisedScore", selection.revisedScore(),
-                        "verificationContractPassed",
-                        selectedContractCheck.passed(),
-                        "missingRequirements",
-                        selectedContractCheck.missingRequirements(),
-                        "contractNonDegrading",
-                        selection.draftScore() <= selection.revisedScore()
-                                || "DRAFT".equals(selection.selectedCandidate())
+                Map.ofEntries(
+                        Map.entry("selectedCandidate",
+                                selection.selectedCandidate()),
+                        Map.entry("draftScore", selection.draftScore()),
+                        Map.entry("revisedScore", selection.revisedScore()),
+                        Map.entry("verificationContractPassed",
+                                selectedContractCheck.passed()),
+                        Map.entry("missingRequirements",
+                                selectedContractCheck.missingRequirements()),
+                        Map.entry("contractNonDegrading",
+                                selection.draftScore() <= selection.revisedScore()
+                                        || "DRAFT".equals(
+                                        selection.selectedCandidate())),
+                        Map.entry("structureNormalizerVersion",
+                                AnswerVerificationContract
+                                        .STRUCTURE_NORMALIZER_VERSION)
                 )
         );
         emit(progressListener, "RLVR_SELECT", "COMPLETED", "RLVR 候选择优",
@@ -1482,12 +1493,14 @@ public class AgenticRagService {
             String draft,
             String revised,
             AnswerVerificationContract verificationContract) {
-        String normalizedDraft = normalizeCitationSyntax(draft);
-        String normalizedRevised = normalizeCitationSyntax(revised);
         AnswerVerificationContract effectiveContract =
                 (verificationContract == null
                         ? AnswerVerificationContract.inferred(question)
                         : verificationContract.mergeInferred(question));
+        String normalizedDraft = effectiveContract.normalizeStructure(
+                normalizeCitationSyntax(draft));
+        String normalizedRevised = effectiveContract.normalizeStructure(
+                normalizeCitationSyntax(revised));
         int draftScore = deterministicCandidateScore(
                 question, context, normalizedDraft, effectiveContract);
         int revisedScore = deterministicCandidateScore(

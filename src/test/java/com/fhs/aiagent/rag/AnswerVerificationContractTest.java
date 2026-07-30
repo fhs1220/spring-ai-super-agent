@@ -10,6 +10,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AnswerVerificationContractTest {
 
     @Test
+    void versionsTheSemanticContractAndStructureNormalizer() {
+        assertThat(AnswerVerificationContract.VERSION)
+                .isEqualTo("answer-verification-contract-v2");
+        assertThat(AnswerVerificationContract.STRUCTURE_NORMALIZER_VERSION)
+                .isEqualTo("deterministic-answer-structure-v1");
+    }
+
+    @Test
     void detectsEveryMissingRlvrConceptInsteadOfTrustingAReviewerBoolean() {
         AnswerVerificationContract contract = new AnswerVerificationContract(
                 List.of(
@@ -94,5 +102,125 @@ class AnswerVerificationContractTest {
         assertThat(contract.minimumAnswerChars()).isEqualTo(140);
         assertThat(contract.noFollowUp()).isTrue();
         assertThat(contract.minimumActionItems()).isEqualTo(3);
+    }
+
+    @Test
+    void normalizesExistingInlineActionsWithoutInventingContent() {
+        AnswerVerificationContract contract = new AnswerVerificationContract(
+                List.of("三项|3项|三个|3个"),
+                List.of(),
+                1,
+                1600,
+                false,
+                false,
+                false,
+                3
+        );
+        String answer = "行动项：1. 了解喜好；2. 准备惊喜；3. 复盘效果。";
+
+        String normalized = contract.normalizeStructure(answer);
+        AnswerVerificationContract.ContractCheck check =
+                contract.check(answer, "");
+
+        assertThat(normalized).isEqualTo(
+                "行动项：\n1. 了解喜好；\n2. 准备惊喜；\n3. 复盘效果。");
+        assertThat(check.passed()).isTrue();
+    }
+
+    @Test
+    void doesNotTreatDecimalValuesAsInlineActions() {
+        AnswerVerificationContract contract = new AnswerVerificationContract(
+                List.of(),
+                List.of(),
+                1,
+                1600,
+                false,
+                false,
+                false,
+                1
+        );
+        String answer = "建议比例：1.5%，再根据实际情况调整。";
+
+        assertThat(contract.normalizeStructure(answer)).isEqualTo(answer);
+        assertThat(contract.check(answer, "").passed()).isFalse();
+    }
+
+    @Test
+    void recognizesSevenExistingDayHeadingsAsSevenActions() {
+        AnswerVerificationContract contract = new AnswerVerificationContract(
+                List.of("周一|星期一", "周日|星期日"),
+                List.of(),
+                1,
+                1600,
+                false,
+                false,
+                false,
+                7
+        );
+        String answer = """
+                第一天：行动并复盘。
+                第二天：行动并复盘。
+                第三天：行动并复盘。
+                第四天：行动并复盘。
+                第五天：行动并复盘。
+                第六天：行动并复盘。
+                第七天：行动并复盘。
+                """;
+
+        AnswerVerificationContract.ContractCheck check =
+                contract.check(answer, "");
+
+        assertThat(check.passed()).isTrue();
+    }
+
+    @Test
+    void structuralNormalizationDoesNotSynthesizeMissingConcepts() {
+        AnswerVerificationContract contract = new AnswerVerificationContract(
+                List.of("用心", "边界|舒适"),
+                List.of("推荐课程"),
+                1,
+                1600,
+                false,
+                false,
+                false,
+                3
+        );
+        String answer = "行动项：1. 了解喜好；2. 准备惊喜；3. 推荐课程。";
+
+        String normalized = contract.normalizeStructure(answer);
+        AnswerVerificationContract.ContractCheck check =
+                contract.check(normalized, "");
+
+        assertThat(normalized).doesNotContain("用心", "边界", "舒适");
+        assertThat(normalized).contains("推荐课程");
+        assertThat(check.missingRequirements())
+                .contains(
+                        "覆盖概念：用心",
+                        "覆盖概念：边界|舒适",
+                        "删除禁用短语：推荐课程");
+    }
+
+    @Test
+    void acceptsOnlyVersionedSemanticAliasesAlreadyPresentInTheAnswer() {
+        AnswerVerificationContract contract = new AnswerVerificationContract(
+                List.of(
+                        "情绪管理",
+                        "原因",
+                        "优先级|排序",
+                        "今天|立即"),
+                List.of(),
+                1,
+                1600,
+                false,
+                false,
+                false,
+                0
+        );
+        String answer = "今晚先正视情绪并分析根源，再优先处理最紧急的问题。";
+
+        AnswerVerificationContract.ContractCheck check =
+                contract.check(answer, "");
+
+        assertThat(check.passed()).isTrue();
     }
 }

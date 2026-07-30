@@ -5,7 +5,10 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -26,14 +29,43 @@ public record AnswerVerificationContract(
         @JsonAlias("minimum_action_items") Integer minimumActionItems
 ) {
 
-    public static final String VERSION = "answer-verification-contract-v1";
+    public static final String VERSION = "answer-verification-contract-v2";
+
+    public static final String STRUCTURE_NORMALIZER_VERSION =
+            "deterministic-answer-structure-v1";
 
     private static final int MAXIMUM_LIST_SIZE = 24;
 
     private static final int MAXIMUM_ITEM_CHARS = 80;
 
     private static final Pattern NUMBERED_ACTION = Pattern.compile(
-            "(?m)^\\s*(?:#{1,6}\\s*)?(?:\\d+[.、)]|[-*])\\s*");
+            "(?<![\\p{L}\\p{N}])(10|[1-9])[.、)）](?!\\d)(?=\\s*\\S)");
+
+    private static final Pattern BULLET_ACTION = Pattern.compile(
+            "(?m)^\\s*(?:#{1,6}\\s*)?[-*]\\s+");
+
+    private static final Pattern INLINE_ACTION_BOUNDARY = Pattern.compile(
+            "([：；;])\\s*((?:10|[1-9])[.、)）])(?!\\d)\\s*");
+
+    private static final List<List<String>> DAY_ACTION_MARKERS = List.of(
+            List.of("周一", "星期一", "第一天", "第1天"),
+            List.of("周二", "星期二", "第二天", "第2天"),
+            List.of("周三", "星期三", "第三天", "第3天"),
+            List.of("周四", "星期四", "第四天", "第4天"),
+            List.of("周五", "星期五", "第五天", "第5天"),
+            List.of("周六", "星期六", "第六天", "第6天"),
+            List.of("周日", "周天", "星期日", "星期天",
+                    "第七天", "第7天")
+    );
+
+    private static final Map<String, List<String>> VERIFIED_CONCEPT_ALIASES =
+            Map.of(
+                    "情绪管理", List.of(
+                            "正视情绪", "缓解焦虑", "调节情绪", "应对焦虑"),
+                    "原因", List.of("根源", "成因"),
+                    "优先级|排序", List.of("优先处理", "按优先顺序"),
+                    "今天|立即", List.of("今日", "今晚", "当日")
+            );
 
     private static final List<String> FOLLOW_UP_PHRASES = List.of(
             "请你详细描述", "请详细描述", "请补充更多",
@@ -130,7 +162,7 @@ public record AnswerVerificationContract(
     }
 
     public ContractCheck check(String answer, String context) {
-        String candidate = Objects.toString(answer, "");
+        String candidate = normalizeStructure(answer);
         List<String> missing = new ArrayList<>();
         int length = candidate.codePointCount(0, candidate.length());
         if (minimumAnswerChars != null && length < minimumAnswerChars) {
@@ -149,8 +181,9 @@ public record AnswerVerificationContract(
                 candidate, context)) {
             missing.add("使用有效的 [来源 n] 单编号引用");
         }
+        int observedActions = observedActionItems(candidate);
         for (String expression : requiredConcepts) {
-            if (!containsAlternative(candidate, expression)) {
+            if (!conceptSatisfied(candidate, expression, observedActions)) {
                 missing.add("覆盖概念：" + expression);
             }
         }
@@ -164,7 +197,6 @@ public record AnswerVerificationContract(
             missing.add("直接回答，不向用户追问");
         }
         int requiredActions = minimumActionItems == null ? 0 : minimumActionItems;
-        long observedActions = NUMBERED_ACTION.matcher(candidate).results().count();
         if (requiredActions > 0 && observedActions < requiredActions) {
             missing.add("至少提供 " + requiredActions + " 个行动项");
         }
@@ -194,11 +226,35 @@ public record AnswerVerificationContract(
             checks.add("必须标明合理假设或信息边界");
         }
         if (minimumActionItems != null && minimumActionItems > 0) {
-            checks.add("至少 " + minimumActionItems + " 个行动项");
+            checks.add("至少 " + minimumActionItems
+                    + " 个行动项；每项单独成行并用 1.、2.、3. 编号");
         }
-        return checks.isEmpty()
+        String checklist = checks.isEmpty()
                 ? "（无额外结构化约束）"
                 : String.join("\n", checks.stream().map("- "::concat).toList());
+        return checklist + "\n- 含“|”的契约表示任选其一，"
+                + "答案只写自然表达，不得照抄竖线备选串";
+    }
+
+    /**
+     * 只规范答案中已经存在的结构，不补写概念、事实、来源或行动内容。
+     */
+    public String normalizeStructure(String answer) {
+        String normalized = Objects.toString(answer, "");
+        for (String expression : requiredConcepts) {
+            if (!expression.contains("|") || !normalized.contains(expression)) {
+                continue;
+            }
+            String firstAlternative = firstAlternative(expression);
+            if (!firstAlternative.isEmpty()) {
+                normalized = normalized.replace(expression, firstAlternative);
+            }
+        }
+        if (minimumActionItems == null || minimumActionItems <= 0) {
+            return normalized;
+        }
+        return INLINE_ACTION_BOUNDARY.matcher(normalized)
+                .replaceAll("$1\n$2 ");
     }
 
     private static List<String> sanitize(List<String> values) {
@@ -243,6 +299,75 @@ public record AnswerVerificationContract(
             }
         }
         return false;
+    }
+
+    private static boolean conceptSatisfied(
+            String answer,
+            String expression,
+            int observedActions) {
+        if (containsAlternative(answer, expression)) {
+            return true;
+        }
+        if (VERIFIED_CONCEPT_ALIASES.getOrDefault(expression, List.of())
+                .stream().anyMatch(answer::contains)) {
+            return true;
+        }
+        int requiredQuantity = requiredActionQuantity(expression);
+        if (requiredQuantity > 0 && observedActions >= requiredQuantity) {
+            return true;
+        }
+        int requiredDay = requiredDay(expression);
+        return requiredDay > 0 && containsDay(answer, requiredDay);
+    }
+
+    private static int requiredActionQuantity(String expression) {
+        if (List.of(expression.split("\\|")).stream().map(String::trim).anyMatch(
+                value -> Set.of("三项", "3项", "三个", "3个").contains(value))) {
+            return 3;
+        }
+        return 0;
+    }
+
+    private static int requiredDay(String expression) {
+        List<String> alternatives = List.of(expression.split("\\|"));
+        if (alternatives.stream().map(String::trim).anyMatch(
+                value -> Set.of("周一", "星期一").contains(value))) {
+            return 1;
+        }
+        if (alternatives.stream().map(String::trim).anyMatch(
+                value -> Set.of("周日", "周天", "星期日", "星期天").contains(value))) {
+            return 7;
+        }
+        return 0;
+    }
+
+    private static int observedActionItems(String answer) {
+        LinkedHashSet<Integer> ordinals = new LinkedHashSet<>();
+        Matcher matcher = NUMBERED_ACTION.matcher(answer);
+        while (matcher.find()) {
+            ordinals.add(Integer.parseInt(matcher.group(1)));
+        }
+        int contiguousOrdinals = 0;
+        while (ordinals.contains(contiguousOrdinals + 1)) {
+            contiguousOrdinals++;
+        }
+        int bulletActions = (int) BULLET_ACTION.matcher(answer).results().count();
+        int dayActions = 0;
+        for (int day = 1; day <= DAY_ACTION_MARKERS.size(); day++) {
+            if (containsDay(answer, day)) {
+                dayActions++;
+            }
+        }
+        return Math.max(contiguousOrdinals, Math.max(bulletActions, dayActions));
+    }
+
+    private static boolean containsDay(String answer, int day) {
+        return DAY_ACTION_MARKERS.get(day - 1).stream().anyMatch(answer::contains);
+    }
+
+    private static String firstAlternative(String expression) {
+        String[] alternatives = expression.split("\\|");
+        return alternatives.length == 0 ? "" : alternatives[0].trim();
     }
 
     private static boolean contextHasSources(String context) {

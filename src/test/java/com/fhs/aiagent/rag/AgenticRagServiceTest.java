@@ -604,11 +604,18 @@ class AgenticRagServiceTest {
                 .findFirst().orElseThrow().output())
                 .containsEntry("attempt", 1)
                 .containsEntry("verificationContractPassed", true);
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.RLVR_SELECT)
+                .findFirst().orElseThrow().output())
+                .containsEntry(
+                        "structureNormalizerVersion",
+                        "deterministic-answer-structure-v1");
         verify(chatModel, times(5)).call(any(Prompt.class));
     }
 
     @Test
-    void contractRepairIsBoundedAndRetriesOnce() {
+    void contractRepairIsBoundedToOneModelRewrite() {
         ChatModel chatModel = mock(ChatModel.class);
         VectorStore vectorStore = mock(VectorStore.class);
         ChatMemory chatMemory = MessageWindowChatMemory.builder()
@@ -620,10 +627,6 @@ class AgenticRagServiceTest {
         String incompleteFirstRepair = longEnough(
                 "1. 描述事实和感受。[来源 1]\n"
                         + "2. 共同协商解决方案。[来源 1]");
-        String completeSecondRepair = longEnough(
-                "1. 描述事实和感受。[来源 1]\n"
-                        + "2. 共同协商解决方案。[来源 1]\n"
-                        + "3. 约定时间复盘结果。[来源 1]");
         when(chatModel.call(any(Prompt.class))).thenReturn(
                 response("{\"subQueries\":[\"夫妻沟通\"]}"),
                 response("{\"sufficient\":true,\"missingInfo\":\"\","
@@ -631,8 +634,7 @@ class AgenticRagServiceTest {
                 response(incompleteDraft),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}"),
-                response(incompleteFirstRepair),
-                response(completeSecondRepair)
+                response(incompleteFirstRepair)
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -656,20 +658,25 @@ class AgenticRagServiceTest {
                 "你是恋爱心理顾问。"
         );
 
-        assertThat(result.answer()).isEqualTo(completeSecondRepair);
+        assertThat(result.answer()).isNotBlank();
         assertThat(trajectoryRepository.findById(result.trajectoryId())
                 .orElseThrow().steps().stream()
                 .filter(step -> step.type() == AgentStepType.REVISE)
                 .map(step -> step.output().get("attempt"))
                 .toList())
-                .containsExactly(1, 2);
-        verify(chatModel, times(6)).call(any(Prompt.class));
+                .containsExactly(1);
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.REVISE)
+                .findFirst().orElseThrow().output())
+                .containsEntry("maximumAttempts", 1);
+        verify(chatModel, times(5)).call(any(Prompt.class));
     }
 
     @Test
     void mirrorsSeedAnswerLengthContracts() {
         assertThat(AgenticRagService.DEFAULT_POLICY_VERSION)
-                .isEqualTo("agentic-rag-v10");
+                .isEqualTo("agentic-rag-v11");
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(
