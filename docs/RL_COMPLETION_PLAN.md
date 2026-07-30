@@ -164,11 +164,14 @@ Review/Revise 产生两份候选时，使用从 RLVR 失败模式固化的确定
 下一次获得真实回放授权后，必须用新增轨迹字段直接报告初稿、修订稿和最终选择的逐条差值。
 完整证据见 [`RL_PRECISION_UPGRADE_V8_REPORT.md`](RL_PRECISION_UPGRADE_V8_REPORT.md)。
 
-v8 最终精准度验证已进一步冻结为唯一一次 30 题 × 2 轮高风险回放：Single/Multi 各
-15 题，纳入全部 13 个历史 Revise 问题，冻结费用上限 ¥0.2554823。离线冻结和 Dry Run
-调用均为 0，真实执行等待独立授权；完成后不追加新批次，直接由固定门禁判定
-`PRECISION_UPGRADE_VALIDATED` 或 `NOT_PROMOTED`。详见
-[`RL_V8_PRECISION_VALIDATION_PLAN.md`](RL_V8_PRECISION_VALIDATION_PLAN.md)。
+v8 最终精准度验证进一步冻结为唯一一次 30 题 × 2 轮高风险回放：Single/Multi 各
+15 题，纳入全部 13 个历史 Revise 问题，冻结费用上限 ¥0.2554823。2026-07-30 获得
+授权后，首条真实轨迹即出现 `instruction_contract_incomplete`，RLVR v3 为 0.659771；
+回放器按冻结的零违规门禁在 1/60 自动止损。实际消耗 4 次模型调用、5,995 Token、
+估算 ¥0.0018879，超时为 0。结论为 `NOT_PROMOTED`，不重跑本批次。结果证明 v8
+只能在已有初稿/修订稿时防止选择退化，不能修复 Reviewer 未发现、因而没有生成修订稿的
+契约遗漏。详见
+[`RL_V8_PRECISION_VALIDATION_REPORT.md`](RL_V8_PRECISION_VALIDATION_REPORT.md)。
 
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。

@@ -2,16 +2,22 @@
 
 ## 结论
 
-`agentic-rag-v8` 的最终精准度验证集、真实回放计划和回放后评测器已经离线冻结。当前状态：
+`agentic-rag-v8` 的最终精准度验证集、真实回放计划和回放后评测器已经离线冻结，并于
+2026-07-30 获得授权后按冻结命令执行。当前状态：
 
 ```text
-STATE: READY_FOR_EXPLICIT_REPLAY_AUTHORIZATION
-MODEL CALLS: 0
-BILLABLE OPERATIONS: 0
+STATE: STOPPED_BY_FROZEN_RLVR_GATE
+DECISION: NOT_PROMOTED
+COMPLETED: 1 / 60
+MODEL CALLS: 4
+TOKENS: 5,995
+ESTIMATED COST: ¥0.0018879
 ```
 
-下一步只有一次 `30×2` 真实回放，不增加试跑、Judge、人工标注或云训练阶段。真实回放
-必须获得独立授权；本次冻结没有调用模型。
+首条轨迹出现真实的 `instruction_contract_incomplete`，RLVR v3 为 `0.659771`。
+回放器按预先冻结的零违规门禁自动止损，没有强行执行剩余 59 条，也不重复本批次。
+完整处置和根因见
+[`RL_V8_PRECISION_VALIDATION_REPORT.md`](RL_V8_PRECISION_VALIDATION_REPORT.md)。
 
 ## 冻结身份
 
