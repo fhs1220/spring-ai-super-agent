@@ -222,7 +222,7 @@ class AgenticRagServiceTest {
                 response(uncitedDraft),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}"),
-                response(validRevision)
+                response(structuredRepair(validRevision))
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -273,7 +273,7 @@ class AgenticRagServiceTest {
                         + "\"followUpQueries\":[]}"),
                 response(uncitedDraft),
                 response("{\"grounded\":true,[来源 1]}"),
-                response(validRevision)
+                response(structuredRepair(validRevision))
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -327,7 +327,7 @@ class AgenticRagServiceTest {
                 response(overlongDraft),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}"),
-                response(validRevision)
+                response(structuredRepair(validRevision))
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -431,7 +431,7 @@ class AgenticRagServiceTest {
                 response(shortDraft),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}"),
-                response(validRevision)
+                response(structuredRepair(validRevision))
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -483,7 +483,7 @@ class AgenticRagServiceTest {
                 response(incompleteDraft),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}"),
-                response(completeRevision)
+                response(structuredRepair(completeRevision))
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -569,7 +569,7 @@ class AgenticRagServiceTest {
                 response("{\"grounded\":false,\"taskCompleted\":false,"
                         + "\"revisedAnswer\":\""
                         + jsonEscape(incompleteReviewerRevision) + "\"}"),
-                response(completeRepair)
+                response(structuredRepair(completeRepair))
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -603,7 +603,10 @@ class AgenticRagServiceTest {
                 .filter(step -> step.type() == AgentStepType.REVISE)
                 .findFirst().orElseThrow().output())
                 .containsEntry("attempt", 1)
-                .containsEntry("verificationContractPassed", true);
+                .containsEntry("verificationContractPassed", true)
+                .containsEntry(
+                        "contractRepairRendererVersion",
+                        "deterministic-contract-repair-renderer-v1");
         assertThat(trajectoryRepository.findById(result.trajectoryId())
                 .orElseThrow().steps().stream()
                 .filter(step -> step.type() == AgentStepType.RLVR_SELECT)
@@ -611,6 +614,104 @@ class AgenticRagServiceTest {
                 .containsEntry(
                         "structureNormalizerVersion",
                         "deterministic-answer-structure-v1");
+        verify(chatModel, times(5)).call(any(Prompt.class));
+    }
+
+    @Test
+    void structuredRepairRendersMissingConceptEvidenceAndActions() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        String incompleteDraft =
+                "可以先准备一个小惊喜，再询问对方感受。[来源 1]";
+        String structuredRepair = """
+                {
+                  "answer": "可以从低风险的小事开始，并根据反馈调整。[来源 1]",
+                  "evidence": [
+                    {
+                      "requirement": "用心",
+                      "content": "提前了解并记录对方真正重视的偏好，再据此准备。"
+                    },
+                    {
+                      "requirement": "边界|舒适",
+                      "content": "先确认双方可接受的范围，不以惊喜为名施加压力。"
+                    }
+                  ],
+                  "actionItems": [
+                    "询问对方近期最期待的一件小事。",
+                    "共同确认预算、时间和不希望触碰的范围。",
+                    "执行后询问感受并记录下一次调整点。"
+                  ],
+                  "assumptions": ""
+                }
+                """;
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"浪漫惊喜\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response(incompleteDraft),
+                response("{\"grounded\":true,\"taskCompleted\":true,"
+                        + "\"revisedAnswer\":null}"),
+                response(structuredRepair)
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "浪漫安排应尊重双方偏好和可接受范围，并在执行后沟通感受。",
+                        Map.of("filename", "恋爱篇.md")
+                )));
+        InMemoryAgentTrajectoryRepository trajectoryRepository =
+                new InMemoryAgentTrajectoryRepository();
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory,
+                trajectoryRepository,
+                new AgentRewardCalculator()
+        );
+        AnswerVerificationContract contract =
+                new AnswerVerificationContract(
+                        List.of("用心", "边界|舒适"),
+                        List.of("推荐课程"),
+                        1,
+                        1600,
+                        true,
+                        false,
+                        false,
+                        3
+                );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "请给我一个尊重对方感受的浪漫惊喜方案。",
+                "structured-contract-repair",
+                "你是恋爱心理顾问。",
+                AgentProgressListener.NONE,
+                AgenticRagService.RunOptions.online(contract)
+        );
+
+        assertThat(result.answer())
+                .contains(
+                        "**用心**：提前了解并记录对方真正重视的偏好",
+                        "**边界**：先确认双方可接受的范围",
+                        "1. 询问对方近期最期待的一件小事。",
+                        "2. 共同确认预算、时间和不希望触碰的范围。",
+                        "3. 执行后询问感受并记录下一次调整点。")
+                .doesNotContain("推荐课程");
+        assertThat(contract.check(
+                result.answer(),
+                "[来源 1 | 恋爱篇.md]\n浪漫安排应尊重双方偏好。"
+        ).passed()).isTrue();
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.REVISE)
+                .findFirst().orElseThrow().output())
+                .containsEntry("structuredEvidenceAccepted", true)
+                .containsEntry("renderedConceptSections", 2)
+                .containsEntry("renderedActionItems", 3)
+                .containsEntry("verificationContractPassed", true);
         verify(chatModel, times(5)).call(any(Prompt.class));
     }
 
@@ -634,7 +735,7 @@ class AgenticRagServiceTest {
                 response(incompleteDraft),
                 response("{\"grounded\":true,\"taskCompleted\":true,"
                         + "\"revisedAnswer\":null}"),
-                response(incompleteFirstRepair)
+                response(structuredRepair(incompleteFirstRepair))
         );
         when(vectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(new Document(
@@ -676,7 +777,7 @@ class AgenticRagServiceTest {
     @Test
     void mirrorsSeedAnswerLengthContracts() {
         assertThat(AgenticRagService.DEFAULT_POLICY_VERSION)
-                .isEqualTo("agentic-rag-v11");
+                .isEqualTo("agentic-rag-v12");
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(
@@ -845,5 +946,11 @@ class AgenticRagServiceTest {
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
+    }
+
+    private static String structuredRepair(String answer) {
+        return "{\"answer\":\"" + jsonEscape(answer)
+                + "\",\"evidence\":[],\"actionItems\":[],"
+                + "\"assumptions\":\"\"}";
     }
 }

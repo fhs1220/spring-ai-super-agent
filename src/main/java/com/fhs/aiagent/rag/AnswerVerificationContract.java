@@ -29,7 +29,7 @@ public record AnswerVerificationContract(
         @JsonAlias("minimum_action_items") Integer minimumActionItems
 ) {
 
-    public static final String VERSION = "answer-verification-contract-v2";
+    public static final String VERSION = "answer-verification-contract-v3";
 
     public static final String STRUCTURE_NORMALIZER_VERSION =
             "deterministic-answer-structure-v1";

@@ -58,7 +58,7 @@ import java.util.regex.Pattern;
 @Component
 public class AgenticRagService {
 
-    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v11";
+    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v12";
 
     private static final int MAXIMUM_CONTRACT_REPAIR_ATTEMPTS = 1;
 
@@ -1032,9 +1032,9 @@ public class AgenticRagService {
                     List.of("受限修正：" + contractRepairAttempt
                             + "/" + MAXIMUM_CONTRACT_REPAIR_ATTEMPTS),
                     reviseStartedAt);
-            String repaired;
+            StructuredContractRepair repairPayload;
             try {
-                repaired = revise(
+                repairPayload = revise(
                         question,
                         context,
                         repairBase,
@@ -1084,6 +1084,12 @@ public class AgenticRagService {
                         contractRepairAttempt, exception.getMessage());
                 break;
             }
+            DeterministicContractRepairRenderer.RenderResult renderedRepair =
+                    DeterministicContractRepairRenderer.render(
+                            repairPayload,
+                            verificationContract,
+                            context);
+            String repaired = renderedRepair.answer();
             boolean reviseSucceeded = repaired != null && !repaired.isBlank();
             repaired = reviseSucceeded
                     ? verificationContract.normalizeStructure(
@@ -1107,7 +1113,8 @@ public class AgenticRagService {
                     ),
                     Map.ofEntries(
                             Map.entry("revised", reviseSucceeded),
-                            Map.entry("taskCompleted", reviseSucceeded),
+                            Map.entry("taskCompleted",
+                                    revisedContractCheck.passed()),
                             Map.entry("citationContractPassed",
                                     revisedCitationContractPassed),
                             Map.entry("answerLengthContractPassed",
@@ -1116,6 +1123,16 @@ public class AgenticRagService {
                             Map.entry("maximumAnswerChars", maximumAnswerChars),
                             Map.entry("verificationContractVersion",
                                     AnswerVerificationContract.VERSION),
+                            Map.entry("contractRepairRendererVersion",
+                                    DeterministicContractRepairRenderer.VERSION),
+                            Map.entry("structuredEvidenceAccepted",
+                                    renderedRepair.acceptedStructuredEvidence()),
+                            Map.entry("renderedConceptSections",
+                                    renderedRepair.renderedConceptSections()),
+                            Map.entry("renderedActionItems",
+                                    renderedRepair.renderedActionItems()),
+                            Map.entry("assumptionsRendered",
+                                    renderedRepair.assumptionsRendered()),
                             Map.entry("verificationContractPassed",
                                     revisedContractCheck.passed()),
                             Map.entry("missingRequirements",
@@ -1177,11 +1194,13 @@ public class AgenticRagService {
                 true,
                 Map.of(
                         "candidateCount", 2,
-                        "selectorVersion", "deterministic-rlvr-selector-v4",
+                        "selectorVersion", "deterministic-rlvr-selector-v5",
                         "verificationContractVersion",
                         AnswerVerificationContract.VERSION,
                         "structureNormalizerVersion",
-                        AnswerVerificationContract.STRUCTURE_NORMALIZER_VERSION
+                        AnswerVerificationContract.STRUCTURE_NORMALIZER_VERSION,
+                        "contractRepairRendererVersion",
+                        DeterministicContractRepairRenderer.VERSION
                 ),
                 Map.ofEntries(
                         Map.entry("selectedCandidate",
@@ -1198,7 +1217,9 @@ public class AgenticRagService {
                                         selection.selectedCandidate())),
                         Map.entry("structureNormalizerVersion",
                                 AnswerVerificationContract
-                                        .STRUCTURE_NORMALIZER_VERSION)
+                                        .STRUCTURE_NORMALIZER_VERSION),
+                        Map.entry("contractRepairRendererVersion",
+                                DeterministicContractRepairRenderer.VERSION)
                 )
         );
         emit(progressListener, "RLVR_SELECT", "COMPLETED", "RLVR 候选择优",
@@ -1360,14 +1381,15 @@ public class AgenticRagService {
         );
     }
 
-    private String revise(String question,
-                          String context,
-                          String draftAnswer,
-                          int minimumAnswerChars,
-                          int maximumAnswerChars,
-                          AnswerVerificationContract verificationContract,
-                          List<String> missingRequirements,
-                          AgentTelemetryCollector telemetry) {
+    private StructuredContractRepair revise(
+            String question,
+            String context,
+            String draftAnswer,
+            int minimumAnswerChars,
+            int maximumAnswerChars,
+            AnswerVerificationContract verificationContract,
+            List<String> missingRequirements,
+            AgentTelemetryCollector telemetry) {
         String system = """
                 你是答案修正器。请依据给定知识库上下文重写候选答案，删除无依据或答非所问的内容，
                 并完整执行用户明确要求的任务、格式和约束。上下文不足时应明确说明信息边界；
@@ -1381,7 +1403,13 @@ public class AgenticRagService {
                 %s
                 确定性检查已发现以下缺失项，修订稿必须全部解决：
                 %s
-                只输出给用户的完整修正答案。
+                返回结构化对象：
+                - answer：完整修正答案；
+                - evidence：每个必需概念各一项，requirement 必须原样填写契约表达，
+                  content 必须是对该概念的具体解释或建议，不能只重复关键词；
+                - actionItems：契约要求行动项时，提供可直接执行的逐项内容；
+                - assumptions：契约要求假设或信息边界时填写具体说明，否则可为空。
+                不要在 answer 中输出 JSON、契约元数据或上述字段名。
                 """.formatted(
                 minimumAnswerChars,
                 maximumAnswerChars,
@@ -1392,14 +1420,14 @@ public class AgenticRagService {
                         missingRequirements.stream().map("- "::concat).toList()));
         String user = "知识库上下文：\n%s\n\n用户问题：%s\n\n待修正答案：\n%s"
                 .formatted(context, question, draftAnswer);
-        return telemetry.captureContent(
+        return telemetry.captureEntity(
                 "REVISE",
                 system + "\n" + user,
                 () -> chatClient.prompt()
                         .system(system)
                         .user(user)
                         .call()
-                        .chatResponse()
+                        .responseEntity(StructuredContractRepair.class)
         );
     }
 
