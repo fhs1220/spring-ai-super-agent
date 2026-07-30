@@ -3,15 +3,15 @@
 ## 当前状态
 
 ```text
-STATE: READY_FOR_EXPLICIT_REPLAY_AUTHORIZATION
+STATE: COMPLETED
 VALIDATION: policy-v10-precision-30x2
-PLANNED TRAJECTORIES: 60
-MODEL CALLS DURING IMPLEMENTATION/FREEZE: 0
-BILLABLE OPERATIONS DURING IMPLEMENTATION/FREEZE: 0
+COMPLETED TRAJECTORIES: 60/60
+DECISION: NOT_PROMOTED
 ```
 
 这是 v9 `NOT_PROMOTED` 后的唯一修复验收，不增加 Judge、人工标注、云训练或额外试跑。
-真实执行结束后直接给出 `PRECISION_UPGRADE_VALIDATED` 或 `NOT_PROMOTED`。
+真实执行已结束，最终结论和根因见
+[`RL_V10_PRECISION_VALIDATION_REPORT.md`](RL_V10_PRECISION_VALIDATION_REPORT.md)。
 
 ## 冻结身份
 
@@ -107,11 +107,6 @@ python3 bailian-agent-rl/evaluate_v10_precision_validation.py \
 
 当前 Dry Run 已验证 Plan fingerprint 一致，评测器会拒绝 0/60 的不完整计划。
 
-## 授权边界
+## 授权记录
 
-真实执行需要用户明确回复：
-
-```text
-授权执行 v10 精准度 30×2 真实回放
-```
-
+用户已明确授权并完成本次 30×2 回放。该授权已消费完毕，不授权补跑、追加批次或后续版本。

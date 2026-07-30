@@ -65,6 +65,6 @@ v10 对 Reviewer、Revise 和 Selector 采用统一边界：
 
 ## 工程边界
 
-v10 尚未执行任何真实模型回放，不能宣称已经通过发布门禁。唯一后续动作是执行已经冻结的
-30 题 × 2 轮真实验收；完整身份、预算和退出规则见
-[`RL_V10_PRECISION_VALIDATION_PLAN.md`](RL_V10_PRECISION_VALIDATION_PLAN.md)。
+离线修复随后已完成唯一一次 30 题 × 2 轮真实验收。v10 的 RLVR 相对 v9 小幅显著提升，
+但最终契约、Selector 退化和超时门禁未通过，结论为 `NOT_PROMOTED`。完整证据见
+[`RL_V10_PRECISION_VALIDATION_REPORT.md`](RL_V10_PRECISION_VALIDATION_REPORT.md)。
