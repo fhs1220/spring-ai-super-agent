@@ -131,3 +131,25 @@ Stage 6 提交前零计费预检已完成：DashScope SDK 已从不包含 Agenti
 3. 设置 `BAILIAN_RL_ALLOW_BILLING=true --execute`：百炼付费训练。
 
 每个付费阶段都先用上一阶段的真实 Token、调用数和费用估算更新预算，再决定是否扩量。
+
+## 低预算决策
+
+由于 `qwen3.5-9b` 官方 Demo 最低 24 个 MTU4，Stage 6 云训练不满足“最多几十元”的
+用户预算，A/B/C/D 云训练不得执行。Stage 6 保持 `TRAINING_READY_COST_BLOCKED`，
+不视为技术失败，也不宣称完成百炼参数训练。
+
+替代证据使用本地 `Qwen/Qwen2.5-0.5B-Instruct` DPO LoRA 代理实验：从 Stage 3
+同题双轨迹中仅选择两轮硬门禁均通过、RLVR 分差至少 0.01、回答长度适合 M2 16GB 的
+偏好对，并继续执行固定 Benchmark 污染审计。该实验云训练费用和模型 API 调用均为 0；
+结果只用于证明真实参数更新和训练前后评测闭环，不冒充 9B Agentic RL。
+
+本地代理实验已于 2026-07-30 完成。25 条冻结偏好对切为 20 条训练、5 条验证，
+Benchmark 泄漏为 0；Qwen2.5-0.5B-Instruct 的 540,672 个 LoRA 参数完成真实更新，
+训练耗时 82.344 秒，云训练费用和模型 API 调用均为 0。固定 36 题配对评测显示均分
+从 0.724050 降至 0.721733，4 条安全题平均下降 0.020850，偏好准确率保持 0.20，
+因此适配器被自动判为 `NOT_PROMOTED`，不得部署或用于 D 臂回放。完整证据见
+[`RL_LOCAL_POLICY_PROXY_REPORT.md`](RL_LOCAL_POLICY_PROXY_REPORT.md)。
+
+在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
+参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。
+除非预算或云端资源条件变化，不继续用固定 Benchmark 反复调参，也不宣称百炼 RL 已完成。

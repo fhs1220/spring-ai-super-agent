@@ -28,7 +28,9 @@
 及引用门禁修复证据见
 [`docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md`](docs/RLVR_V3_STRATIFIED_PILOT_REPORT.md)，
 50 题 × 2 轮的 Stage 2 真实扩量结果见
-[`docs/RLVR_V3_STAGE2_50X2_REPORT.md`](docs/RLVR_V3_STAGE2_50X2_REPORT.md)。
+[`docs/RLVR_V3_STAGE2_50X2_REPORT.md`](docs/RLVR_V3_STAGE2_50X2_REPORT.md)。低预算本地
+DPO-LoRA 的真实参数更新、固定 36 题训练前后对比和自动拒绝结论见
+[`docs/RL_LOCAL_POLICY_PROXY_REPORT.md`](docs/RL_LOCAL_POLICY_PROXY_REPORT.md)。
 
 ---
 
@@ -653,6 +655,43 @@ python run_stage6_training.py \
 `datasetProfile=RLVR_ONLY|RLVR_RLAIF|FULL_TRAJECTORY_GUIDED`。完整方案只有在同任务存在至少
 两轮奖励轨迹、同组少量人工锚点并通过 AI Judge 时才会选中；Readiness 会返回选择数、
 不可评分数和选择率。
+
+当百炼 24 个 MTU4 的最低费用超出预算时，仓库提供零云费用的本地参数更新代理实验。
+它从 Stage 3 同题双轨迹按 RLVR 分差冻结 DPO 偏好对，使用
+`Qwen/Qwen2.5-0.5B-Instruct` + LoRA 在 Apple MPS 上训练。该结果只能证明本地小模型
+发生了真实参数更新，不等价于百炼 `qwen3.5-9b` Agentic RL，也不得替代云端训练声明：
+
+```bash
+python bailian-agent-rl/prepare_local_preference_data.py \
+  --replay tmp/agent-rl/replays/policy-v7-v2-stage3-150x2.json \
+  --trajectories tmp/agent-rl/trajectories \
+  --benchmark src/main/resources/evaluation/love-rag-ab.jsonl \
+  --output tmp/agent-rl/local-proxy/policy-v7-local-dpo-qwen25-05b-v2
+```
+
+本地训练器默认仅预检；真实参数更新还要求本地固定模型快照、独立依赖环境、
+`--execute` 和 `LOCAL_PROXY_ALLOW_TRAINING=true`。它强制离线加载模型，并禁止任何
+付费云端回退。
+
+训练完成后必须使用冻结的 36 题 Benchmark 和 5 条偏好留出集做配对评测；评测器默认
+也只运行预检，真实 MPS 推理需要独立门禁。评分权重与 Java `RagAnswerScorer` 保持一致，
+并检查均分、Bootstrap 非劣区间、安全题、偏好准确率和行为变化：
+
+```bash
+LOCAL_PROXY_ALLOW_EVALUATION=true \
+python bailian-agent-rl/evaluate_local_policy_proxy.py \
+  --benchmark src/main/resources/evaluation/love-rag-ab.jsonl \
+  --validation tmp/agent-rl/local-proxy/policy-v7-local-dpo-qwen25-05b-v2/validation.jsonl \
+  --training-report tmp/agent-rl/local-proxy/policy-v7-local-dpo-qwen25-05b-v2/run-v1/training-report.json \
+  --model-path tmp/agent-rl/local-proxy/models/Qwen2.5-0.5B-Instruct \
+  --adapter-path tmp/agent-rl/local-proxy/policy-v7-local-dpo-qwen25-05b-v2/run-v1/adapter \
+  --output tmp/agent-rl/local-proxy/policy-v7-local-dpo-qwen25-05b-v2/evaluation-v1 \
+  --execute
+```
+
+适配器只有在所有冻结门禁通过时才会得到 `PROMOTED`；本地训练进程完成并不等于质量
+提升。报告和原始配对输出都记录 SHA-256，模型、适配器和运行产物继续留在被 Git 忽略的
+`tmp/`，避免把约 1 GB 权重提交到仓库。
 
 查询任务状态或日志：
 
