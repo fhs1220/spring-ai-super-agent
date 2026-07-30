@@ -165,6 +165,57 @@ class V8PrecisionValidationTest(unittest.TestCase):
         self.assertFalse(evidence["rlvr_regressive_selection"])
         self.assertGreater(evidence["draft_rlvr"], evidence["revision_rlvr"])
 
+    def test_v9_candidate_evidence_requires_contract_trace_on_every_stage(self) -> None:
+        item = seed(1, "SINGLE_AGENT", "actions")
+        draft = "1. 共同协商。[来源 1]\n2. 明确分工。[来源 1]\n3. 定期复盘。[来源 1]"
+        revision = draft + "\n执行后记录结果。"
+        trajectory = {
+            "finalAnswer": revision,
+            "retrievedDocumentIds": ["doc-1"],
+            "steps": [
+                {"type": "PLAN", "output": {"queryCount": 1}},
+                {"type": "GENERATE", "output": {"answer": draft}},
+                {
+                    "type": "REVIEW",
+                    "output": {
+                        "verificationContractPassed": False,
+                        "missingRequirements": ["补全检查"],
+                    },
+                },
+                {
+                    "type": "REVISE",
+                    "output": {
+                        "answer": revision,
+                        "verificationContractPassed": True,
+                        "missingRequirements": [],
+                    },
+                },
+                {
+                    "type": "RLVR_SELECT",
+                    "input": {
+                        "selectorVersion": "deterministic-rlvr-selector-v2",
+                    },
+                    "output": {
+                        "selectedCandidate": "REVISED",
+                        "contractNonDegrading": True,
+                        "verificationContractPassed": True,
+                        "missingRequirements": [],
+                    },
+                },
+            ],
+        }
+
+        evidence = evaluate.candidate_evidence(trajectory, item)
+
+        self.assertTrue(evidence["verification_contract_trace_valid"])
+        self.assertTrue(evidence["contract_forced_revision"])
+        self.assertFalse(evidence["draft_contract_passed"])
+        self.assertTrue(evidence["selected_contract_passed"])
+        self.assertEqual(
+            "deterministic-rlvr-selector-v2",
+            evidence["selector_version"],
+        )
+
     def test_citation_normalization_and_bootstrap_are_deterministic(self) -> None:
         self.assertEqual(
             "[来源 1][来源 2]。",

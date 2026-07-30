@@ -151,6 +151,56 @@ def candidate_evidence(
         ),
         None,
     )
+    review = next(
+        (
+            step for step in reversed(steps)
+            if isinstance(step, dict) and step.get("type") == "REVIEW"
+        ),
+        None,
+    )
+    revise_step = next(
+        (
+            step for step in reversed(steps)
+            if isinstance(step, dict) and step.get("type") == "REVISE"
+        ),
+        None,
+    )
+    review_output = (
+        review.get("output")
+        if isinstance(review, dict)
+        and isinstance(review.get("output"), dict)
+        else {}
+    )
+    revise_output = (
+        revise_step.get("output")
+        if isinstance(revise_step, dict)
+        and isinstance(revise_step.get("output"), dict)
+        else {}
+    )
+    selection_output = (
+        selection.get("output")
+        if isinstance(selection, dict)
+        and isinstance(selection.get("output"), dict)
+        else {}
+    )
+    review_contract_traced = (
+        "verificationContractPassed" in review_output
+        and "missingRequirements" in review_output
+    )
+    revise_contract_traced = (
+        revise_step is None
+        or (
+            "verificationContractPassed" in revise_output
+            and "missingRequirements" in revise_output
+        )
+    )
+    selection_contract_traced = (
+        selection is None
+        or (
+            "verificationContractPassed" in selection_output
+            and "missingRequirements" in selection_output
+        )
+    )
     final_answer = normalize_citations(
         str(trajectory.get("finalAnswer") or "").strip()
     )
@@ -167,6 +217,23 @@ def candidate_evidence(
             if revision is not None else None
         ),
         "final_rlvr": score_answer(final_answer, seed, trajectory),
+        "draft_contract_passed": review_output.get(
+            "verificationContractPassed"
+        ),
+        "contract_forced_revision": (
+            review_output.get("verificationContractPassed") is False
+            and revise_step is not None
+        ),
+        "selected_contract_passed": (
+            selection_output.get("verificationContractPassed")
+            if selection is not None
+            else review_output.get("verificationContractPassed")
+        ),
+        "verification_contract_trace_valid": (
+            review_contract_traced
+            and revise_contract_traced
+            and selection_contract_traced
+        ),
     }
     if selection is None:
         evidence.update({
@@ -175,8 +242,7 @@ def candidate_evidence(
             "rlvr_regressive_selection": False,
         })
         return evidence
-    output = selection.get("output")
-    output = output if isinstance(output, dict) else {}
+    output = selection_output
     selected = output.get("selectedCandidate")
     expected = draft if selected == "DRAFT" else revision
     trace_valid = (
@@ -299,6 +365,14 @@ def evaluate(
     selector_rows = [
         row for row in candidate_rows if row["selector_evaluated"]
     ]
+    contract_trace_rows = [
+        row for row in candidate_rows
+        if row["verification_contract_trace_valid"]
+    ]
+    final_contract_passed = sum(
+        row["selected_contract_passed"] is True
+        for row in candidate_rows
+    )
     route_mismatches = sum(
         result.get("route_expectation_matched") is not True
         for result in results
@@ -313,6 +387,10 @@ def evaluate(
     )
     invalid_selector_traces = sum(
         not row["selector_trace_valid"] for row in selector_rows
+    )
+    invalid_selector_versions = sum(
+        row.get("selector_version") != manifest["selector_version"]
+        for row in selector_rows
     )
     gates = manifest["evaluation_gates"]
     interval = paired_bootstrap(
@@ -337,6 +415,16 @@ def evaluate(
             <= int(gates["maximum_rlvr_regressive_selections"]),
         "selector_trace_integrity": invalid_selector_traces == 0,
     }
+    if gates.get("require_verification_contract_trace") is True:
+        checks["verification_contract_trace_integrity"] = (
+            len(contract_trace_rows) == len(candidate_rows)
+        )
+    if "minimum_final_contract_pass_rate" in gates:
+        checks["final_contract_pass_rate_at_least_minimum"] = (
+            final_contract_passed / len(candidate_rows)
+            >= float(gates["minimum_final_contract_pass_rate"])
+        )
+    checks["selector_version_integrity"] = invalid_selector_versions == 0
     return {
         "report_schema_version": REPORT_SCHEMA_VERSION,
         "validation_id": manifest["validation_id"],
@@ -368,6 +456,22 @@ def evaluate(
             ),
             "rlvr_regressive_selections": regressions,
             "invalid_selector_traces": invalid_selector_traces,
+            "invalid_selector_versions": invalid_selector_versions,
+            "draft_direct_contract_pass_count": sum(
+                row["draft_contract_passed"] is True
+                for row in candidate_rows
+            ),
+            "contract_forced_revision_count": sum(
+                row["contract_forced_revision"]
+                for row in candidate_rows
+            ),
+            "final_contract_pass_count": final_contract_passed,
+            "final_contract_pass_rate": round(
+                final_contract_passed / len(candidate_rows),
+                6,
+            ),
+            "verification_contract_trace_valid_count":
+                len(contract_trace_rows),
             "route_mismatches": route_mismatches,
             "timeouts": timeouts,
             "rlvr_violation_trajectories": violations,

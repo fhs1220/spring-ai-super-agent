@@ -1021,6 +1021,12 @@ public class AgenticRagService {
                                 "taskCompleted", false,
                                 "answer", "",
                                 "answerLength", 0,
+                                "verificationContractVersion",
+                                AnswerVerificationContract.VERSION,
+                                "verificationContractPassed",
+                                draftContractCheck.passed(),
+                                "missingRequirements",
+                                draftContractCheck.missingRequirements(),
                                 "fallbackUsed", true
                         )
                 );

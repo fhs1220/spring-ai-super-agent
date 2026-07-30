@@ -182,6 +182,11 @@ Reviewer 假阴性，并捕获全部 5/5 条历史 RLVR 违规。该结果只证
 提分；v9 的真实质量结论仍等待新的独立授权回放。完整证据见
 [`RL_PRECISION_UPGRADE_V9_REPORT.md`](RL_PRECISION_UPGRADE_V9_REPORT.md)。
 
+v9 最终验证已经冻结为唯一一次 30 题 × 2 轮真实回放，费用授权上限
+¥0.2767725；不再增加 Judge、人工标注、云训练或额外试跑。获得明确授权后，正常预计
+20～40 分钟完成回放，随后用零调用评测器直接给出最终结论。详见
+[`RL_V9_PRECISION_VALIDATION_PLAN.md`](RL_V9_PRECISION_VALIDATION_PLAN.md)。
+
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。
 除非预算或云端资源条件变化，不继续用固定 Benchmark 反复调参，也不宣称百炼 RL 已完成。
