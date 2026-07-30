@@ -39,6 +39,20 @@ class AgentRewardCalculatorTest {
     }
 
     @Test
+    void deterministicContractFailureOverridesAnOverconfidentReviewer() {
+        AgentTrajectory base = trajectory(Map.of(
+                "grounded", true,
+                "taskCompleted", true,
+                "verificationContractPassed", false,
+                "revised", false));
+
+        RewardBreakdown reward = calculator.calculate(base);
+
+        assertThat(reward.taskCompletionQuality()).isZero();
+        assertThat(reward.total()).isEqualTo(0.6375);
+    }
+
+    @Test
     void calculatesMultiAgentCollaborationRewardFromProcessSignals() {
         AgentTrajectory base = trajectory(
                 Map.of("grounded", true, "taskCompleted", true, "revised", false));

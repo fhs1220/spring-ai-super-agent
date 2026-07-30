@@ -28,8 +28,26 @@ public class AgentRewardCalculator {
 
         boolean hasTaskCompletionReview = hasOutput(review, "taskCompleted");
         boolean taskCompleted = booleanOutput(review, "taskCompleted");
+        AgentStep selection = lastStep(steps, AgentStepType.RLVR_SELECT);
+        AgentStep revision = lastStep(steps, AgentStepType.REVISE);
+        AgentStep finalContractEvidence = selection != null
+                ? selection
+                : revision != null && booleanOutput(revision, "revised")
+                ? revision
+                : review;
+        boolean hasFinalContractEvidence = hasOutput(
+                finalContractEvidence, "verificationContractPassed");
+        boolean finalContractPassed = !hasFinalContractEvidence
+                || booleanOutput(
+                finalContractEvidence, "verificationContractPassed");
+        if (hasFinalContractEvidence) {
+            taskCompleted = taskCompleted
+                    && finalContractPassed;
+        }
         double taskCompletion;
-        if (hasTaskCompletionReview) {
+        if (!finalContractPassed) {
+            taskCompletion = 0.0;
+        } else if (hasTaskCompletionReview) {
             taskCompletion = taskCompleted ? 1.0 : revised ? 0.8 : 0.0;
         } else {
             // 兼容升级前保存的轨迹：旧审查通过代表答案至少完成了当时的回答任务。

@@ -92,9 +92,9 @@ RAG Pipeline 包括：
 
 ### 自适应多 Agent
 
-`agentic-rag-v8` 使用“确定性 Complexity Router + 轨迹学习策略”判断任务是否值得启动多 Agent，
-并在 Generate、Review、Revise 三个阶段统一执行可审计的引用与回答长度契约；即使
-Review 返回不可解析结果，未通过确定性契约的候选答案也必须进入 Revise：
+`agentic-rag-v9` 使用“确定性 Complexity Router + 轨迹学习策略”判断任务是否值得启动多 Agent，
+并把同一份结构化答案契约贯穿 Generate、Review、Revise、RLVR Select 和在线 Reward；
+即使 Review 错误判断任务已完成，只要确定性逐项检查发现缺失，候选答案也必须进入 Revise：
 
 - 单一能力域的问题走 `SINGLE_AGENT` 快速路径，避免额外延迟和成本；
 - 同时涉及关系、育儿、家务、家庭财务或安全风险的复合问题走
@@ -102,8 +102,8 @@ Review 返回不可解析结果，未通过确定性契约的候选答案也必�
 - 最多并行调用 3 个专业 Agent，把结构化判断、建议、来源、置信度和不确定性写入
   Shared Evidence Blackboard；
 - Synthesis Agent 基于统一知识库证据合并贡献，Review Agent 再检查忠实度和任务完成度；
-- Revise 之后由零额外模型调用的 `RLVR_SELECT` 对初稿和修订稿执行引用、长度、任务格式、
-  假设、复盘、协作和禁止编造等确定性契约选择，避免修订后的回答反而退化；
+- Revise 之后由零额外模型调用的 `RLVR_SELECT` 对初稿和修订稿执行引用、长度、必要概念、
+  任务格式、假设、复盘、协作和禁止编造等确定性契约选择，避免修订后的回答反而退化；
 - 单个专业 Agent 失败不会中断任务，全部失败或综合失败时自动降级到原单 Agent 生成路径。
 - 专业 Agent 有独立总时间预算，只重试失败的 Agent，不重复执行已成功的并行分支；
 - 连续失败达到阈值后开启内存熔断，在冷却期跳过故障 Agent，并继续使用其他贡献或单 Agent 降级。

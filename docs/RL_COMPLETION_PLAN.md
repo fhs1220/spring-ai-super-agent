@@ -173,6 +173,15 @@ v8 最终精准度验证进一步冻结为唯一一次 30 题 × 2 轮高风险�
 契约遗漏。详见
 [`RL_V8_PRECISION_VALIDATION_REPORT.md`](RL_V8_PRECISION_VALIDATION_REPORT.md)。
 
+针对该真实失败，默认策略已离线升级为 `agentic-rag-v9`。种子中的同一份
+`verification_contract` 现在随请求进入 Java，并跨 Durable Run 持久化，贯穿 Generate、
+Review、确定性检查、强制 Revise、`deterministic-rlvr-selector-v2` 和在线 Reward。即使
+Reviewer 错误返回 `taskCompleted=true`，只要必要概念、引用、长度、行动项、假设或禁止
+短语任一项不满足，也不能直接放行。冻结的 60 条 v7 高风险历史轨迹零调用审计发现 54 次
+Reviewer 假阴性，并捕获全部 5/5 条历史 RLVR 违规。该结果只证明拦截覆盖，不冒充真实
+提分；v9 的真实质量结论仍等待新的独立授权回放。完整证据见
+[`RL_PRECISION_UPGRADE_V9_REPORT.md`](RL_PRECISION_UPGRADE_V9_REPORT.md)。
+
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。
 除非预算或云端资源条件变化，不继续用固定 Benchmark 反复调参，也不宣称百炼 RL 已完成。

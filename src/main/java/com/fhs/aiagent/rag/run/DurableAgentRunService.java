@@ -1,6 +1,7 @@
 package com.fhs.aiagent.rag.run;
 
 import com.fhs.aiagent.rag.AgentProgressEvent;
+import com.fhs.aiagent.rag.AnswerVerificationContract;
 import com.fhs.aiagent.rl.model.AgenticRagResult;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,10 +30,21 @@ public class DurableAgentRunService {
     /**
      * 创建新运行；相同 runId 和请求已完成时直接返回持久化结果，实现幂等回放。
      */
-    public synchronized DurableAgentRun createOrReplay(String runId, String message, String chatId) {
+    public synchronized DurableAgentRun createOrReplay(
+            String runId,
+            String message,
+            String chatId) {
+        return createOrReplay(runId, message, chatId, null);
+    }
+
+    public synchronized DurableAgentRun createOrReplay(
+            String runId,
+            String message,
+            String chatId,
+            AnswerVerificationContract verificationContract) {
         DurableAgentRun existing = repository.findById(runId).orElse(null);
         if (existing != null) {
-            requireSameRequest(existing, message, chatId);
+            requireSameRequest(existing, message, chatId, verificationContract);
             if (existing.status() == AgentRunStatus.COMPLETED) {
                 return existing;
             }
@@ -44,6 +56,7 @@ public class DurableAgentRunService {
                 runId,
                 requireMessage(message),
                 normalizeChatId(chatId),
+                verificationContract,
                 AgentRunStatus.QUEUED,
                 1,
                 List.of(),
@@ -81,6 +94,7 @@ public class DurableAgentRunService {
                 current.runId(),
                 current.message(),
                 current.chatId(),
+                current.verificationContract(),
                 AgentRunStatus.QUEUED,
                 current.attempt() + 1,
                 events,
@@ -182,6 +196,7 @@ public class DurableAgentRunService {
                     run.runId(),
                     run.message(),
                     run.chatId(),
+                    run.verificationContract(),
                     AgentRunStatus.RECOVERY_REQUIRED,
                     run.attempt(),
                     events,
@@ -202,6 +217,7 @@ public class DurableAgentRunService {
                 current.runId(),
                 current.message(),
                 current.chatId(),
+                current.verificationContract(),
                 status,
                 current.attempt(),
                 events,
@@ -225,9 +241,15 @@ public class DurableAgentRunService {
                 .orElseThrow(() -> new NoSuchElementException("Agent run not found: " + runId));
     }
 
-    private void requireSameRequest(DurableAgentRun run, String message, String chatId) {
+    private void requireSameRequest(
+            DurableAgentRun run,
+            String message,
+            String chatId,
+            AnswerVerificationContract verificationContract) {
         if (!run.message().equals(requireMessage(message))
-                || !run.chatId().equals(normalizeChatId(chatId))) {
+                || !run.chatId().equals(normalizeChatId(chatId))
+                || !Objects.equals(
+                run.verificationContract(), verificationContract)) {
             throw new IllegalStateException("runId belongs to a different request");
         }
     }

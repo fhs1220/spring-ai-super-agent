@@ -458,9 +458,93 @@ class AgenticRagServiceTest {
     }
 
     @Test
+    void explicitRlvrContractForcesRevisionWhenReviewerMissesConcepts() {
+        ChatModel chatModel = mock(ChatModel.class);
+        VectorStore vectorStore = mock(VectorStore.class);
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .maxMessages(20)
+                .build();
+        String incompleteDraft = longEnough(
+                "1. 开场（2分钟）。[来源 1]\n"
+                        + "2. 说明学习目标（3分钟）。[来源 1]\n"
+                        + "3. 请求家务支持（4分钟）。[来源 1]");
+        String completeRevision = longEnough(
+                "1. 开场（2分钟）：可以这样说，我想用15分钟讨论个人成长。[来源 1]\n"
+                        + "2. 说明目标：兼顾学习目标、兴趣爱好与独立空间。[来源 1]\n"
+                        + "3. 协商支持：平衡家庭事务，并保留各自社交圈。[来源 1]");
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response("{\"subQueries\":[\"婚后自我成长\"]}"),
+                response("{\"sufficient\":true,\"missingInfo\":\"\","
+                        + "\"followUpQueries\":[]}"),
+                response(incompleteDraft),
+                response("{\"grounded\":true,\"taskCompleted\":true,"
+                        + "\"revisedAnswer\":null}"),
+                response(completeRevision)
+        );
+        when(vectorStore.similaritySearch(any(SearchRequest.class)))
+                .thenReturn(List.of(new Document(
+                        "doc-1",
+                        "婚后应保持兴趣爱好、社交圈和独立空间，并平衡家庭与学习目标。",
+                        Map.of("filename", "已婚篇.md")
+                )));
+        InMemoryAgentTrajectoryRepository trajectoryRepository =
+                new InMemoryAgentTrajectoryRepository();
+        AgenticRagService service = new AgenticRagService(
+                ChatClient.builder(chatModel).build(),
+                vectorStore,
+                chatMemory,
+                trajectoryRepository,
+                new AgentRewardCalculator()
+        );
+        AnswerVerificationContract contract = new AnswerVerificationContract(
+                List.of(
+                        "兴趣爱好",
+                        "社交圈",
+                        "工作|学习|目标",
+                        "独立",
+                        "平衡",
+                        "15分钟|十五分钟",
+                        "话术|可以这样说"),
+                List.of("推荐课程"),
+                140,
+                1600,
+                true,
+                false,
+                false,
+                3
+        );
+
+        AgenticRagResult result = service.doAgenticRagWithTrace(
+                "请给一次十五分钟沟通流程和直接话术。",
+                "contract-enforced-revision",
+                "你是恋爱心理顾问。",
+                AgentProgressListener.NONE,
+                AgenticRagService.RunOptions.online(contract)
+        );
+
+        assertThat(result.answer()).isEqualTo(completeRevision);
+        assertThat(result.trace().steps())
+                .extracting(step -> step.phase())
+                .containsSubsequence(
+                        "GENERATE", "REVIEW", "REVISE", "RLVR_SELECT");
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.REVIEW)
+                .findFirst().orElseThrow().output())
+                .containsEntry("verificationContractPassed", false);
+        assertThat(trajectoryRepository.findById(result.trajectoryId())
+                .orElseThrow().steps().stream()
+                .filter(step -> step.type() == AgentStepType.REVISE)
+                .findFirst().orElseThrow().output())
+                .containsEntry("verificationContractPassed", true);
+        verify(chatModel, times(5)).call(any(Prompt.class));
+    }
+
+    @Test
     void mirrorsSeedAnswerLengthContracts() {
         assertThat(AgenticRagService.DEFAULT_POLICY_VERSION)
-                .isEqualTo("agentic-rag-v8");
+                .isEqualTo("agentic-rag-v9");
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(

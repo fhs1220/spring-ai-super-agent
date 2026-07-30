@@ -3,6 +3,7 @@ package com.fhs.aiagent.controller;
 import com.fhs.aiagent.app.LoveApp;
 import com.fhs.aiagent.rag.AgentProgressEvent;
 import com.fhs.aiagent.rag.AgentRunCancelledException;
+import com.fhs.aiagent.rag.AnswerVerificationContract;
 import com.fhs.aiagent.rag.multiagent.AdaptiveMultiAgentOrchestrator;
 import com.fhs.aiagent.rag.multiagent.AgentDescriptor;
 import com.fhs.aiagent.rag.multiagent.AgentHealth;
@@ -116,7 +117,10 @@ public class AiController {
 
     @PostMapping("/chat/agentic-rag")
     public AgenticRagResult agenticRag(@RequestBody AgenticRagRequest request) {
-        return loveApp.doChatWithAgenticRagTrace(request.message(), request.chatId());
+        return loveApp.doChatWithAgenticRagTrace(
+                request.message(),
+                request.chatId(),
+                request.verificationContract());
     }
 
     /**
@@ -128,7 +132,10 @@ public class AiController {
         DurableAgentRun durableRun;
         try {
             durableRun = durableAgentRunService.createOrReplay(
-                    runId, request.message(), request.chatId());
+                    runId,
+                    request.message(),
+                    request.chatId(),
+                    request.verificationContract());
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         } catch (IllegalStateException exception) {
@@ -139,7 +146,10 @@ public class AiController {
         }
         return startStream(
                 new AgenticRagStreamRequest(
-                        durableRun.message(), durableRun.chatId(), durableRun.runId()));
+                        durableRun.message(),
+                        durableRun.chatId(),
+                        durableRun.runId(),
+                        durableRun.verificationContract()));
     }
 
     /**
@@ -163,7 +173,10 @@ public class AiController {
         }
         return startStream(
                 new AgenticRagStreamRequest(
-                        durableRun.message(), durableRun.chatId(), durableRun.runId()));
+                        durableRun.message(),
+                        durableRun.chatId(),
+                        durableRun.runId(),
+                        durableRun.verificationContract()));
     }
 
     @GetMapping("/chat/agentic-rag/runs/{runId}")
@@ -294,6 +307,7 @@ public class AiController {
             AgenticRagResult result = loveApp.doChatWithAgenticRagTrace(
                     request.message(),
                     request.chatId(),
+                    request.verificationContract(),
                     event -> {
                         durableAgentRunService.appendProgress(activeRun.runId(), event);
                         send(activeRun.emitter(), "progress", event);
@@ -386,10 +400,17 @@ public class AiController {
                 : message;
     }
 
-    public record AgenticRagRequest(String message, String chatId) {
+    public record AgenticRagRequest(
+            String message,
+            String chatId,
+            AnswerVerificationContract verificationContract) {
     }
 
-    public record AgenticRagStreamRequest(String message, String chatId, String runId) {
+    public record AgenticRagStreamRequest(
+            String message,
+            String chatId,
+            String runId,
+            AnswerVerificationContract verificationContract) {
     }
 
     public record AgentRlFeedbackRequest(String trajectoryId, int rating, String comment) {

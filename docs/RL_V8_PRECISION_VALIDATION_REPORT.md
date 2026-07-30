@@ -92,3 +92,7 @@ Precision validation evaluation failed: Precision replay is not fully completed
 4. 先通过零模型调用的契约单元测试和历史轨迹反事实评估，再另行冻结新的真实验证。
 
 本次 `policy-v8-precision-30x2` 已经终结，不重复执行。
+
+上述工程方向已经由 `agentic-rag-v9` 离线实现，详见
+[`RL_PRECISION_UPGRADE_V9_REPORT.md`](RL_PRECISION_UPGRADE_V9_REPORT.md)。v9 尚未进行
+真实质量回放，不改变本报告的 `NOT_PROMOTED` 结论。

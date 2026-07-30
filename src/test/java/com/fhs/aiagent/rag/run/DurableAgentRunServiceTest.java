@@ -1,6 +1,7 @@
 package com.fhs.aiagent.rag.run;
 
 import com.fhs.aiagent.rag.AgentProgressEvent;
+import com.fhs.aiagent.rag.AnswerVerificationContract;
 import com.fhs.aiagent.rl.model.AgenticRagResult;
 import org.junit.jupiter.api.Test;
 
@@ -43,7 +44,17 @@ class DurableAgentRunServiceTest {
     void resumesFailedRunAsANewExplicitAttempt() {
         DurableAgentRunService service = new DurableAgentRunService(
                 new InMemoryRepository(), 50);
-        service.createOrReplay("durable-run-002", "问题", "chat-2");
+        AnswerVerificationContract contract = new AnswerVerificationContract(
+                List.of("兴趣爱好"),
+                List.of("推荐课程"),
+                140,
+                1600,
+                true,
+                false,
+                false,
+                3);
+        service.createOrReplay(
+                "durable-run-002", "问题", "chat-2", contract);
         service.markRunning("durable-run-002");
         service.fail("durable-run-002", "模型超时");
 
@@ -51,10 +62,15 @@ class DurableAgentRunServiceTest {
 
         assertThat(resumed.status()).isEqualTo(AgentRunStatus.QUEUED);
         assertThat(resumed.attempt()).isEqualTo(2);
+        assertThat(resumed.verificationContract()).isEqualTo(contract);
         assertThat(resumed.error()).isEmpty();
         assertThat(resumed.events())
                 .extracting(AgentProgressEvent::status)
                 .containsExactly("RETRYING");
+        assertThatThrownBy(() -> service.createOrReplay(
+                "durable-run-002", "问题", "chat-2", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("different request");
     }
 
     @Test
@@ -65,6 +81,7 @@ class DurableAgentRunServiceTest {
                 "durable-run-003",
                 "问题",
                 "chat-3",
+                null,
                 AgentRunStatus.RUNNING,
                 1,
                 List.of(progress("RETRIEVE")),

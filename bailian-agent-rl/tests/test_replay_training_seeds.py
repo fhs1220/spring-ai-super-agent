@@ -65,6 +65,22 @@ class ReplayTrainingSeedsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "policy-version"):
                 replay.require_execution_authorization(None)
 
+    def test_sends_the_frozen_verification_contract_to_java_execution(self) -> None:
+        value = seed("a" * 20, "请给十五分钟沟通话术")
+        contract = {
+            "required_concepts": ["兴趣爱好", "15分钟|十五分钟"],
+            "minimum_action_items": 3,
+            "citation_required": True,
+        }
+        value["rollout_extra"]["verification_contract"] = contract
+        item = replay.build_plan([value], "batch-001", 1, None)[0]
+
+        request = replay.build_agent_request(item, value)
+
+        self.assertEqual(contract, request["verificationContract"])
+        self.assertEqual(item["run_id"], request["runId"])
+        self.assertEqual(item["question"], request["message"])
+
     def test_parses_complete_sse_event(self) -> None:
         response = [
             b"event: accepted\n",

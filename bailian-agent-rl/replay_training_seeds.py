@@ -445,11 +445,7 @@ def execute_item(
     timeout: int,
 ) -> dict[str, Any]:
     url = api_root.rstrip("/") + "/ai/love_app/chat/agentic-rag/stream"
-    body = {
-        "message": item["question"],
-        "chatId": item["chat_id"],
-        "runId": item["run_id"],
-    }
+    body = build_agent_request(item, seed)
     request = urllib.request.Request(
         url,
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
@@ -575,6 +571,21 @@ def execute_item(
     if recovery is not None:
         replay_result["recovery"] = recovery
     return replay_result
+
+
+def build_agent_request(
+    item: dict[str, Any],
+    seed: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "message": item["question"],
+        "chatId": item["chat_id"],
+        "runId": item["run_id"],
+        "verificationContract": seed["rollout_extra"].get(
+            "verification_contract",
+            {},
+        ),
+    }
 
 
 def load_partial_results(

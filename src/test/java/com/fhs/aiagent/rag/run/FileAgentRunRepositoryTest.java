@@ -2,6 +2,7 @@ package com.fhs.aiagent.rag.run;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fhs.aiagent.rag.AgentProgressEvent;
+import com.fhs.aiagent.rag.AnswerVerificationContract;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,6 +26,15 @@ class FileAgentRunRepositoryTest {
                 "durable-run-001",
                 "测试问题",
                 "chat-1",
+                new AnswerVerificationContract(
+                        List.of("独立"),
+                        List.of("推荐课程"),
+                        140,
+                        1600,
+                        true,
+                        false,
+                        false,
+                        3),
                 AgentRunStatus.RUNNING,
                 1,
                 List.of(new AgentProgressEvent(

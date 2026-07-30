@@ -3,6 +3,7 @@ package com.fhs.aiagent.app;
 import com.fhs.aiagent.advisor.MyLoggerAdvisor;
 import com.fhs.aiagent.advisor.ReReadingAdvisor;
 import com.fhs.aiagent.rag.AgenticRagService;
+import com.fhs.aiagent.rag.AnswerVerificationContract;
 import com.fhs.aiagent.rag.multiagent.MultiAgentRoutingMode;
 import com.fhs.aiagent.rag.AgentProgressListener;
 import com.fhs.aiagent.rag.AppRagCustomAdvisorFactory;
@@ -177,7 +178,22 @@ public class LoveApp {
     }
 
     public AgenticRagResult doChatWithAgenticRagTrace(String message, String chatId) {
-        AgenticRagResult result = agenticRagService.doAgenticRagWithTrace(message, chatId, SYSTEM_PROMPT);
+        return doChatWithAgenticRagTrace(
+                message,
+                chatId,
+                (AnswerVerificationContract) null);
+    }
+
+    public AgenticRagResult doChatWithAgenticRagTrace(
+            String message,
+            String chatId,
+            AnswerVerificationContract verificationContract) {
+        AgenticRagResult result = agenticRagService.doAgenticRagWithTrace(
+                message,
+                chatId,
+                SYSTEM_PROMPT,
+                AgentProgressListener.NONE,
+                AgenticRagService.RunOptions.online(verificationContract));
         log.info("agentic rag content: {}, trajectoryId: {}", result.answer(), result.trajectoryId());
         return result;
     }
@@ -185,8 +201,21 @@ public class LoveApp {
     public AgenticRagResult doChatWithAgenticRagTrace(String message,
                                                       String chatId,
                                                       AgentProgressListener progressListener) {
+        return doChatWithAgenticRagTrace(
+                message, chatId, null, progressListener);
+    }
+
+    public AgenticRagResult doChatWithAgenticRagTrace(
+            String message,
+            String chatId,
+            AnswerVerificationContract verificationContract,
+            AgentProgressListener progressListener) {
         AgenticRagResult result = agenticRagService.doAgenticRagWithTrace(
-                message, chatId, SYSTEM_PROMPT, progressListener);
+                message,
+                chatId,
+                SYSTEM_PROMPT,
+                progressListener,
+                AgenticRagService.RunOptions.online(verificationContract));
         log.info("streaming agentic rag content: {}, trajectoryId: {}",
                 result.answer(), result.trajectoryId());
         return result;

@@ -1,6 +1,7 @@
 package com.fhs.aiagent.rag.run;
 
 import com.fhs.aiagent.rag.AgentProgressEvent;
+import com.fhs.aiagent.rag.AnswerVerificationContract;
 import com.fhs.aiagent.rl.model.AgenticRagResult;
 
 import java.time.Instant;
@@ -13,6 +14,7 @@ public record DurableAgentRun(
         String runId,
         String message,
         String chatId,
+        AnswerVerificationContract verificationContract,
         AgentRunStatus status,
         int attempt,
         List<AgentProgressEvent> events,
