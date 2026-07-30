@@ -1,0 +1,40 @@
+{
+  "schema_version": "local-policy-proxy-hybrid-v1",
+  "experiment_id": "policy-v7-local-sft-dpo-qwen25-05b-v3",
+  "algorithm": "RLAIF_RLVR_DPO_LORA",
+  "scope": "local_proxy_parameter_update_not_bailian_agentic_rl",
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "base_model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "data_contract": {
+    "minimum_rlvr_margin": 0.0,
+    "maximum_preference_answer_characters": 700,
+    "preference_validation_ratio": 0.2,
+    "blind_cases_per_execution_mode": 15,
+    "benchmark_similarity_threshold": 0.82
+  },
+  "training": {
+    "seed": 20260731,
+    "gradient_accumulation_steps": 4,
+    "per_device_train_batch_size": 1,
+    "per_device_eval_batch_size": 1,
+    "gradient_checkpointing": true,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "lora_target_modules": [
+      "q_proj",
+      "v_proj"
+    ],
+    "dpo": {
+      "learning_rate": 1e-05,
+      "num_train_epochs": 1,
+      "max_length": 512,
+      "beta": 0.1
+    }
+  },
+  "budget": {
+    "cloud_training_cny": 0,
+    "model_api_calls": 0,
+    "allow_paid_fallback": false
+  }
+}

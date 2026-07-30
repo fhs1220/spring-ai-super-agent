@@ -57,7 +57,7 @@ import java.util.regex.Pattern;
 @Component
 public class AgenticRagService {
 
-    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v7";
+    static final String DEFAULT_POLICY_VERSION = "agentic-rag-v8";
 
     private static final int DEFAULT_MAXIMUM_ANSWER_CHARS = 1600;
 
@@ -96,6 +96,16 @@ public class AgenticRagService {
 
     private static final Pattern CONTEXT_SOURCE = Pattern.compile(
             "\\[来源\\s+(\\d{1,3})\\s*\\|");
+
+    private static final Pattern NUMBERED_ACTION = Pattern.compile(
+            "(?m)^\\s*(?:#{1,6}\\s*)?(?:\\d+[.、)]|[-*])\\s*");
+
+    private static final List<String> FOLLOW_UP_PHRASES = List.of(
+            "请你详细描述", "请详细描述", "请补充更多",
+            "请提供更多", "接下来，请你", "以便我为你");
+
+    private static final List<String> FABRICATED_RESOURCE_PHRASES = List.of(
+            "推荐课程", "课程链接", "真实案例");
 
     private final ChatClient chatClient;
 
@@ -548,6 +558,9 @@ public class AgenticRagService {
                             Map.of("successfulAgents", successfulAgents),
                             Map.of(
                                     "fallbackRequired", multiAgentAnswer.fallbackRequired(),
+                                    "answer", multiAgentAnswer.answer() == null
+                                            ? ""
+                                            : multiAgentAnswer.answer(),
                                     "answerLength", multiAgentAnswer.answer() == null
                                             ? 0
                                             : multiAgentAnswer.answer().length()
@@ -998,8 +1011,39 @@ public class AgenticRagService {
             log.warn("[AgenticRAG][修正] 修正答案仍未满足 {}-{} 字符，将由 RLVR 门禁拒绝",
                     minimumAnswerChars, maximumAnswerChars);
         }
-        log.info("[AgenticRAG][修正] 答案未通过审查，已修正重写");
-        return revised;
+        CandidateSelection selection = selectHigherPrecisionCandidate(
+                question, context, normalizedDraft, revised);
+        Instant selectionStartedAt = recorder.startStep();
+        recorder.record(
+                AgentStepType.RLVR_SELECT,
+                selectionStartedAt,
+                true,
+                Map.of(
+                        "candidateCount", 2,
+                        "selectorVersion", "deterministic-rlvr-selector-v1"
+                ),
+                Map.of(
+                        "selectedCandidate", selection.selectedCandidate(),
+                        "draftScore", selection.draftScore(),
+                        "revisedScore", selection.revisedScore(),
+                        "contractNonDegrading",
+                        selection.draftScore() <= selection.revisedScore()
+                                || "DRAFT".equals(selection.selectedCandidate())
+                )
+        );
+        emit(progressListener, "RLVR_SELECT", "COMPLETED", "RLVR 候选择优",
+                "已选择确定性契约得分更高的答案",
+                List.of(
+                        "候选：" + selection.selectedCandidate(),
+                        "初稿分：" + selection.draftScore(),
+                        "修订分：" + selection.revisedScore()
+                ),
+                selectionStartedAt);
+        log.info("[AgenticRAG][RLVR选择] 候选={}，初稿分={}，修订分={}",
+                selection.selectedCandidate(),
+                selection.draftScore(),
+                selection.revisedScore());
+        return selection.answer();
     }
 
     private double averageProcessReward(List<SpecialistContribution> contributions) {
@@ -1238,6 +1282,111 @@ public class AgenticRagService {
             }
         }
         return found;
+    }
+
+    static CandidateSelection selectHigherPrecisionCandidate(
+            String question,
+            String context,
+            String draft,
+            String revised) {
+        String normalizedDraft = normalizeCitationSyntax(draft);
+        String normalizedRevised = normalizeCitationSyntax(revised);
+        int draftScore = deterministicCandidateScore(
+                question, context, normalizedDraft);
+        int revisedScore = deterministicCandidateScore(
+                question, context, normalizedRevised);
+        if (draftScore > revisedScore) {
+            return new CandidateSelection(
+                    normalizedDraft, "DRAFT", draftScore, revisedScore);
+        }
+        return new CandidateSelection(
+                normalizedRevised, "REVISED", draftScore, revisedScore);
+    }
+
+    private static int deterministicCandidateScore(
+            String question,
+            String context,
+            String answer) {
+        if (answer == null || answer.isBlank()) {
+            return Integer.MIN_VALUE;
+        }
+        int score = 0;
+        if (satisfiesCitationContract(answer, context)) {
+            score += 4;
+        }
+        if (satisfiesAnswerLengthContract(answer, question)) {
+            score += 3;
+        }
+        String normalizedQuestion = question == null ? "" : question;
+        boolean directAnswerRequired = normalizedQuestion.contains("不要追问")
+                || normalizedQuestion.contains("不要继续追问")
+                || normalizedQuestion.contains("不要反复追问")
+                || normalizedQuestion.contains("直接给");
+        if (!directAnswerRequired
+                || FOLLOW_UP_PHRASES.stream().noneMatch(answer::contains)) {
+            score += 1;
+        }
+        boolean weeklyPlan = normalizedQuestion.contains("七天")
+                || (normalizedQuestion.contains("星期一")
+                && normalizedQuestion.contains("星期日"));
+        if (!weeklyPlan
+                || (containsFirstDay(answer) && containsLastDay(answer))) {
+            score += 1;
+        }
+        boolean structuredActions = normalizedQuestion.contains("三项")
+                || normalizedQuestion.contains("三个")
+                || normalizedQuestion.contains("检查清单");
+        if (!structuredActions
+                || NUMBERED_ACTION.matcher(answer).results().count() >= 3) {
+            score += 1;
+        }
+        boolean assumptionsRequired = normalizedQuestion.contains("标明合理假设")
+                || normalizedQuestion.contains("标明假设");
+        if (!assumptionsRequired
+                || List.of("假设", "基于目前", "基于现有", "信息不足")
+                .stream().anyMatch(answer::contains)) {
+            score += 1;
+        }
+        boolean reviewRequired = normalizedQuestion.contains("复盘");
+        if (!reviewRequired || answer.contains("复盘")) {
+            score += 1;
+        }
+        boolean coordinationRequired = normalizedQuestion.contains("协调")
+                || normalizedQuestion.contains("不要把责任全部推给一方");
+        if (!coordinationRequired
+                || List.of("协调", "共同", "双方", "轮换")
+                .stream().anyMatch(answer::contains)) {
+            score += 1;
+        }
+        boolean noFabricationRequired =
+                normalizedQuestion.contains("不要编造课程或案例");
+        if (!noFabricationRequired
+                || FABRICATED_RESOURCE_PHRASES.stream()
+                .noneMatch(answer::contains)) {
+            score += 2;
+        }
+        return score;
+    }
+
+    private static boolean containsFirstDay(String answer) {
+        return List.of(
+                "第一天", "第1天", "星期一", "周一", "Day 1", "Day1")
+                .stream()
+                .anyMatch(answer::contains);
+    }
+
+    private static boolean containsLastDay(String answer) {
+        return List.of(
+                "第七天", "第7天", "星期日", "周日", "Day 7", "Day7")
+                .stream()
+                .anyMatch(answer::contains);
+    }
+
+    record CandidateSelection(
+            String answer,
+            String selectedCandidate,
+            int draftScore,
+            int revisedScore) {
     }
 
     private static String replaceCitationLists(
@@ -1498,6 +1647,19 @@ public class AgenticRagService {
                             "引用契约：" + statusText(Boolean.TRUE.equals(
                                     output.get("citationContractPassed"))))
                             : List.of()
+            );
+            case RLVR_SELECT -> new AgentTraceStep(
+                    "RLVR_SELECT", "RLVR 候选择优",
+                    "DRAFT".equals(output.get("selectedCandidate"))
+                            ? "保留契约得分更高的初稿"
+                            : "采用契约得分不低于初稿的修订稿",
+                    step.durationMs(), step.success(),
+                    List.of(
+                            "候选：" + output.getOrDefault(
+                                    "selectedCandidate", "UNKNOWN"),
+                            "初稿分：" + output.getOrDefault("draftScore", 0),
+                            "修订分：" + output.getOrDefault("revisedScore", 0)
+                    )
             );
         };
     }

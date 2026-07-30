@@ -247,9 +247,11 @@ class AgenticRagServiceTest {
                 .extracting(step -> step.phase())
                 .containsExactly(
                         "ROUTE", "PLAN", "RETRIEVE", "VERIFY",
-                        "GENERATE", "REVIEW", "REVISE");
+                        "GENERATE", "REVIEW", "REVISE", "RLVR_SELECT");
         assertThat(result.trace().steps().get(5).details())
                 .contains("引用契约：未通过");
+        assertThat(result.trace().steps().getLast().details())
+                .contains("候选：REVISED");
         verify(chatModel, times(5)).call(any(Prompt.class));
     }
 
@@ -403,7 +405,7 @@ class AgenticRagServiceTest {
     @Test
     void mirrorsSeedAnswerLengthContracts() {
         assertThat(AgenticRagService.DEFAULT_POLICY_VERSION)
-                .isEqualTo("agentic-rag-v7");
+                .isEqualTo("agentic-rag-v8");
         assertThat(AgenticRagService.maximumAnswerChars(
                 "请制定七天小计划，每天写行动和复盘。")).isEqualTo(2400);
         assertThat(AgenticRagService.maximumAnswerChars(
@@ -418,6 +420,76 @@ class AgenticRagServiceTest {
                 "好".repeat(1600), "请给检查清单")).isTrue();
         assertThat(AgenticRagService.satisfiesAnswerLengthContract(
                 "好".repeat(1601), "请给检查清单")).isFalse();
+    }
+
+    @Test
+    void rlvrCandidateSelectorPreventsARevisionContractRegression() {
+        String context = "[来源 1 | 已婚篇.md]\n应共同协商并定期复盘。";
+        String validDraft = longEnough(
+                "1. 共同沟通。[来源 1]\n"
+                        + "2. 明确分工。[来源 1]\n"
+                        + "3. 定期复盘。[来源 1]");
+        String regressedRevision = longEnough(
+                "1. 共同沟通。\n2. 明确分工。\n3. 定期复盘。");
+
+        AgenticRagService.CandidateSelection selection =
+                AgenticRagService.selectHigherPrecisionCandidate(
+                        "不要追问，直接给出三项行动。",
+                        context,
+                        validDraft,
+                        regressedRevision);
+
+        assertThat(selection.selectedCandidate()).isEqualTo("DRAFT");
+        assertThat(selection.answer()).isEqualTo(validDraft);
+        assertThat(selection.draftScore()).isGreaterThan(selection.revisedScore());
+    }
+
+    @Test
+    void rlvrCandidateSelectorUsesTheRevisionWhenItImprovesContracts() {
+        String context = "[来源 1 | 已婚篇.md]\n应共同协商并定期复盘。";
+        String invalidDraft = "只给一句且没有引用。";
+        String validRevision = longEnough(
+                "1. 共同沟通。[来源 1]\n"
+                        + "2. 明确分工。[来源 1]\n"
+                        + "3. 定期复盘。[来源 1]");
+
+        AgenticRagService.CandidateSelection selection =
+                AgenticRagService.selectHigherPrecisionCandidate(
+                        "不要追问，直接给出三项行动。",
+                        context,
+                        invalidDraft,
+                        validRevision);
+
+        assertThat(selection.selectedCandidate()).isEqualTo("REVISED");
+        assertThat(selection.answer()).isEqualTo(validRevision);
+        assertThat(selection.revisedScore()).isGreaterThan(selection.draftScore());
+    }
+
+    @Test
+    void rlvrCandidateSelectorRejectsFabricatedResourcesAndIncompleteWeeklyPlans() {
+        String context = "[来源 1 | 已婚篇.md]\n应共同协商并定期复盘。";
+        String compliantDraft = longEnough(
+                "第1天：共同协商并记录行动。[来源 1]\n"
+                        + "第2天：检查执行情况。[来源 1]\n"
+                        + "第3天：调整安排。[来源 1]\n"
+                        + "第4天：双方轮换。[来源 1]\n"
+                        + "第5天：整理分歧。[来源 1]\n"
+                        + "第6天：确认下周安排。[来源 1]\n"
+                        + "第7天：复盘并记录结果。[来源 1]");
+        String fabricatedRevision = longEnough(
+                "第一天：共同协商。[来源 1]\n推荐课程：虚构的速成课。");
+
+        AgenticRagService.CandidateSelection selection =
+                AgenticRagService.selectHigherPrecisionCandidate(
+                        "不要反复追问，请制定七天小计划，每天行动和复盘。"
+                                + "不要编造课程或案例。",
+                        context,
+                        compliantDraft,
+                        fabricatedRevision);
+
+        assertThat(selection.selectedCandidate()).isEqualTo("DRAFT");
+        assertThat(selection.answer()).isEqualTo(compliantDraft);
+        assertThat(selection.draftScore()).isGreaterThan(selection.revisedScore());
     }
 
     @Test

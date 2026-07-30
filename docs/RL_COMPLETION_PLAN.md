@@ -150,6 +150,20 @@ Benchmark 泄漏为 0；Qwen2.5-0.5B-Instruct 的 540,672 个 LoRA 参数完成�
 因此适配器被自动判为 `NOT_PROMOTED`，不得部署或用于 D 臂回放。完整证据见
 [`RL_LOCAL_POLICY_PROXY_REPORT.md`](RL_LOCAL_POLICY_PROXY_REPORT.md)。
 
+随后使用 73 条 Judge v2 正向轨迹和同题另一轮回答冻结第二个独立实验：32 条严格正
+RLVR margin 偏好对切为 26/6，并额外冻结 30 条从未回放的 Single/Multi 平衡盲测。
+最终纯 DPO run-v7 的 TRL 内部偏好准确率为 0.666667，但独立盲测基础/适配后均分都为
+0.609223，30/30 平局，仅 1 条回答文本变化且评分不变，所以同样
+`NOT_PROMOTED`。项目明确拒绝把训练器内部指标当成回答质量提升。
+
+为让已完成的 RLVR 闭环真正影响线上回答，当前策略升级为 `agentic-rag-v8`：只有在
+Review/Revise 产生两份候选时，使用从 RLVR 失败模式固化的确定性契约选择器比较初稿与
+修订稿，严格保留契约得分较高者；平分仍采用修订稿。该步骤不新增模型调用，并把候选分数、
+选择结果和选择器版本写入 `RLVR_SELECT` 轨迹。Stage 3 同题双轨迹只能证明选择的理论
+空间：oracle best-of-two 均分 0.768378，相对第一轮高 0.009929；这不是 v8 实测收益。
+下一次获得真实回放授权后，必须用新增轨迹字段直接报告初稿、修订稿和最终选择的逐条差值。
+完整证据见 [`RL_PRECISION_UPGRADE_V8_REPORT.md`](RL_PRECISION_UPGRADE_V8_REPORT.md)。
+
 在当前预算约束下，RL 工程闭环和一次真实本地训练前后验证已经完成；云端 A/B/C/D
 参数训练、正式四资产评测和灰度上线保持 `COST_BLOCKED`，不是待自动执行的下一阶段。
 除非预算或云端资源条件变化，不继续用固定 Benchmark 反复调参，也不宣称百炼 RL 已完成。

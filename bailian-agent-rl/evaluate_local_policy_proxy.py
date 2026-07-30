@@ -108,9 +108,15 @@ def directory_fingerprint(root: Path, files: list[Path]) -> str:
     return canonical_sha256(payload)
 
 
-def validate_benchmark(cases: list[dict[str, Any]]) -> None:
-    if len(cases) != 36:
-        raise ValueError(f"Fixed Benchmark must contain 36 cases; found {len(cases)}")
+def validate_benchmark(
+    cases: list[dict[str, Any]],
+    expected_count: int = 36,
+) -> None:
+    if len(cases) != expected_count:
+        raise ValueError(
+            f"Fixed Benchmark must contain {expected_count} cases; "
+            f"found {len(cases)}"
+        )
     identifiers = [case.get("id") for case in cases]
     if any(not isinstance(value, str) or not value for value in identifiers):
         raise ValueError("Every Benchmark case must have a non-empty id")
@@ -146,7 +152,10 @@ def build_preflight(
         raise ValueError("Unexpected local proxy evaluation config schema")
     cases = read_jsonl(benchmark_path)
     preferences = read_jsonl(validation_path)
-    validate_benchmark(cases)
+    validate_benchmark(
+        cases,
+        int(config.get("expected_benchmark_count", 36)),
+    )
     validate_preferences(preferences)
     training_report = load_object(training_report_path)
     if training_report.get("state") != "COMPLETED":
@@ -427,9 +436,17 @@ def evaluate(
     for arm, enabled in (("base", False), ("adapted", True)):
         with adapter_state(model, enabled):
             for index, case in enumerate(cases, start=1):
+                user_content = case["question"]
+                reference_context = case.get("referenceContext")
+                if isinstance(reference_context, str) and reference_context.strip():
+                    user_content += (
+                        "\n\n可用知识库参考片段：\n"
+                        "[来源 1]\n"
+                        + reference_context.strip()
+                    )
                 messages = [
                     {"role": "system", "content": config["system_prompt"]},
-                    {"role": "user", "content": case["question"]},
+                    {"role": "user", "content": user_content},
                 ]
                 answer = generate_answer(
                     model,

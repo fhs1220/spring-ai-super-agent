@@ -92,6 +92,18 @@ class EvaluateLocalPolicyProxyTest(unittest.TestCase):
                 "requiredConcepts": [],
             }])
 
+    def test_benchmark_supports_a_frozen_alternative_size(self) -> None:
+        cases = [
+            {
+                "id": f"case-{index}",
+                "question": "question",
+                "requiredConcepts": [],
+            }
+            for index in range(3)
+        ]
+
+        local_evaluation.validate_benchmark(cases, expected_count=3)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,5 +10,6 @@ public enum AgentStepType {
     SYNTHESIZE,
     GENERATE,
     REVIEW,
-    REVISE
+    REVISE,
+    RLVR_SELECT
 }
