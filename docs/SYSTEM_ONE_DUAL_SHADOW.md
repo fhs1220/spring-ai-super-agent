@@ -100,7 +100,9 @@ multilingual checkpoint 提交一条合成安全场景：
 
 ## 下一阶段门禁
 
-样本池达到约 100 条去重样本后：
+反事实质量标注流水线已经实现，详细运行方式、预算保护和 holdout 隔离见
+[`SYSTEM_ONE_COUNTERFACTUAL_LABELING.md`](SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)。样本池达到约
+100 条去重样本后：
 
 1. 从分歧样本与 agreement control 分层抽样；
 2. 对每题执行强制 single/multi Agent，按质量、成本、延迟计算效用标签；

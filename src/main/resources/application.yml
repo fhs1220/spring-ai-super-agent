@@ -284,6 +284,17 @@ agent:
       minimum-multi-agent-recall: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_MULTI_AGENT_RECALL:0.5}
       non-inferiority-margin: ${AGENT_EVALUATION_SYSTEM_ONE_NON_INFERIORITY_MARGIN:0.02}
       minimum-samples: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_SAMPLES:30}
+      labeling:
+        storage-directory: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_STORAGE_DIRECTORY:tmp/system-one-labels}
+        # Pilot hard caps. A run may exceed the cost cap by at most its final single/multi pair.
+        maximum-cases: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MAXIMUM_CASES:20}
+        maximum-cost-cny: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MAXIMUM_COST_CNY:10}
+        # 防止调参时窥视冻结集；只在最终一次验收运行中临时开启。
+        expose-holdout-labels: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_EXPOSE_HOLDOUT_LABELS:false}
+        development-percent: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_DEVELOPMENT_PERCENT:70}
+        minimum-utility-gain: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MINIMUM_UTILITY_GAIN:0.01}
+        human-review-margin: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_HUMAN_REVIEW_MARGIN:0.03}
+        minimum-judge-confidence: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MINIMUM_JUDGE_CONFIDENCE:0.70}
     # 四臂实验只接受可验证的 64 位 SHA-256 资产/训练指纹；普通本地 smoke 可保持 UNSPECIFIED。
     model-version: ${AGENT_EVALUATION_MODEL_VERSION:${OPENROUTER_CHAT_MODEL:openai/gpt-5.4}}
     model-artifact-fingerprint: ${AGENT_EVALUATION_MODEL_ARTIFACT_FINGERPRINT:UNSPECIFIED}

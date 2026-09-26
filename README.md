@@ -206,6 +206,8 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 决策推理阻塞请求；默认保存全部分歧和 10% 的一致对照样本，并且只保存问题 SHA-256。配置、
 隐私边界和样本接口见
 [`docs/SYSTEM_ONE_DUAL_SHADOW.md`](docs/SYSTEM_ONE_DUAL_SHADOW.md)。
+分歧样本的强制 single/multi 反事实质量标注、预算上限和 holdout 隔离见
+[`docs/SYSTEM_ONE_COUNTERFACTUAL_LABELING.md`](docs/SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)。
 
 #### OpenRouter 主模型与向量模型
 
