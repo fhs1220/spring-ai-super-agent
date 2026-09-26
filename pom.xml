@@ -58,10 +58,15 @@
 			<artifactId>dashscope-sdk-java</artifactId>
 			<version>2.19.1</version>
 		</dependency>
-		<!-- Spring AI Alibaba -->
+		<!-- 保留 DashScope 类型仅兼容旧工具/云知识库，不再自动装配主模型。 -->
 		<dependency>
 			<groupId>com.alibaba.cloud.ai</groupId>
-			<artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
+			<artifactId>spring-ai-alibaba-core</artifactId>
+		</dependency>
+		<!-- OpenRouter 提供 OpenAI-compatible Chat 与 Embeddings API。 -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-starter-model-openai</artifactId>
 		</dependency>
 		<!-- https://docs.spring.io/spring-ai/reference/api/chat/ollama-chat.html -->
 		<dependency>

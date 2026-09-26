@@ -144,14 +144,14 @@ public class AgenticRagService {
     private final AdaptiveMultiAgentOrchestrator multiAgentOrchestrator;
 
     @Autowired
-    public AgenticRagService(ChatModel dashscopeChatModel,
+    public AgenticRagService(ChatModel chatModel,
                              HybridDocumentRetriever documentRetriever,
                              AgentTrajectoryRepository trajectoryRepository,
                              AgentRewardCalculator rewardCalculator,
                              AdaptiveMultiAgentOrchestrator multiAgentOrchestrator,
                              @Value("${agent.rl.policy-version:"
                                      + DEFAULT_POLICY_VERSION + "}") String policyVersion,
-                             @Value("${spring.ai.dashscope.chat.options.model:unknown}") String model,
+                             @Value("${spring.ai.openai.chat.options.model:unknown}") String model,
                              @Value("${agent.rag.observability.input-price-per-million-tokens-cny:0.3}")
                              double inputPricePerMillionTokens,
                              @Value("${agent.rag.observability.output-price-per-million-tokens-cny:0.6}")
@@ -159,7 +159,7 @@ public class AgenticRagService {
                              @Value("${agent.rag.observability.model-call-timeout-seconds:60}")
                              int modelCallTimeoutSeconds) {
         this(
-                ChatClient.builder(dashscopeChatModel).build(),
+                ChatClient.builder(chatModel).build(),
                 documentRetriever,
                 MessageWindowChatMemory.builder()
                         .chatMemoryRepository(new InMemoryChatMemoryRepository())
@@ -399,8 +399,22 @@ public class AgenticRagService {
                             Map.entry(
                                     "policyArtifactVersion",
                                     multiAgentDecision.policyArtifactVersion()
+                            ),
+                            Map.entry("systemOneMode",
+                                    multiAgentDecision.systemOneMode()),
+                            Map.entry("systemOneStatus",
+                                    multiAgentDecision.systemOneStatus()),
+                            Map.entry("systemOneRecommendedMultiAgent",
+                                    multiAgentDecision.systemOneRecommendedMultiAgent()),
+                            Map.entry("systemOneMultiAgentProbability",
+                                    multiAgentDecision.systemOneMultiAgentProbability()),
+                            Map.entry("systemOneDomainProbabilities",
+                                    multiAgentDecision.systemOneDomainProbabilities()),
+                            Map.entry("systemOneLatencyMs",
+                                    multiAgentDecision.systemOneLatencyMs()),
+                            Map.entry("systemOneModel",
+                                    multiAgentDecision.systemOneModel())
                             )
-                    )
             );
             emit(listener, "ROUTE", "COMPLETED", "自适应路由",
                     multiAgentDecision.multiAgent()

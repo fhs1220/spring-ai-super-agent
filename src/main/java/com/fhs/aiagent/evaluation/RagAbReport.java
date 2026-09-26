@@ -28,6 +28,7 @@ public record RagAbReport(
         List<String> gateFailures,
         List<TagSummary> tagSummaries,
         List<CaseComparison> cases,
+        SystemOneRoutingBenchmarkReport systemOneRouting,
         String reportPath,
         String markdownReportPath
 ) {

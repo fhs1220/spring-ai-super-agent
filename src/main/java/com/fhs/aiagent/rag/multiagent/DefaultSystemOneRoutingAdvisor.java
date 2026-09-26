@@ -1,0 +1,157 @@
+package com.fhs.aiagent.rag.multiagent;
+
+import com.fhs.aiagent.decision.SystemOneDecisionClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * Sends all routing judgments in one Jev-compatible request and fails open.
+ */
+@Component
+public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
+
+    private static final Logger log = LoggerFactory.getLogger(DefaultSystemOneRoutingAdvisor.class);
+
+    private final SystemOneDecisionClient decisionClient;
+
+    private final boolean enabled;
+
+    private final String mode;
+
+    private final String provider;
+
+    private final double multiAgentThreshold;
+
+    private final double inputPricePerMillionUsd;
+
+    @Autowired
+    public DefaultSystemOneRoutingAdvisor(
+            SystemOneDecisionClient decisionClient,
+            @Value("${agent.decision.system-one.enabled:false}") boolean enabled,
+            @Value("${agent.decision.system-one.mode:SHADOW}") String mode,
+            @Value("${agent.decision.system-one.provider:UNSPECIFIED}") String provider,
+            @Value("${agent.decision.system-one.multi-agent-threshold:0.65}")
+            double multiAgentThreshold,
+            @Value("${agent.decision.system-one.input-price-per-million-usd:0}")
+            double inputPricePerMillionUsd) {
+        this.decisionClient = java.util.Objects.requireNonNull(decisionClient, "decisionClient");
+        this.enabled = enabled;
+        this.mode = normalizeMode(mode);
+        this.provider = provider == null ? "UNSPECIFIED" : provider.trim().toUpperCase(Locale.ROOT);
+        this.multiAgentThreshold = probability(multiAgentThreshold, "multiAgentThreshold");
+        this.inputPricePerMillionUsd = Math.max(0, inputPricePerMillionUsd);
+    }
+
+    public DefaultSystemOneRoutingAdvisor(SystemOneDecisionClient decisionClient,
+                                          boolean enabled,
+                                          String mode,
+                                          String provider,
+                                          double multiAgentThreshold) {
+        this(decisionClient, enabled, mode, provider, multiAgentThreshold, 0);
+    }
+
+    @Override
+    public RoutingAdvice advise(String question) {
+        if (!enabled || !"SHADOW".equals(mode)) {
+            return RoutingAdvice.disabled();
+        }
+        long startedAt = System.nanoTime();
+        try {
+            SystemOneDecisionClient.SystemOneResult result = decisionClient.evaluate(
+                    Map.of("question", question == null ? "" : question),
+                    questions()
+            );
+            Map<AgentDomain, Double> domainProbabilities = new EnumMap<>(AgentDomain.class);
+            for (AgentDomain domain : AgentDomain.values()) {
+                domainProbabilities.put(domain, noul(
+                        result, domain.name().toLowerCase(Locale.ROOT)));
+            }
+            double multiAgentProbability = noul(result, "should_use_multi_agent");
+            return new RoutingAdvice(
+                    mode,
+                    "SUCCESS",
+                    multiAgentProbability >= multiAgentThreshold,
+                    multiAgentProbability,
+                    domainProbabilities,
+                    elapsedMs(startedAt),
+                    provider + ":" + result.model(),
+                    result.inputTokens(),
+                    result.outputTokens(),
+                    result.inputTokens() * inputPricePerMillionUsd / 1_000_000.0
+            );
+        } catch (RuntimeException exception) {
+            log.warn("System One shadow routing failed open: {}", exception.getMessage());
+            return new RoutingAdvice(
+                    mode,
+                    "FAILED",
+                    false,
+                    0,
+                    Map.of(),
+                    elapsedMs(startedAt),
+                    provider
+            );
+        }
+    }
+
+    private Map<String, Object> questions() {
+        Map<String, Object> questions = new LinkedHashMap<>();
+        questions.put("relationship", noulQuestion(
+                "这个请求是否需要亲密关系、伴侣沟通或冲突修复方面的专业分析？"));
+        questions.put("parenting", noulQuestion(
+                "这个请求是否需要育儿、儿童照护或共同养育方面的专业分析？"));
+        questions.put("household", noulQuestion(
+                "这个请求是否需要家务分工、家庭日常安排或家庭运营方面的专业分析？"));
+        questions.put("finance", noulQuestion(
+                "这个请求是否需要个人财务或家庭财务方面的专业分析？"));
+        questions.put("safety", noulQuestion(
+                "这个请求是否涉及人身安全、虐待、胁迫、自伤或需要紧急处理的风险？"));
+        questions.put("should_use_multi_agent", noulQuestion(
+                "要完整回答这个请求，是否明显需要两个或更多相互独立的专业领域共同分析？"));
+        return Map.copyOf(questions);
+    }
+
+    private Map<String, Object> noulQuestion(String instructions) {
+        return Map.of(
+                "type", "noul",
+                "instructions", instructions,
+                "criteria", Map.of(
+                        "true", "请求明确符合该判断。",
+                        "false", "请求不符合或没有足够信息支持该判断。"
+                )
+        );
+    }
+
+    private double noul(SystemOneDecisionClient.SystemOneResult result, String key) {
+        SystemOneDecisionClient.SystemOneAnswer answer = result.answers().get(key);
+        return answer == null || answer.noul() == null
+                ? 0
+                : Math.max(0, Math.min(1, answer.noul()));
+    }
+
+    private String normalizeMode(String value) {
+        String normalized = value == null ? "SHADOW" : value.trim().toUpperCase(Locale.ROOT);
+        if (!"OFF".equals(normalized) && !"SHADOW".equals(normalized)) {
+            throw new IllegalArgumentException("Unsupported System One mode: " + value);
+        }
+        return normalized;
+    }
+
+    private double probability(double value, String field) {
+        if (!Double.isFinite(value) || value < 0 || value > 1) {
+            throw new IllegalArgumentException(field + " must be between 0 and 1");
+        }
+        return value;
+    }
+
+    private long elapsedMs(long startedAt) {
+        return Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
+    }
+}

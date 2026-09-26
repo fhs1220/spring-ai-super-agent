@@ -15,14 +15,14 @@ fi
 note "[2/4] 检查代码差异..."
 git diff --check || exit 1
 
-MVN_ARGS=()
-if [ -f /private/tmp/super-agent-maven-settings.xml ]; then
-  export MAVEN_USER_HOME=/private/tmp/super-agent-m2
-  MVN_ARGS+=(-o -s /private/tmp/super-agent-maven-settings.xml)
-fi
+export MAVEN_USER_HOME="${MAVEN_USER_HOME:-${TMPDIR:-/tmp}/super-agent-m2}"
 
 note "[3/4] 运行 Java 21 可复现测试（真实模型/网络集成测试默认隔离）..."
-sh mvnw "${MVN_ARGS[@]}" test || exit 1
+if [ -f /private/tmp/super-agent-maven-settings.xml ]; then
+  sh mvnw -o -s /private/tmp/super-agent-maven-settings.xml test || exit 1
+else
+  sh mvnw test || exit 1
+fi
 
 note "[4/4] 构建 Vue 3 前端..."
 (cd Cortex-ai-agent-frontend && npm run build) || exit 1

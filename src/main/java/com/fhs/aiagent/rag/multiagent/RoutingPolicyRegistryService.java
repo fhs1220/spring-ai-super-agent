@@ -65,7 +65,7 @@ public class RoutingPolicyRegistryService {
             AgentTrajectoryRepository trajectoryRepository,
             @Value("${agent.rag.routing-policy.registry.algorithm:"
                     + "trajectory-utility-contextual-policy-v3}") String algorithm,
-            @Value("${spring.ai.dashscope.chat.options.model:qwen-plus}")
+            @Value("${spring.ai.openai.chat.options.model:openai/gpt-5.4}")
             String upstreamModel,
             @Value("${agent.rag.routing-policy.minimum-utility-lift:0.03}")
             double minimumUtilityLift,

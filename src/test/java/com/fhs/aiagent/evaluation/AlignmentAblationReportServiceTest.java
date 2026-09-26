@@ -224,6 +224,7 @@ class AlignmentAblationReportServiceTest {
                 List.of(),
                 List.of(),
                 cases,
+                null,
                 "",
                 ""
         );

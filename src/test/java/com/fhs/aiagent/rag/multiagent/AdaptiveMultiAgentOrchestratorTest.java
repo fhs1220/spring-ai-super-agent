@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -24,6 +25,36 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AdaptiveMultiAgentOrchestratorTest {
+
+    @Test
+    void recordsSystemOneShadowAdviceWithoutChangingTheAuthoritativeRoute() {
+        ChatModel chatModel = mock(ChatModel.class);
+        AdaptiveMultiAgentOrchestrator orchestrator = new AdaptiveMultiAgentOrchestrator(
+                ChatClient.builder(chatModel).build(), true, 2, 3);
+        orchestrator.setSystemOneRoutingAdvisor(question ->
+                new SystemOneRoutingAdvisor.RoutingAdvice(
+                        "SHADOW",
+                        "SUCCESS",
+                        true,
+                        0.93,
+                        Map.of(
+                                AgentDomain.RELATIONSHIP, 0.82,
+                                AgentDomain.PARENTING, 0.76
+                        ),
+                        12,
+                        "LAYA:laya-multilingual"
+                ));
+
+        MultiAgentDecision decision = orchestrator.route("异地恋怎样保持沟通？");
+
+        assertThat(decision.multiAgent()).isFalse();
+        assertThat(decision.systemOneRecommendedMultiAgent()).isTrue();
+        assertThat(decision.systemOneMultiAgentProbability()).isEqualTo(0.93);
+        assertThat(decision.systemOneDomainProbabilities())
+                .containsEntry("RELATIONSHIP", 0.82)
+                .containsEntry("PARENTING", 0.76);
+        assertThat(decision.systemOneModel()).isEqualTo("LAYA:laya-multilingual");
+    }
 
     @Test
     void routesSimpleQuestionToSingleAgentAndCompositeQuestionToSpecialists() {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fhs.aiagent.rag.AgentRunCancelledException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
@@ -71,6 +72,8 @@ public class RagAbEvaluationService {
 
     private final RagAbReport.RuntimeIdentity runtimeIdentity;
 
+    private SystemOneRoutingEvaluationService systemOneEvaluationService;
+
     public RagAbEvaluationService(
             RagEvaluationVariantExecutor variantExecutor,
             RagAnswerScorer scorer,
@@ -91,7 +94,7 @@ public class RagAbEvaluationService {
             double minimumRouteAccuracy,
             @Value("${agent.evaluation.maximum-adaptive-oracle-cost-ratio:1.10}")
             double maximumAdaptiveOracleCostRatio,
-            @Value("${agent.evaluation.model-version:qwen-plus}")
+            @Value("${agent.evaluation.model-version:${OPENROUTER_CHAT_MODEL:openai/gpt-5.4}}")
             String modelVersion,
             @Value("${agent.evaluation.model-artifact-fingerprint:UNSPECIFIED}")
             String modelArtifactFingerprint,
@@ -121,6 +124,16 @@ public class RagAbEvaluationService {
                 rewardSchemaVersion,
                 sourceDeployment
         );
+        this.systemOneEvaluationService = new SystemOneRoutingEvaluationService(
+                com.fhs.aiagent.rag.multiagent.SystemOneRoutingAdvisor.disabled(),
+                0.05, 0.05, 0.02, 60_000, 0.5, 0.99, 0.8, 0.02, 30
+        );
+    }
+
+    @Autowired
+    void setSystemOneEvaluationService(
+            SystemOneRoutingEvaluationService systemOneEvaluationService) {
+        this.systemOneEvaluationService = Objects.requireNonNull(systemOneEvaluationService);
     }
 
     public RagAbReport evaluate(
@@ -210,6 +223,8 @@ public class RagAbEvaluationService {
                 routeAccuracy,
                 costComparison
         );
+        SystemOneRoutingBenchmarkReport systemOneRouting =
+                systemOneEvaluationService.evaluate(runId, comparisons);
         Path jsonPath = reportDirectory.resolve(runId + ".json");
         Path markdownPath = reportDirectory.resolve(runId + ".md");
         RagAbReport report = new RagAbReport(
@@ -234,6 +249,7 @@ public class RagAbEvaluationService {
                 gateFailures,
                 summarizeTags(comparisons),
                 List.copyOf(comparisons),
+                systemOneRouting,
                 jsonPath.toString(),
                 markdownPath.toString()
         );
@@ -624,6 +640,37 @@ public class RagAbEvaluationService {
                         ? report.adaptiveOracleCostRatio()
                         : "N/A (usage unavailable)")
                 .append("\n\n");
+        SystemOneRoutingBenchmarkReport systemOne = report.systemOneRouting();
+        markdown.append("## System One 反事实路由评测\n\n")
+                .append("- Status/model: `").append(systemOne.status()).append("` / `")
+                .append(systemOne.model()).append("`\n")
+                .append("- Availability: ").append(systemOne.availability()).append("\n")
+                .append("- Route accuracy (current → System One): ")
+                .append(systemOne.currentRouteAccuracy()).append(" → ")
+                .append(systemOne.systemOneRouteAccuracy()).append("\n")
+                .append("- Quality delta: ").append(systemOne.qualityDelta()).append("\n")
+                .append("- Mean regret (current → System One): ")
+                .append(systemOne.currentMeanRegret()).append(" → ")
+                .append(systemOne.systemOneMeanRegret()).append("\n")
+                .append("- Brier / ECE: ").append(systemOne.brierScore())
+                .append(" / ").append(systemOne.expectedCalibrationError()).append("\n")
+                .append("- Safety recall / false negatives: ")
+                .append(systemOne.safetyRecall()).append(" / ")
+                .append(systemOne.safetyFalseNegatives()).append("\n")
+                .append("- Paired quality 95% CI: [")
+                .append(systemOne.pairedQualityVsCurrent().lowerConfidenceBound())
+                .append(", ")
+                .append(systemOne.pairedQualityVsCurrent().upperConfidenceBound())
+                .append("]\n")
+                .append("- System One release gate: **")
+                .append(systemOne.releaseGatePassed() ? "PASS" : "FAIL")
+                .append("**\n\n");
+        if (!systemOne.gateFailures().isEmpty()) {
+            markdown.append("### System One gate failures\n\n");
+            systemOne.gateFailures().forEach(failure -> markdown.append("- ")
+                    .append(failure).append("\n"));
+            markdown.append("\n");
+        }
         if (!report.gateFailures().isEmpty()) {
             markdown.append("## Gate failures\n\n");
             report.gateFailures().forEach(

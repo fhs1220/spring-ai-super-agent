@@ -220,6 +220,7 @@ class AlignmentExperimentServiceTest {
                 List.of(),
                 List.of(),
                 List.of(),
+                null,
                 "",
                 ""
         );

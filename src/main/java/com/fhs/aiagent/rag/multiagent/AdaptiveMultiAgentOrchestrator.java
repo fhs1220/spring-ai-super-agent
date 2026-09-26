@@ -72,6 +72,8 @@ public class AdaptiveMultiAgentOrchestrator {
 
     private TrajectoryAwareRoutingPolicy routingPolicy;
 
+    private SystemOneRoutingAdvisor systemOneRoutingAdvisor;
+
     @Autowired
     public AdaptiveMultiAgentOrchestrator(
             ChatModel dashscopeChatModel,
@@ -84,7 +86,8 @@ public class AdaptiveMultiAgentOrchestrator {
             int circuitBreakerFailureThreshold,
             @Value("${agent.rag.multi-agent.circuit-breaker-cooldown-seconds:60}")
             long circuitBreakerCooldownSeconds,
-            TrajectoryAwareRoutingPolicy routingPolicy) {
+            TrajectoryAwareRoutingPolicy routingPolicy,
+            SystemOneRoutingAdvisor systemOneRoutingAdvisor) {
         this(
                 ChatClient.builder(dashscopeChatModel).build(),
                 enabled,
@@ -97,6 +100,8 @@ public class AdaptiveMultiAgentOrchestrator {
                 Clock.systemUTC()
         );
         this.routingPolicy = java.util.Objects.requireNonNull(routingPolicy, "routingPolicy");
+        this.systemOneRoutingAdvisor = java.util.Objects.requireNonNull(
+                systemOneRoutingAdvisor, "systemOneRoutingAdvisor");
     }
 
     public AdaptiveMultiAgentOrchestrator(ChatClient chatClient,
@@ -137,6 +142,7 @@ public class AdaptiveMultiAgentOrchestrator {
                 circuitBreakerCooldown, "circuitBreakerCooldown");
         this.clock = java.util.Objects.requireNonNull(clock, "clock");
         this.specialists = createSpecialists(chatClient);
+        this.systemOneRoutingAdvisor = SystemOneRoutingAdvisor.disabled();
     }
 
     public MultiAgentDecision route(String question) {
@@ -197,11 +203,20 @@ public class AdaptiveMultiAgentOrchestrator {
                     1,
                     false,
                     1,
-                    0,
-                    "routing-evaluation",
-                    RoutingPolicyRegistryService.BASELINE_VERSION
+                            0,
+                            "routing-evaluation",
+                            RoutingPolicyRegistryService.BASELINE_VERSION,
+                            "OFF",
+                            "SKIPPED_EVALUATION_OVERRIDE",
+                            false,
+                            0,
+                            Map.of(),
+                            0,
+                            ""
             );
         }
+        SystemOneRoutingAdvisor.RoutingAdvice systemOneAdvice =
+                systemOneRoutingAdvisor.advise(question);
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision policyDecision =
                 routingPolicy == null
                         ? new TrajectoryAwareRoutingPolicy.RoutingPolicyDecision(
@@ -246,8 +261,28 @@ public class AdaptiveMultiAgentOrchestrator {
                 policyDecision.confidence(),
                 policyDecision.evidenceSamples(),
                 policyDecision.deploymentVersion(),
-                policyDecision.policyArtifactVersion()
+                policyDecision.policyArtifactVersion(),
+                systemOneAdvice.mode(),
+                systemOneAdvice.status(),
+                systemOneAdvice.recommendedMultiAgent(),
+                systemOneAdvice.multiAgentProbability(),
+                systemOneDomainProbabilities(systemOneAdvice),
+                systemOneAdvice.latencyMs(),
+                systemOneAdvice.model()
         );
+    }
+
+    void setSystemOneRoutingAdvisor(SystemOneRoutingAdvisor systemOneRoutingAdvisor) {
+        this.systemOneRoutingAdvisor = java.util.Objects.requireNonNull(
+                systemOneRoutingAdvisor, "systemOneRoutingAdvisor");
+    }
+
+    private Map<String, Double> systemOneDomainProbabilities(
+            SystemOneRoutingAdvisor.RoutingAdvice advice) {
+        Map<String, Double> probabilities = new java.util.LinkedHashMap<>();
+        advice.domainProbabilities().forEach((domain, probability) ->
+                probabilities.put(domain.name(), probability));
+        return Map.copyOf(probabilities);
     }
 
     public MultiAgentAnswer execute(MultiAgentDecision decision,

@@ -26,6 +26,15 @@
 报告同时记录模型版本、模型资产 SHA-256、训练配置 SHA-256、Reward Schema 和部署来源。
 缺少有效指纹的本地 smoke 报告仍可用于调试，但不能作为正式四臂消融证据。
 
+启用 System One 后，报告还会复用同一题已经实测的强制单 Agent 与强制多 Agent 结果，
+分别计算当前路由、Jev/Laya 路由和事后效用 oracle 的质量、成本、延迟与遗憾。这样不会把
+不同生成采样带来的随机差异误认为路由收益。System One 章节同时记录可用率、决策 Token、
+决策成本、Brier score、10-bin ECE、安全召回/漏召回，以及 10,000 次配对 Bootstrap 的
+质量差 95% 置信区间。决策服务失败时按当前路由 fail-open，但失败仍计入可用率门禁。
+
+首次 OpenRouter + Jev 36 题真实运行及其失败敏感性分析见
+[`JEV_SYSTEM_ONE_EVALUATION_REPORT.md`](JEV_SYSTEM_ONE_EVALUATION_REPORT.md)。
+
 RLAIF/RLVR 四臂消融报告不是只比较四个均值。它会按 `caseId` 对齐逐样本结果，使用固定
 种子的配对 percentile bootstrap 计算 95% 置信区间，同时给出标准化效应量、精确符号
 检验、改善概率和胜平负。完整方案必须至少包含 30 个配对样本，且置信区间下界不得穿过

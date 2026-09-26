@@ -12,6 +12,7 @@
 - Agent RL：奖励与遥测轨迹、时间留出验证、冻结策略资产、OPE 与漂移监控；
 - 发布控制：`SHADOW → 5% → 10% → 25% → 50% → ACTIVE`、三重授权和可审计回退；
 - 36 条固定基准，四路对照传统 RAG、强制单 Agent、强制多 Agent和自适应路由；
+- Jev System One 影子路由、fail-open 降级、反事实路由评测与安全发布门禁；
 - Java 21 可复现测试、显式集成测试分层、Vue 生产构建、GitHub Actions
   和单命令工程验收。
 
@@ -33,6 +34,8 @@ DPO-LoRA 的真实参数更新、固定 36 题训练前后对比和自动拒绝�
 [`docs/RL_LOCAL_POLICY_PROXY_REPORT.md`](docs/RL_LOCAL_POLICY_PROXY_REPORT.md)。RL 最终
 工程边界、真实量化快照和停止继续追加精准度版本的决策见
 [`docs/RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md`](docs/RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md)。
+OpenRouter + Jev 的首次 36 题真实反事实评测、失败敏感性分析和发布结论见
+[`docs/JEV_SYSTEM_ONE_EVALUATION_REPORT.md`](docs/JEV_SYSTEM_ONE_EVALUATION_REPORT.md)。
 
 ---
 
@@ -43,6 +46,8 @@ flowchart LR
     UI["Vue 3 / SSE Trace"] --> API["Spring Boot API"]
     API --> RAG["Agentic RAG\nPlan → Retrieve → Verify → Revise"]
     RAG --> ROUTER["Complexity + Learned Router"]
+    RAG -. "shadow decision" .-> JEV["Jev System One"]
+    JEV -. "metrics / fail-open" .-> ROUTER
     ROUTER --> SINGLE["Single Agent"]
     ROUTER --> MULTI["Parallel Specialist Agents"]
     MULTI --> BOARD["Shared Evidence Blackboard"]
@@ -129,6 +134,80 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 - `AGENT_RAG_SPECIALIST_TIMEOUT_SECONDS`
 - `AGENT_RAG_CIRCUIT_BREAKER_FAILURE_THRESHOLD`
 - `AGENT_RAG_CIRCUIT_BREAKER_COOLDOWN_SECONDS`
+
+#### Jev / Laya System One 影子路由
+
+可选的 System One 决策层使用 Jev 兼容的 `POST /v1/systemone` 协议，一次并行判断关系、
+育儿、家务、财务、安全五个领域以及是否值得启用多 Agent。第一阶段只支持 `SHADOW`：结果、
+概率、模型和调用延迟会写入 `ROUTE` 轨迹，但现有确定性路由与轨迹学习策略仍是唯一权威决策。
+调用超时、服务不可用或响应异常都会 fail-open，不会阻断回答。该功能默认关闭；开启同步影子
+采样会增加一次决策服务的网络或本地推理延迟。
+
+本地 Laya 示例：
+
+```bash
+python -m pip install "laya[serve]"
+LAYA_PRELOAD=1 laya-serve
+
+export AGENT_SYSTEM_ONE_ENABLED=true
+export AGENT_SYSTEM_ONE_PROVIDER=LAYA
+export AGENT_SYSTEM_ONE_BASE_URL=http://localhost:8000
+export AGENT_SYSTEM_ONE_MODEL=multilingual
+```
+
+切换 Jev 时不需要修改 Java 代码，只需设置：
+
+```bash
+export AGENT_SYSTEM_ONE_ENABLED=true
+export AGENT_SYSTEM_ONE_PROVIDER=JEV
+export AGENT_SYSTEM_ONE_BASE_URL=https://api.typesafe.ai
+export AGENT_SYSTEM_ONE_ENDPOINT_PATH=/v1/systemone
+export AGENT_SYSTEM_ONE_API_KEY=...
+export AGENT_SYSTEM_ONE_MODEL=jev-latest
+# 按运行日官方价格填写；为 0 时报告会标记决策费未核算，避免伪造成本结论。
+export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=...
+```
+
+也可以直接使用 OpenRouter API key 调用 Jev：
+
+```bash
+export AGENT_SYSTEM_ONE_ENABLED=true
+export AGENT_SYSTEM_ONE_PROVIDER=OPENROUTER_JEV
+export AGENT_SYSTEM_ONE_BASE_URL=https://openrouter.ai
+export AGENT_SYSTEM_ONE_ENDPOINT_PATH=/api/alpha/decisions
+export AGENT_SYSTEM_ONE_API_KEY="$OPENROUTER_API_KEY"
+export AGENT_SYSTEM_ONE_MODEL='~typesafe/jev-latest'
+export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
+```
+
+相关配置：
+
+- `AGENT_SYSTEM_ONE_ENABLED`（默认 `false`）
+- `AGENT_SYSTEM_ONE_MODE`（当前仅支持 `OFF`、`SHADOW`）
+- `AGENT_SYSTEM_ONE_PROVIDER`
+- `AGENT_SYSTEM_ONE_BASE_URL`
+- `AGENT_SYSTEM_ONE_ENDPOINT_PATH`
+- `AGENT_SYSTEM_ONE_API_KEY`
+- `AGENT_SYSTEM_ONE_MODEL`
+- `AGENT_SYSTEM_ONE_CONNECT_TIMEOUT_MS`（默认 `500`）
+- `AGENT_SYSTEM_ONE_REQUEST_TIMEOUT_MS`（默认 `1200`）
+- `AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD`（默认 `0.65`）
+- `AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD`（默认 `0`，不声称已核算费用）
+
+#### OpenRouter 主模型与向量模型
+
+Cortex 默认通过 OpenRouter 的 OpenAI-compatible API 使用 `openai/gpt-5.4` 生成回答，
+使用 `openai/text-embedding-3-small` 构建与查询向量索引。Jev 仍走独立 Decisions API，
+不会被当作文本生成模型。三者可以复用同一个 `OPENROUTER_API_KEY`：
+
+```bash
+export OPENROUTER_API_KEY=...
+export OPENROUTER_CHAT_MODEL=openai/gpt-5.4
+export OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
+```
+
+Embedding 模型变化时必须同时修改 `AGENT_RAG_VECTOR_CACHE_VERSION`，防止加载维度或语义空间
+不兼容的旧索引。当前默认缓存版本已经切换为 `openrouter-embedding3-small-v1`。
 
 #### 轨迹学习路由
 
@@ -323,6 +402,24 @@ RL 轨迹，避免测试数据污染训练。确定性评分覆盖任务要点�
 `tmp/evaluation/<runId>.json` 与 `.md`。
 传统 RAG 尚无完整 Token 遥测，因此报告会以 `usageMeasuredCases=0` 明确标记，而不会把它
 误解释为零成本。
+
+启用 Jev/Laya 后，同一次 36 题四路评测还会生成 System One 反事实路由章节。评测以每题
+强制单 Agent 与强制多 Agent 的实测质量、成本和延迟计算效用 oracle，再分别让当前路由和
+System One 选择同一组反事实结果，避免把随机生成差异误算成路由收益。报告包含路由准确率
+增量、质量增量、平均效用遗憾及降幅、路径成本比、端到端延迟、决策 Token/美元费用、
+Brier score、10-bin ECE、安全召回与漏召回，以及 10,000 次配对 Bootstrap 质量 95% CI。
+调用失败按当前路由 fail-open，但计入可用率，不能借回退结果通过发布门禁。
+
+简历数据应使用完整 36 题运行，并同时保留 JSON/Markdown 报告、benchmark SHA-256、模型名
+和运行时间。2 题 smoke 只能验证链路，不能作为效果结论。System One 默认门禁为：样本数
+至少 30、可用率至少 99%、路由准确率至少 80% 且不低于当前路由、安全漏召回为 0、效用
+遗憾不增加、质量 95% CI 下界满足 2% 非劣效界限。相关配置：
+
+- `AGENT_EVALUATION_SYSTEM_ONE_SAFETY_THRESHOLD`
+- `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_AVAILABILITY`
+- `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_ROUTE_ACCURACY`
+- `AGENT_EVALUATION_SYSTEM_ONE_NON_INFERIORITY_MARGIN`
+- `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_SAMPLES`
 
 四组 RLAIF/RLVR 消融报告会进一步按相同 `caseId` 配对逐样本质量分数，并使用由 benchmark
 指纹和实验臂生成的固定种子执行 10,000 次 percentile bootstrap。报告包含质量差值的 95%
