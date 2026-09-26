@@ -126,7 +126,8 @@ public class RagAbEvaluationService {
         );
         this.systemOneEvaluationService = new SystemOneRoutingEvaluationService(
                 com.fhs.aiagent.rag.multiagent.SystemOneRoutingAdvisor.disabled(),
-                0.05, 0.05, 0.02, 60_000, 0.5, 0.99, 0.8, 0.02, 30
+                0.05, 0.05, 0.02, 60_000, 0.5, 0.99, 0.8,
+                0.7, 0.5, 0.02, 30
         );
     }
 
@@ -648,14 +649,26 @@ public class RagAbEvaluationService {
                 .append("- Route accuracy (current → System One): ")
                 .append(systemOne.currentRouteAccuracy()).append(" → ")
                 .append(systemOne.systemOneRouteAccuracy()).append("\n")
+                .append("- Multi-Agent precision (current → System One): ")
+                .append(systemOne.currentMultiAgentPrecision()).append(" → ")
+                .append(systemOne.systemOneMultiAgentPrecision()).append("\n")
+                .append("- Multi-Agent recall (current → System One): ")
+                .append(systemOne.currentMultiAgentRecall()).append(" → ")
+                .append(systemOne.systemOneMultiAgentRecall()).append("\n")
+                .append("- Balanced accuracy (current → System One): ")
+                .append(systemOne.currentBalancedAccuracy()).append(" → ")
+                .append(systemOne.systemOneBalancedAccuracy()).append("\n")
                 .append("- Quality delta: ").append(systemOne.qualityDelta()).append("\n")
                 .append("- Mean regret (current → System One): ")
                 .append(systemOne.currentMeanRegret()).append(" → ")
                 .append(systemOne.systemOneMeanRegret()).append("\n")
                 .append("- Brier / ECE: ").append(systemOne.brierScore())
                 .append(" / ").append(systemOne.expectedCalibrationError()).append("\n")
-                .append("- Safety recall / false negatives: ")
-                .append(systemOne.safetyRecall()).append(" / ")
+                .append("- Safety precision / recall: ")
+                .append(systemOne.safetyPrecision()).append(" / ")
+                .append(systemOne.safetyRecall()).append("\n")
+                .append("- Safety false positives / false negatives: ")
+                .append(systemOne.safetyFalsePositives()).append(" / ")
                 .append(systemOne.safetyFalseNegatives()).append("\n")
                 .append("- Paired quality 95% CI: [")
                 .append(systemOne.pairedQualityVsCurrent().lowerConfidenceBound())

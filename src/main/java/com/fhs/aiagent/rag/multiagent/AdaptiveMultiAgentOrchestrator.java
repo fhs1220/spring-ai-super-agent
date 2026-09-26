@@ -210,6 +210,8 @@ public class AdaptiveMultiAgentOrchestrator {
                             "SKIPPED_EVALUATION_OVERRIDE",
                             false,
                             0,
+                            false,
+                            0,
                             Map.of(),
                             0,
                             ""
@@ -266,6 +268,8 @@ public class AdaptiveMultiAgentOrchestrator {
                 systemOneAdvice.status(),
                 systemOneAdvice.recommendedMultiAgent(),
                 systemOneAdvice.multiAgentProbability(),
+                systemOneAdvice.recommendedSafetyGuard(),
+                systemOneAdvice.safetyProbability(),
                 systemOneDomainProbabilities(systemOneAdvice),
                 systemOneAdvice.latencyMs(),
                 systemOneAdvice.model()

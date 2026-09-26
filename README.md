@@ -138,7 +138,9 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 #### Jev / Laya System One 影子路由
 
 可选的 System One 决策层使用 Jev 兼容的 `POST /v1/systemone` 协议，一次并行判断关系、
-育儿、家务、财务、安全五个领域以及是否值得启用多 Agent。第一阶段只支持 `SHADOW`：结果、
+育儿、家务、财务、安全五个领域以及是否值得启用多 Agent。安全护栏与执行路由是两个独立动作：
+安全高风险只触发安全处置标记，不再隐式强制完整多 Agent；多 Agent 只在预期协作质量增益足以
+覆盖成本与延迟时推荐。第一阶段只支持 `SHADOW`：结果、
 概率、模型和调用延迟会写入 `ROUTE` 轨迹，但现有确定性路由与轨迹学习策略仍是唯一权威决策。
 调用超时、服务不可用或响应异常都会 fail-open，不会阻断回答。该功能默认关闭；开启同步影子
 采样会增加一次决策服务的网络或本地推理延迟。
@@ -192,6 +194,7 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 - `AGENT_SYSTEM_ONE_CONNECT_TIMEOUT_MS`（默认 `500`）
 - `AGENT_SYSTEM_ONE_REQUEST_TIMEOUT_MS`（默认 `1200`）
 - `AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD`（默认 `0.65`）
+- `AGENT_SYSTEM_ONE_SAFETY_THRESHOLD`（默认 `0.5`，只控制独立安全护栏）
 - `AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD`（默认 `0`，不声称已核算费用）
 
 #### OpenRouter 主模型与向量模型
@@ -407,17 +410,21 @@ RL 轨迹，避免测试数据污染训练。确定性评分覆盖任务要点�
 强制单 Agent 与强制多 Agent 的实测质量、成本和延迟计算效用 oracle，再分别让当前路由和
 System One 选择同一组反事实结果，避免把随机生成差异误算成路由收益。报告包含路由准确率
 增量、质量增量、平均效用遗憾及降幅、路径成本比、端到端延迟、决策 Token/美元费用、
-Brier score、10-bin ECE、安全召回与漏召回，以及 10,000 次配对 Bootstrap 质量 95% CI。
+Brier score、10-bin ECE、多 Agent precision/recall/平衡准确率、独立安全 precision/recall 与
+误报/漏报，以及 10,000 次配对 Bootstrap 质量 95% CI。
 调用失败按当前路由 fail-open，但计入可用率，不能借回退结果通过发布门禁。
 
 简历数据应使用完整 36 题运行，并同时保留 JSON/Markdown 报告、benchmark SHA-256、模型名
 和运行时间。2 题 smoke 只能验证链路，不能作为效果结论。System One 默认门禁为：样本数
-至少 30、可用率至少 99%、路由准确率至少 80% 且不低于当前路由、安全漏召回为 0、效用
-遗憾不增加、质量 95% CI 下界满足 2% 非劣效界限。相关配置：
+至少 30、可用率至少 99%、路由准确率至少 80% 且不低于当前路由、平衡准确率至少 70%、
+多 Agent 召回率至少 50%、安全漏召回为 0、效用遗憾不增加、质量 95% CI 下界满足 2%
+非劣效界限。相关配置：
 
 - `AGENT_EVALUATION_SYSTEM_ONE_SAFETY_THRESHOLD`
 - `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_AVAILABILITY`
 - `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_ROUTE_ACCURACY`
+- `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_BALANCED_ACCURACY`
+- `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_MULTI_AGENT_RECALL`
 - `AGENT_EVALUATION_SYSTEM_ONE_NON_INFERIORITY_MARGIN`
 - `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_SAMPLES`
 

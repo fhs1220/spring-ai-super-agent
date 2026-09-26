@@ -38,6 +38,8 @@ class DefaultSystemOneRoutingAdvisorTest {
         assertThat(advice.status()).isEqualTo("SUCCESS");
         assertThat(advice.recommendedMultiAgent()).isTrue();
         assertThat(advice.multiAgentProbability()).isEqualTo(0.81);
+        assertThat(advice.recommendedSafetyGuard()).isTrue();
+        assertThat(advice.safetyProbability()).isEqualTo(0.67);
         assertThat(advice.domainProbabilities())
                 .containsEntry(AgentDomain.PARENTING, 0.88)
                 .containsEntry(AgentDomain.SAFETY, 0.67);
@@ -56,6 +58,7 @@ class DefaultSystemOneRoutingAdvisorTest {
 
         assertThat(advice.status()).isEqualTo("FAILED");
         assertThat(advice.recommendedMultiAgent()).isFalse();
+        assertThat(advice.recommendedSafetyGuard()).isFalse();
         assertThat(advice.domainProbabilities()).isEmpty();
     }
 

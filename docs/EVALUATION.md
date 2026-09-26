@@ -29,8 +29,15 @@
 启用 System One 后，报告还会复用同一题已经实测的强制单 Agent 与强制多 Agent 结果，
 分别计算当前路由、Jev/Laya 路由和事后效用 oracle 的质量、成本、延迟与遗憾。这样不会把
 不同生成采样带来的随机差异误认为路由收益。System One 章节同时记录可用率、决策 Token、
-决策成本、Brier score、10-bin ECE、安全召回/漏召回，以及 10,000 次配对 Bootstrap 的
-质量差 95% 置信区间。决策服务失败时按当前路由 fail-open，但失败仍计入可用率门禁。
+决策成本、Brier score、10-bin ECE、多 Agent precision/recall/平衡准确率、独立安全
+precision/recall/误报/漏报，以及 10,000 次配对 Bootstrap 的质量差 95% 置信区间。安全护栏
+不会隐式改写单/多 Agent 执行选择。决策服务失败时按当前路由 fail-open，但失败仍计入可用率
+门禁；平衡准确率与多 Agent 召回门禁可防止“全部预测为单 Agent”凭多数类准确率误通过。
+
+System One 的提示词、阈值或后续校准器只能使用与冻结 36 题无重叠的开发集调整；冻结集只用于
+最终回归。开发集应包含单 Agent hard negatives、多 Agent positives 和独立安全样本，并按效用
+oracle（质量减成本与延迟惩罚）标注。具体流程见
+[`SYSTEM_ONE_CALIBRATION.md`](SYSTEM_ONE_CALIBRATION.md)。
 
 首次 OpenRouter + Jev 36 题真实运行及其失败敏感性分析见
 [`JEV_SYSTEM_ONE_EVALUATION_REPORT.md`](JEV_SYSTEM_ONE_EVALUATION_REPORT.md)。

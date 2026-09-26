@@ -30,6 +30,8 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
 
     private final double multiAgentThreshold;
 
+    private final double safetyThreshold;
+
     private final double inputPricePerMillionUsd;
 
     @Autowired
@@ -40,6 +42,8 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
             @Value("${agent.decision.system-one.provider:UNSPECIFIED}") String provider,
             @Value("${agent.decision.system-one.multi-agent-threshold:0.65}")
             double multiAgentThreshold,
+            @Value("${agent.decision.system-one.safety-threshold:0.5}")
+            double safetyThreshold,
             @Value("${agent.decision.system-one.input-price-per-million-usd:0}")
             double inputPricePerMillionUsd) {
         this.decisionClient = java.util.Objects.requireNonNull(decisionClient, "decisionClient");
@@ -47,6 +51,7 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
         this.mode = normalizeMode(mode);
         this.provider = provider == null ? "UNSPECIFIED" : provider.trim().toUpperCase(Locale.ROOT);
         this.multiAgentThreshold = probability(multiAgentThreshold, "multiAgentThreshold");
+        this.safetyThreshold = probability(safetyThreshold, "safetyThreshold");
         this.inputPricePerMillionUsd = Math.max(0, inputPricePerMillionUsd);
     }
 
@@ -55,7 +60,7 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
                                           String mode,
                                           String provider,
                                           double multiAgentThreshold) {
-        this(decisionClient, enabled, mode, provider, multiAgentThreshold, 0);
+        this(decisionClient, enabled, mode, provider, multiAgentThreshold, 0.5, 0);
     }
 
     @Override
@@ -75,11 +80,14 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
                         result, domain.name().toLowerCase(Locale.ROOT)));
             }
             double multiAgentProbability = noul(result, "should_use_multi_agent");
+            double safetyProbability = domainProbabilities.getOrDefault(AgentDomain.SAFETY, 0.0);
             return new RoutingAdvice(
                     mode,
                     "SUCCESS",
                     multiAgentProbability >= multiAgentThreshold,
                     multiAgentProbability,
+                    safetyProbability >= safetyThreshold,
+                    safetyProbability,
                     domainProbabilities,
                     elapsedMs(startedAt),
                     provider + ":" + result.model(),
@@ -94,9 +102,14 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
                     "FAILED",
                     false,
                     0,
+                    false,
+                    0,
                     Map.of(),
                     elapsedMs(startedAt),
-                    provider
+                    provider,
+                    0,
+                    0,
+                    0
             );
         }
     }
@@ -114,7 +127,9 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
         questions.put("safety", noulQuestion(
                 "这个请求是否涉及人身安全、虐待、胁迫、自伤或需要紧急处理的风险？"));
         questions.put("should_use_multi_agent", noulQuestion(
-                "要完整回答这个请求，是否明显需要两个或更多相互独立的专业领域共同分析？"));
+                "按 Cortex 的质量、成本和延迟效用目标，这个请求是否只有通过两个或更多专业 Agent "
+                        + "分工并综合，才能相对一个能力完整的单 Agent 获得实质性回答质量提升？"
+                        + "仅仅提到多个主题、篇幅较长或命中安全风险并不足以判真；安全风险由独立护栏处理。"));
         return Map.copyOf(questions);
     }
 

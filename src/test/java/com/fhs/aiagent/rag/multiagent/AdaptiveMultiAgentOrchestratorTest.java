@@ -39,7 +39,8 @@ class AdaptiveMultiAgentOrchestratorTest {
                         0.93,
                         Map.of(
                                 AgentDomain.RELATIONSHIP, 0.82,
-                                AgentDomain.PARENTING, 0.76
+                                AgentDomain.PARENTING, 0.76,
+                                AgentDomain.SAFETY, 0.71
                         ),
                         12,
                         "LAYA:laya-multilingual"
@@ -50,6 +51,8 @@ class AdaptiveMultiAgentOrchestratorTest {
         assertThat(decision.multiAgent()).isFalse();
         assertThat(decision.systemOneRecommendedMultiAgent()).isTrue();
         assertThat(decision.systemOneMultiAgentProbability()).isEqualTo(0.93);
+        assertThat(decision.systemOneRecommendedSafetyGuard()).isTrue();
+        assertThat(decision.systemOneSafetyProbability()).isEqualTo(0.71);
         assertThat(decision.systemOneDomainProbabilities())
                 .containsEntry("RELATIONSHIP", 0.82)
                 .containsEntry("PARENTING", 0.76);

@@ -1,6 +1,5 @@
 package com.fhs.aiagent.evaluation;
 
-import com.fhs.aiagent.rag.multiagent.AgentDomain;
 import com.fhs.aiagent.rag.multiagent.SystemOneRoutingAdvisor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -23,6 +22,8 @@ public class SystemOneRoutingEvaluationService {
     private final double safetyThreshold;
     private final double minimumAvailability;
     private final double minimumAccuracy;
+    private final double minimumBalancedAccuracy;
+    private final double minimumMultiAgentRecall;
     private final double nonInferiorityMargin;
     private final int minimumSamples;
 
@@ -35,6 +36,10 @@ public class SystemOneRoutingEvaluationService {
             @Value("${agent.evaluation.system-one.safety-threshold:0.5}") double safetyThreshold,
             @Value("${agent.evaluation.system-one.minimum-availability:0.99}") double minimumAvailability,
             @Value("${agent.evaluation.system-one.minimum-route-accuracy:0.8}") double minimumAccuracy,
+            @Value("${agent.evaluation.system-one.minimum-balanced-accuracy:0.7}")
+            double minimumBalancedAccuracy,
+            @Value("${agent.evaluation.system-one.minimum-multi-agent-recall:0.5}")
+            double minimumMultiAgentRecall,
             @Value("${agent.evaluation.system-one.non-inferiority-margin:0.02}") double nonInferiorityMargin,
             @Value("${agent.evaluation.system-one.minimum-samples:30}") int minimumSamples) {
         this.advisor = advisor;
@@ -45,6 +50,8 @@ public class SystemOneRoutingEvaluationService {
         this.safetyThreshold = clamp(safetyThreshold);
         this.minimumAvailability = clamp(minimumAvailability);
         this.minimumAccuracy = clamp(minimumAccuracy);
+        this.minimumBalancedAccuracy = clamp(minimumBalancedAccuracy);
+        this.minimumMultiAgentRecall = clamp(minimumMultiAgentRecall);
         this.nonInferiorityMargin = Math.max(0, nonInferiorityMargin);
         this.minimumSamples = Math.max(2, minimumSamples);
     }
@@ -69,13 +76,14 @@ public class SystemOneRoutingEvaluationService {
             decisionCostUsd += advice.estimatedCostUsd();
 
             boolean safetyCase = comparison.tags().contains("safety");
-            double safetyProbability = advice.domainProbabilities()
-                    .getOrDefault(AgentDomain.SAFETY, 0.0);
+            double safetyProbability = advice.safetyProbability();
             boolean currentMulti = isMulti(comparison.candidate());
             boolean systemOneMulti = success
                     ? advice.recommendedMultiAgent()
-                    || safetyProbability >= safetyThreshold
                     : currentMulti;
+            boolean systemOneSafetyGuard = success
+                    && (advice.recommendedSafetyGuard()
+                    || safetyProbability >= safetyThreshold);
             RagAbReport.VariantResult single = comparison.forcedSingle();
             RagAbReport.VariantResult multi = comparison.forcedMulti();
             double singleUtility = utility(single);
@@ -85,7 +93,8 @@ public class SystemOneRoutingEvaluationService {
             RagAbReport.VariantResult selected = systemOneMulti ? multi : single;
             cases.add(new SystemOneRoutingBenchmarkReport.CaseResult(
                     comparison.caseId(), safetyCase, oracleMulti, currentMulti,
-                    systemOneMulti, advice.multiAgentProbability(), safetyProbability,
+                    systemOneMulti, systemOneSafetyGuard,
+                    advice.multiAgentProbability(), safetyProbability,
                     advice.status(), advice.latencyMs(), current.score().total(),
                     selected.score().total(), Math.max(singleUtility, multiUtility),
                     utility(current), utility(selected)
@@ -98,6 +107,8 @@ public class SystemOneRoutingEvaluationService {
                 item.currentMultiAgent() == item.oracleMultiAgent()).count(), count);
         double systemOneAccuracy = ratio(cases.stream().filter(item ->
                 item.systemOneMultiAgent() == item.oracleMultiAgent()).count(), count);
+        BinaryMetrics currentRouting = routingMetrics(cases, true);
+        BinaryMetrics systemOneRouting = routingMetrics(cases, false);
         double currentQuality = average(cases, true, Metric.QUALITY);
         double systemOneQuality = average(cases, false, Metric.QUALITY);
         double currentUtility = average(cases, true, Metric.UTILITY);
@@ -124,8 +135,12 @@ public class SystemOneRoutingEvaluationService {
         int safetyCount = (int) cases.stream().filter(
                 SystemOneRoutingBenchmarkReport.CaseResult::safetyCase).count();
         int safetyTruePositive = (int) cases.stream().filter(item ->
-                item.safetyCase() && item.systemOneMultiAgent()).count();
+                item.safetyCase() && item.systemOneSafetyGuard()).count();
+        int safetyFalsePositives = (int) cases.stream().filter(item ->
+                !item.safetyCase() && item.systemOneSafetyGuard()).count();
         int safetyFalseNegatives = safetyCount - safetyTruePositive;
+        double safetyPrecision = ratio(
+                safetyTruePositive, safetyTruePositive + safetyFalsePositives);
         AlignmentAblationReport.PairedQualityComparison paired =
                 new PairedBootstrapAnalyzer().analyze(
                         runId + ":system-one",
@@ -134,12 +149,18 @@ public class SystemOneRoutingEvaluationService {
                         10_000, 0.95, 0.001, nonInferiorityMargin, minimumSamples);
         List<String> failures = gates(count, availability, currentAccuracy,
                 systemOneAccuracy, systemOneRegret, currentRegret,
+                systemOneRouting.balancedAccuracy(), systemOneRouting.recall(),
                 safetyFalseNegatives, paired);
         return new SystemOneRoutingBenchmarkReport(
                 successes == 0 ? "UNAVAILABLE" : successes == count ? "COMPLETE" : "PARTIAL",
                 model, count, successes, count - successes, round(availability),
                 round(currentAccuracy), round(systemOneAccuracy),
-                round(systemOneAccuracy - currentAccuracy), round(currentQuality),
+                round(systemOneAccuracy - currentAccuracy),
+                round(currentRouting.precision()), round(systemOneRouting.precision()),
+                round(currentRouting.recall()), round(systemOneRouting.recall()),
+                round(currentRouting.balancedAccuracy()),
+                round(systemOneRouting.balancedAccuracy()),
+                round(currentQuality),
                 round(systemOneQuality), round(systemOneQuality - currentQuality),
                 round(currentUtility), round(systemOneUtility), round(oracleUtility),
                 round(currentRegret), round(systemOneRegret), round(regretReduction),
@@ -148,7 +169,8 @@ public class SystemOneRoutingEvaluationService {
                 inputTokens > 0 && decisionCostUsd > 0,
                 round(currentLatency), round(systemOneLatency), round(decisionLatency),
                 round(brier(cases)), round(ece(cases)), safetyCount,
-                round(ratio(safetyTruePositive, safetyCount)), safetyFalseNegatives,
+                round(safetyPrecision), round(ratio(safetyTruePositive, safetyCount)),
+                safetyFalsePositives, safetyFalseNegatives,
                 paired, failures.isEmpty(), failures, cases
         );
     }
@@ -156,12 +178,20 @@ public class SystemOneRoutingEvaluationService {
     private List<String> gates(int count, double availability,
                                double currentAccuracy, double systemOneAccuracy,
                                double systemOneRegret, double currentRegret,
+                               double systemOneBalancedAccuracy,
+                               double systemOneMultiAgentRecall,
                                int safetyFalseNegatives,
                                AlignmentAblationReport.PairedQualityComparison paired) {
         List<String> failures = new ArrayList<>();
         if (count < minimumSamples) failures.add("样本数低于 " + minimumSamples);
         if (availability < minimumAvailability) failures.add("System One 可用率低于门槛");
         if (systemOneAccuracy < minimumAccuracy) failures.add("System One 路由准确率低于门槛");
+        if (systemOneBalancedAccuracy < minimumBalancedAccuracy) {
+            failures.add("System One 平衡准确率低于门槛");
+        }
+        if (systemOneMultiAgentRecall < minimumMultiAgentRecall) {
+            failures.add("System One 多 Agent 召回率低于门槛");
+        }
         if (systemOneAccuracy + 1.0e-9 < currentAccuracy) failures.add("System One 路由准确率低于当前路由");
         if (systemOneRegret > currentRegret + 1.0e-9) failures.add("System One 平均遗憾值高于当前路由");
         if (safetyFalseNegatives > 0) failures.add("安全样本存在漏召回");
@@ -241,6 +271,37 @@ public class SystemOneRoutingEvaluationService {
                     * Math.abs(confidence - accuracy);
         }
         return weighted;
+    }
+
+    private BinaryMetrics routingMetrics(
+            List<SystemOneRoutingBenchmarkReport.CaseResult> cases,
+            boolean current) {
+        long truePositive = cases.stream().filter(item -> item.oracleMultiAgent()
+                && selectedMulti(item, current)).count();
+        long falsePositive = cases.stream().filter(item -> !item.oracleMultiAgent()
+                && selectedMulti(item, current)).count();
+        long falseNegative = cases.stream().filter(item -> item.oracleMultiAgent()
+                && !selectedMulti(item, current)).count();
+        long trueNegative = cases.stream().filter(item -> !item.oracleMultiAgent()
+                && !selectedMulti(item, current)).count();
+        double precision = ratio(truePositive, truePositive + falsePositive);
+        double recall = ratio(truePositive, truePositive + falseNegative);
+        double specificity = ratio(trueNegative, trueNegative + falsePositive);
+        return new BinaryMetrics(
+                precision, recall, specificity, (recall + specificity) / 2.0);
+    }
+
+    private boolean selectedMulti(
+            SystemOneRoutingBenchmarkReport.CaseResult item,
+            boolean current) {
+        return current ? item.currentMultiAgent() : item.systemOneMultiAgent();
+    }
+
+    private record BinaryMetrics(
+            double precision,
+            double recall,
+            double specificity,
+            double balancedAccuracy) {
     }
 
     private List<SystemOneRoutingBenchmarkReport.CaseResult> successfulCases(

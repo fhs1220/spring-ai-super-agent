@@ -28,6 +28,8 @@ public record MultiAgentDecision(
         String systemOneStatus,
         boolean systemOneRecommendedMultiAgent,
         double systemOneMultiAgentProbability,
+        boolean systemOneRecommendedSafetyGuard,
+        double systemOneSafetyProbability,
         Map<String, Double> systemOneDomainProbabilities,
         long systemOneLatencyMs,
         String systemOneModel
@@ -38,6 +40,8 @@ public record MultiAgentDecision(
         systemOneStatus = systemOneStatus == null ? "DISABLED" : systemOneStatus;
         systemOneMultiAgentProbability = Math.max(
                 0, Math.min(1, systemOneMultiAgentProbability));
+        systemOneSafetyProbability = Math.max(
+                0, Math.min(1, systemOneSafetyProbability));
         systemOneDomainProbabilities = systemOneDomainProbabilities == null
                 ? Map.of()
                 : Map.copyOf(systemOneDomainProbabilities);

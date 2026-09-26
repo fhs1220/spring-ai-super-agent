@@ -78,6 +78,8 @@ agent:
       connect-timeout-ms: ${AGENT_SYSTEM_ONE_CONNECT_TIMEOUT_MS:500}
       request-timeout-ms: ${AGENT_SYSTEM_ONE_REQUEST_TIMEOUT_MS:1200}
       multi-agent-threshold: ${AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD:0.65}
+      # 安全检测独立触发安全护栏，不再隐式强制完整多 Agent。
+      safety-threshold: ${AGENT_SYSTEM_ONE_SAFETY_THRESHOLD:0.5}
       # 决策 API 输入单价；为 0 时报告不会声称已核算决策模型费用。
       input-price-per-million-usd: ${AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD:0}
   rag:
@@ -243,6 +245,8 @@ agent:
       safety-threshold: ${AGENT_EVALUATION_SYSTEM_ONE_SAFETY_THRESHOLD:0.5}
       minimum-availability: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_AVAILABILITY:0.99}
       minimum-route-accuracy: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_ROUTE_ACCURACY:0.8}
+      minimum-balanced-accuracy: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_BALANCED_ACCURACY:0.7}
+      minimum-multi-agent-recall: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_MULTI_AGENT_RECALL:0.5}
       non-inferiority-margin: ${AGENT_EVALUATION_SYSTEM_ONE_NON_INFERIORITY_MARGIN:0.02}
       minimum-samples: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_SAMPLES:30}
     # 四臂实验只接受可验证的 64 位 SHA-256 资产/训练指纹；普通本地 smoke 可保持 UNSPECIFIED。

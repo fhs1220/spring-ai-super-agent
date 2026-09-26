@@ -8,6 +8,11 @@ Jev 已完成 OpenRouter Decisions API 集成、影子路由、fail-open 降级�
 本次评测最重要的工程结论不是“模型已经可以上线”，而是发布门禁成功识别了一个有潜力、
 但尚未充分对齐 Cortex 实际效用目标的决策模型。
 
+> 历史口径说明：本报告记录的是解耦前的首次运行。当时安全概率会同时触发多 Agent，因此下方
+> Jev 路由数字不能代表当前实现。现已将“安全护栏”和“是否启用多 Agent”拆成独立动作，并新增
+> 多 Agent precision/recall、平衡准确率及安全 precision/recall 门禁；新实现尚未用冻结 36 题
+> 重跑，历史数字保持不改写。
+
 ## 可复现身份
 
 - Run ID：`rag-ab-1e95a150-dafb-4148-be1c-2135dc33d1b2`
