@@ -36,6 +36,8 @@ DPO-LoRA 的真实参数更新、固定 36 题训练前后对比和自动拒绝�
 [`docs/RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md`](docs/RL_PRECISION_UPGRADE_V13_FINAL_REPORT.md)。
 OpenRouter + Jev 的首次 36 题真实反事实评测、失败敏感性分析和发布结论见
 [`docs/JEV_SYSTEM_ONE_EVALUATION_REPORT.md`](docs/JEV_SYSTEM_ONE_EVALUATION_REPORT.md)。
+解耦安全护栏、锁定 0.20 阈值后的固定反事实回放见
+[`docs/JEV_FROZEN_REPLAY_REPORT.md`](docs/JEV_FROZEN_REPLAY_REPORT.md)。
 
 ---
 

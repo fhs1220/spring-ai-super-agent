@@ -48,6 +48,8 @@ Token、费用、延迟和数据集 SHA-256。
 [`JEV_SYSTEM_ONE_EVALUATION_REPORT.md`](JEV_SYSTEM_ONE_EVALUATION_REPORT.md)。
 独立开发集的首次真实阈值扫描见
 [`JEV_CALIBRATION_V1_REPORT.md`](JEV_CALIBRATION_V1_REPORT.md)。
+锁定候选后的 36 题 Jev-only 固定反事实回放见
+[`JEV_FROZEN_REPLAY_REPORT.md`](JEV_FROZEN_REPLAY_REPORT.md)。
 
 RLAIF/RLVR 四臂消融报告不是只比较四个均值。它会按 `caseId` 对齐逐样本结果，使用固定
 种子的配对 percentile bootstrap 计算 95% 置信区间，同时给出标准化效应量、精确符号
