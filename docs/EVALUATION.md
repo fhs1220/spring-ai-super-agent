@@ -52,6 +52,8 @@ Token、费用、延迟和数据集 SHA-256。
 [`JEV_FROZEN_REPLAY_REPORT.md`](JEV_FROZEN_REPLAY_REPORT.md)。
 同一开发集与冻结反事实下的 Jev/Laya 影子 challenger 对照见
 [`JEV_LAYA_SHADOW_COMPARISON.md`](JEV_LAYA_SHADOW_COMPARISON.md)。该对照不会自动修改生产路由。
+持续收集两路分歧、agreement control 与后续标注样本的运行方式见
+[`SYSTEM_ONE_DUAL_SHADOW.md`](SYSTEM_ONE_DUAL_SHADOW.md)。
 
 RLAIF/RLVR 四臂消融报告不是只比较四个均值。它会按 `caseId` 对齐逐样本结果，使用固定
 种子的配对 percentile bootstrap 计算 95% 置信区间，同时给出标准化效应量、精确符号

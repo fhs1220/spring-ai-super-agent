@@ -27,6 +27,29 @@ import static org.mockito.Mockito.when;
 class AdaptiveMultiAgentOrchestratorTest {
 
     @Test
+    void queuesDualShadowWithoutCallingSynchronousAdvisor() {
+        ChatModel chatModel = mock(ChatModel.class);
+        AdaptiveMultiAgentOrchestrator orchestrator = new AdaptiveMultiAgentOrchestrator(
+                ChatClient.builder(chatModel).build(), true, 2, 3);
+        AtomicInteger synchronousCalls = new AtomicInteger();
+        orchestrator.setSystemOneRoutingAdvisor(question -> {
+            synchronousCalls.incrementAndGet();
+            return SystemOneRoutingAdvisor.RoutingAdvice.disabled();
+        });
+        orchestrator.setSystemOneShadowComparison(
+                (question, authoritativeMultiAgent, featureBucket) ->
+                        SystemOneShadowComparison.Submission.queued("shadow-test-1"));
+
+        MultiAgentDecision decision = orchestrator.route("异地恋怎样保持沟通？");
+
+        assertThat(decision.multiAgent()).isFalse();
+        assertThat(synchronousCalls).hasValue(0);
+        assertThat(decision.systemOneMode()).isEqualTo("DUAL_SHADOW");
+        assertThat(decision.systemOneStatus()).isEqualTo("QUEUED_DUAL_SHADOW");
+        assertThat(decision.systemOneSampleId()).isEqualTo("shadow-test-1");
+    }
+
+    @Test
     void recordsSystemOneShadowAdviceWithoutChangingTheAuthoritativeRoute() {
         ChatModel chatModel = mock(ChatModel.class);
         AdaptiveMultiAgentOrchestrator orchestrator = new AdaptiveMultiAgentOrchestrator(

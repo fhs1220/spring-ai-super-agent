@@ -74,6 +74,8 @@ public class AdaptiveMultiAgentOrchestrator {
 
     private SystemOneRoutingAdvisor systemOneRoutingAdvisor;
 
+    private SystemOneShadowComparison systemOneShadowComparison;
+
     @Autowired
     public AdaptiveMultiAgentOrchestrator(
             ChatModel dashscopeChatModel,
@@ -87,7 +89,8 @@ public class AdaptiveMultiAgentOrchestrator {
             @Value("${agent.rag.multi-agent.circuit-breaker-cooldown-seconds:60}")
             long circuitBreakerCooldownSeconds,
             TrajectoryAwareRoutingPolicy routingPolicy,
-            SystemOneRoutingAdvisor systemOneRoutingAdvisor) {
+            SystemOneRoutingAdvisor systemOneRoutingAdvisor,
+            SystemOneShadowComparison systemOneShadowComparison) {
         this(
                 ChatClient.builder(dashscopeChatModel).build(),
                 enabled,
@@ -102,6 +105,8 @@ public class AdaptiveMultiAgentOrchestrator {
         this.routingPolicy = java.util.Objects.requireNonNull(routingPolicy, "routingPolicy");
         this.systemOneRoutingAdvisor = java.util.Objects.requireNonNull(
                 systemOneRoutingAdvisor, "systemOneRoutingAdvisor");
+        this.systemOneShadowComparison = java.util.Objects.requireNonNull(
+                systemOneShadowComparison, "systemOneShadowComparison");
     }
 
     public AdaptiveMultiAgentOrchestrator(ChatClient chatClient,
@@ -143,6 +148,7 @@ public class AdaptiveMultiAgentOrchestrator {
         this.clock = java.util.Objects.requireNonNull(clock, "clock");
         this.specialists = createSpecialists(chatClient);
         this.systemOneRoutingAdvisor = SystemOneRoutingAdvisor.disabled();
+        this.systemOneShadowComparison = SystemOneShadowComparison.disabled();
     }
 
     public MultiAgentDecision route(String question) {
@@ -214,11 +220,10 @@ public class AdaptiveMultiAgentOrchestrator {
                             0,
                             Map.of(),
                             0,
+                            "",
                             ""
             );
         }
-        SystemOneRoutingAdvisor.RoutingAdvice systemOneAdvice =
-                systemOneRoutingAdvisor.advise(question);
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision policyDecision =
                 routingPolicy == null
                         ? new TrajectoryAwareRoutingPolicy.RoutingPolicyDecision(
@@ -244,6 +249,13 @@ public class AdaptiveMultiAgentOrchestrator {
                                 question
                         ));
         boolean finalMultiAgent = enabled && policyDecision.multiAgent();
+        SystemOneShadowComparison.Submission shadowSubmission =
+                systemOneShadowComparison.submit(
+                        question, finalMultiAgent, featureBucket);
+        SystemOneRoutingAdvisor.RoutingAdvice systemOneAdvice =
+                shadowSubmission.active()
+                        ? queuedShadowAdvice(shadowSubmission)
+                        : systemOneRoutingAdvisor.advise(question);
         List<AgentDomain> selected = finalMultiAgent ? selectDomains(domains) : List.of();
         String reason = deterministicReason + "；" + policyDecision.reason();
         return new MultiAgentDecision(
@@ -272,13 +284,37 @@ public class AdaptiveMultiAgentOrchestrator {
                 systemOneAdvice.safetyProbability(),
                 systemOneDomainProbabilities(systemOneAdvice),
                 systemOneAdvice.latencyMs(),
-                systemOneAdvice.model()
+                systemOneAdvice.model(),
+                shadowSubmission.sampleId()
         );
     }
 
     void setSystemOneRoutingAdvisor(SystemOneRoutingAdvisor systemOneRoutingAdvisor) {
         this.systemOneRoutingAdvisor = java.util.Objects.requireNonNull(
                 systemOneRoutingAdvisor, "systemOneRoutingAdvisor");
+    }
+
+    void setSystemOneShadowComparison(SystemOneShadowComparison systemOneShadowComparison) {
+        this.systemOneShadowComparison = java.util.Objects.requireNonNull(
+                systemOneShadowComparison, "systemOneShadowComparison");
+    }
+
+    private SystemOneRoutingAdvisor.RoutingAdvice queuedShadowAdvice(
+            SystemOneShadowComparison.Submission submission) {
+        return new SystemOneRoutingAdvisor.RoutingAdvice(
+                "DUAL_SHADOW",
+                submission.status(),
+                false,
+                0,
+                false,
+                0,
+                Map.of(),
+                0,
+                "OPENROUTER_JEV+LAYA",
+                0,
+                0,
+                0
+        );
     }
 
     private Map<String, Double> systemOneDomainProbabilities(

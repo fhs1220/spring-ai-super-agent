@@ -84,6 +84,38 @@ agent:
       safety-threshold: ${AGENT_SYSTEM_ONE_SAFETY_THRESHOLD:0.5}
       # 决策 API 输入单价；为 0 时报告不会声称已核算决策模型费用。
       input-price-per-million-usd: ${AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD:0}
+      comparison:
+        # 后台并行调用两路 provider；启用后在线路由不再同步等待上面的单路 advisor。
+        enabled: ${AGENT_SYSTEM_ONE_COMPARISON_ENABLED:false}
+        storage-directory: ${AGENT_SYSTEM_ONE_COMPARISON_STORAGE_DIRECTORY:tmp/system-one-shadow}
+        maximum-samples: ${AGENT_SYSTEM_ONE_COMPARISON_MAXIMUM_SAMPLES:1000}
+        maximum-in-flight: ${AGENT_SYSTEM_ONE_COMPARISON_MAXIMUM_IN_FLIGHT:4}
+        probability-gap-threshold: ${AGENT_SYSTEM_ONE_COMPARISON_PROBABILITY_GAP_THRESHOLD:0.25}
+        agreement-sample-rate: ${AGENT_SYSTEM_ONE_COMPARISON_AGREEMENT_SAMPLE_RATE:0.10}
+        # 默认只保存问题 SHA-256；仅在受信任本地环境开启原文，供后续人工/反事实标注。
+        store-question: ${AGENT_SYSTEM_ONE_COMPARISON_STORE_QUESTION:false}
+        primary:
+          provider: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_PROVIDER:OPENROUTER_JEV}
+          base-url: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_BASE_URL:https://openrouter.ai}
+          endpoint-path: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_ENDPOINT_PATH:/api/alpha/decisions}
+          api-key: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_API_KEY:${OPENROUTER_API_KEY:}}
+          model: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_MODEL:~typesafe/jev-latest}
+          connect-timeout-ms: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_CONNECT_TIMEOUT_MS:500}
+          request-timeout-ms: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_REQUEST_TIMEOUT_MS:1200}
+          multi-agent-threshold: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_MULTI_AGENT_THRESHOLD:0.20}
+          safety-threshold: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_SAFETY_THRESHOLD:0.5}
+          input-price-per-million-usd: ${AGENT_SYSTEM_ONE_COMPARISON_PRIMARY_INPUT_PRICE_PER_MILLION_USD:0.042}
+        challenger:
+          provider: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_PROVIDER:LAYA}
+          base-url: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_BASE_URL:http://localhost:8000}
+          endpoint-path: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_ENDPOINT_PATH:/v1/systemone}
+          api-key: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_API_KEY:}
+          model: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_MODEL:multilingual}
+          connect-timeout-ms: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_CONNECT_TIMEOUT_MS:500}
+          request-timeout-ms: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_REQUEST_TIMEOUT_MS:1200}
+          multi-agent-threshold: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_MULTI_AGENT_THRESHOLD:0.75}
+          safety-threshold: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_SAFETY_THRESHOLD:0.5}
+          input-price-per-million-usd: ${AGENT_SYSTEM_ONE_COMPARISON_CHALLENGER_INPUT_PRICE_PER_MILLION_USD:0}
   rag:
     vector-cache-enabled: ${AGENT_RAG_VECTOR_CACHE_ENABLED:true}
     vector-cache-directory: ${AGENT_RAG_VECTOR_CACHE_DIRECTORY:tmp/rag/vector-store}

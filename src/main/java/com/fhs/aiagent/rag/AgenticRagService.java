@@ -417,7 +417,9 @@ public class AgenticRagService {
                             Map.entry("systemOneLatencyMs",
                                     multiAgentDecision.systemOneLatencyMs()),
                             Map.entry("systemOneModel",
-                                    multiAgentDecision.systemOneModel())
+                                    multiAgentDecision.systemOneModel()),
+                            Map.entry("systemOneSampleId",
+                                    multiAgentDecision.systemOneSampleId())
                             )
             );
             emit(listener, "ROUTE", "COMPLETED", "自适应路由",

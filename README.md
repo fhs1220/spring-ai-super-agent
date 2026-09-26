@@ -202,6 +202,11 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 - `AGENT_SYSTEM_ONE_SAFETY_THRESHOLD`（默认 `0.5`，只控制独立安全护栏）
 - `AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD`（默认 `0`，不声称已核算费用）
 
+需要持续收集 Jev/Laya 分歧时，可启用异步双路 Shadow。它不会改变权威路由，也不会让两次
+决策推理阻塞请求；默认保存全部分歧和 10% 的一致对照样本，并且只保存问题 SHA-256。配置、
+隐私边界和样本接口见
+[`docs/SYSTEM_ONE_DUAL_SHADOW.md`](docs/SYSTEM_ONE_DUAL_SHADOW.md)。
+
 #### OpenRouter 主模型与向量模型
 
 Cortex 默认通过 OpenRouter 的 OpenAI-compatible API 使用 `openai/gpt-5.4` 生成回答，

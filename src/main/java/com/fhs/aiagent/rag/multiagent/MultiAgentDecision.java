@@ -32,7 +32,8 @@ public record MultiAgentDecision(
         double systemOneSafetyProbability,
         Map<String, Double> systemOneDomainProbabilities,
         long systemOneLatencyMs,
-        String systemOneModel
+        String systemOneModel,
+        String systemOneSampleId
 ) {
 
     public MultiAgentDecision {
@@ -47,5 +48,6 @@ public record MultiAgentDecision(
                 : Map.copyOf(systemOneDomainProbabilities);
         systemOneLatencyMs = Math.max(0, systemOneLatencyMs);
         systemOneModel = systemOneModel == null ? "" : systemOneModel;
+        systemOneSampleId = systemOneSampleId == null ? "" : systemOneSampleId;
     }
 }
