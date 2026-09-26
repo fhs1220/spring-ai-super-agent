@@ -77,7 +77,8 @@ agent:
       model: ${AGENT_SYSTEM_ONE_MODEL:}
       connect-timeout-ms: ${AGENT_SYSTEM_ONE_CONNECT_TIMEOUT_MS:500}
       request-timeout-ms: ${AGENT_SYSTEM_ONE_REQUEST_TIMEOUT_MS:1200}
-      # Jev calibration v1 在独立开发集上锁定为 0.20；冻结 36 题不参与选值。
+      # Provider 专属阈值：Jev calibration v1 为 0.20；Laya challenger 为 0.75。
+      # 冻结 36 题不参与选值；切换 provider 时必须显式覆盖，不能迁移置信度阈值。
       multi-agent-threshold: ${AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD:0.20}
       # 安全检测独立触发安全护栏，不再隐式强制完整多 Agent。
       safety-threshold: ${AGENT_SYSTEM_ONE_SAFETY_THRESHOLD:0.5}

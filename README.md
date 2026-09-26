@@ -157,6 +157,8 @@ export AGENT_SYSTEM_ONE_ENABLED=true
 export AGENT_SYSTEM_ONE_PROVIDER=LAYA
 export AGENT_SYSTEM_ONE_BASE_URL=http://localhost:8000
 export AGENT_SYSTEM_ONE_MODEL=multilingual
+# Laya 与 Jev 的置信度不可直接比较；0.75 来自本项目独立开发集。
+export AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD=0.75
 ```
 
 切换 Jev 时不需要修改 Java 代码，只需设置：
@@ -195,7 +197,8 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 - `AGENT_SYSTEM_ONE_MODEL`
 - `AGENT_SYSTEM_ONE_CONNECT_TIMEOUT_MS`（默认 `500`）
 - `AGENT_SYSTEM_ONE_REQUEST_TIMEOUT_MS`（默认 `1200`）
-- `AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD`（默认 `0.20`，由独立 calibration-v1 开发集锁定）
+- `AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD`（provider 专属：当前 Jev 为 `0.20`、Laya 为 `0.75`，
+  均由独立 calibration-v1 开发集锁定，不能跨 provider 复用）
 - `AGENT_SYSTEM_ONE_SAFETY_THRESHOLD`（默认 `0.5`，只控制独立安全护栏）
 - `AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD`（默认 `0`，不声称已核算费用）
 

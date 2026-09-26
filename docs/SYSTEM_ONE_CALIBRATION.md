@@ -67,3 +67,11 @@ POST /api/agent-evaluation/system-one-calibration/runs
 
 因此候选默认阈值锁定为 `0.20`，下一步只允许用冻结 36 题做一次正式回归判断，不再根据该冻结
 结果反向调整本候选。人工 bootstrap 集上的满分不能表述为生产准确率或简历效果数据。
+
+## Laya challenger
+
+同一 24 条开发集为本地 `laya-multilingual` 单独选择了 `0.75` 阈值。冻结回放中 Laya 的
+multi-Agent recall / balanced accuracy 为 75.00% / 71.43%，但安全 recall 为 0%，且整体
+accuracy 69.44% 未过门禁。因此 Laya 只作为影子 challenger，不复用 Jev 的 `0.20` 阈值，
+也不接管安全护栏或生产执行路由。完整对照见
+[`JEV_LAYA_SHADOW_COMPARISON.md`](JEV_LAYA_SHADOW_COMPARISON.md)。
