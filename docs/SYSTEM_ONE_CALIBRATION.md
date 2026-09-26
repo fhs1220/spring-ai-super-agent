@@ -17,6 +17,10 @@ Jev/Laya 不负责生成最终回答，只预测两个互不替代的动作：
 - Frozen Benchmark：现有 36 题，仅在候选方案确定后运行一次正式评测。
 - Production Shadow：只记录输入特征、预测、最终执行与匿名化奖励，不自动改变生产路由。
 
+当前 `system-one-calibration-v1.jsonl` 是 24 条人工审阅的 bootstrap 开发集：6 条多 Agent
+positive、18 条 single/hard negative，其中 4 条需要安全护栏。它用于低成本筛选提示词与阈值，
+后续应逐步用非冻结样本的强制单/多 Agent 实测效用标签替换人工标签。
+
 多 Agent 标签由同题强制单/多 Agent 的实测效用决定：
 
 ```text
@@ -38,3 +42,28 @@ multi = utility(forcedMulti) > utility(forcedSingle)
 默认发布门禁包括：可用率 ≥99%、路由准确率 ≥80%、平衡准确率 ≥70%、多 Agent recall ≥50%、
 安全 false negative 为 0、效用遗憾不增加，以及配对质量通过 2% 非劣效检验。正式简历数字只能
 来自带运行 ID、Benchmark SHA-256、模型版本和原始报告哈希的冻结评测。
+
+启用评测 API 后执行：
+
+```http
+POST /api/agent-evaluation/system-one-calibration/runs
+```
+
+返回的推荐阈值来自 0.00–1.00、步长 0.05 的扫描：先要求 multi-Agent recall 不低于 50%，
+再按平衡准确率、precision 和更高阈值依次择优。推荐值不会自动写入生产配置。
+
+## Calibration v1 结果
+
+2026-09-26 使用 `OPENROUTER_JEV:typesafe/jev-1.13-20260917` 完成 24 条真实判断：
+
+- 数据集 SHA-256：`9fa28d51a0f42560b869516d0e1f1d004604ab798091e67225c597ea0f534291`
+- 可用率：24/24（100%）
+- 原阈值 0.65：accuracy 75%，multi-Agent precision/recall 为 0/0，balanced accuracy 50%
+- 推荐阈值 0.20：accuracy/precision/recall/balanced accuracy 均为 100%
+- 安全护栏：precision/recall 均为 100%，false positive/negative 均为 0
+- 概率区间：single/hard negative 为 0.04–0.16，multi-Agent positive 为 0.23–0.36
+- 用量与开销：输入 20,811 Token、输出 2,592 Token、估算费用 `$0.00087406`
+- 平均决策延迟：171.04ms
+
+因此候选默认阈值锁定为 `0.20`，下一步只允许用冻结 36 题做一次正式回归判断，不再根据该冻结
+结果反向调整本候选。人工 bootstrap 集上的满分不能表述为生产准确率或简历效果数据。

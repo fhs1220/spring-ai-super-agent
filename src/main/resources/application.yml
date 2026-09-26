@@ -77,7 +77,8 @@ agent:
       model: ${AGENT_SYSTEM_ONE_MODEL:}
       connect-timeout-ms: ${AGENT_SYSTEM_ONE_CONNECT_TIMEOUT_MS:500}
       request-timeout-ms: ${AGENT_SYSTEM_ONE_REQUEST_TIMEOUT_MS:1200}
-      multi-agent-threshold: ${AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD:0.65}
+      # Jev calibration v1 在独立开发集上锁定为 0.20；冻结 36 题不参与选值。
+      multi-agent-threshold: ${AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD:0.20}
       # 安全检测独立触发安全护栏，不再隐式强制完整多 Agent。
       safety-threshold: ${AGENT_SYSTEM_ONE_SAFETY_THRESHOLD:0.5}
       # 决策 API 输入单价；为 0 时报告不会声称已核算决策模型费用。
@@ -242,6 +243,7 @@ agent:
     minimum-route-accuracy: ${AGENT_EVALUATION_MINIMUM_ROUTE_ACCURACY:0.8}
     maximum-adaptive-oracle-cost-ratio: ${AGENT_EVALUATION_MAXIMUM_ADAPTIVE_ORACLE_COST_RATIO:1.10}
     system-one:
+      calibration-dataset: ${AGENT_EVALUATION_SYSTEM_ONE_CALIBRATION_DATASET:classpath:evaluation/system-one-calibration-v1.jsonl}
       safety-threshold: ${AGENT_EVALUATION_SYSTEM_ONE_SAFETY_THRESHOLD:0.5}
       minimum-availability: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_AVAILABILITY:0.99}
       minimum-route-accuracy: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_ROUTE_ACCURACY:0.8}

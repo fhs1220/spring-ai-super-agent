@@ -39,8 +39,15 @@ System One 的提示词、阈值或后续校准器只能使用与冻结 36 题�
 oracle（质量减成本与延迟惩罚）标注。具体流程见
 [`SYSTEM_ONE_CALIBRATION.md`](SYSTEM_ONE_CALIBRATION.md)。
 
+项目内置 `evaluation/system-one-calibration-v1.jsonl` 开发集。启用本地评测 API 后，调用
+`POST /api/agent-evaluation/system-one-calibration/runs` 会仅执行 24 次 System One 判断，
+不会调用回答生成模型；报告对 multi-Agent 阈值按 0.05 步长扫描，并记录推荐阈值、混淆矩阵、
+Token、费用、延迟和数据集 SHA-256。
+
 首次 OpenRouter + Jev 36 题真实运行及其失败敏感性分析见
 [`JEV_SYSTEM_ONE_EVALUATION_REPORT.md`](JEV_SYSTEM_ONE_EVALUATION_REPORT.md)。
+独立开发集的首次真实阈值扫描见
+[`JEV_CALIBRATION_V1_REPORT.md`](JEV_CALIBRATION_V1_REPORT.md)。
 
 RLAIF/RLVR 四臂消融报告不是只比较四个均值。它会按 `caseId` 对齐逐样本结果，使用固定
 种子的配对 percentile bootstrap 计算 95% 置信区间，同时给出标准化效应量、精确符号

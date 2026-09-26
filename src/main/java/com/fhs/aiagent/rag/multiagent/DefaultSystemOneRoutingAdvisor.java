@@ -40,7 +40,7 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
             @Value("${agent.decision.system-one.enabled:false}") boolean enabled,
             @Value("${agent.decision.system-one.mode:SHADOW}") String mode,
             @Value("${agent.decision.system-one.provider:UNSPECIFIED}") String provider,
-            @Value("${agent.decision.system-one.multi-agent-threshold:0.65}")
+            @Value("${agent.decision.system-one.multi-agent-threshold:0.2}")
             double multiAgentThreshold,
             @Value("${agent.decision.system-one.safety-threshold:0.5}")
             double safetyThreshold,

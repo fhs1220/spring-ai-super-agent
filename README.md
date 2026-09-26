@@ -193,7 +193,7 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 - `AGENT_SYSTEM_ONE_MODEL`
 - `AGENT_SYSTEM_ONE_CONNECT_TIMEOUT_MS`（默认 `500`）
 - `AGENT_SYSTEM_ONE_REQUEST_TIMEOUT_MS`（默认 `1200`）
-- `AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD`（默认 `0.65`）
+- `AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD`（默认 `0.20`，由独立 calibration-v1 开发集锁定）
 - `AGENT_SYSTEM_ONE_SAFETY_THRESHOLD`（默认 `0.5`，只控制独立安全护栏）
 - `AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD`（默认 `0`，不声称已核算费用）
 
@@ -421,12 +421,23 @@ Brier score、10-bin ECE、多 Agent precision/recall/平衡准确率、独立�
 非劣效界限。相关配置：
 
 - `AGENT_EVALUATION_SYSTEM_ONE_SAFETY_THRESHOLD`
+- `AGENT_EVALUATION_SYSTEM_ONE_CALIBRATION_DATASET`
 - `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_AVAILABILITY`
 - `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_ROUTE_ACCURACY`
 - `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_BALANCED_ACCURACY`
 - `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_MULTI_AGENT_RECALL`
 - `AGENT_EVALUATION_SYSTEM_ONE_NON_INFERIORITY_MARGIN`
 - `AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_SAMPLES`
+
+在正式 36 题回归之前，可运行只调用 System One、不会调用主生成模型的开发集校准：
+
+```http
+POST /api/agent-evaluation/system-one-calibration/runs
+```
+
+默认开发集包含 24 条独立样本（6 条多 Agent positive、18 条 single/hard negative，其中
+4 条独立安全样本）。返回结果包含 0.00–1.00 阈值扫描、推荐阈值、混淆矩阵、平衡准确率、
+安全指标、Token、费用、延迟及数据集 SHA-256。该结果只用于选择候选配置，不能当作最终简历数据。
 
 四组 RLAIF/RLVR 消融报告会进一步按相同 `caseId` 配对逐样本质量分数，并使用由 benchmark
 指纹和实验臂生成的固定种子执行 10,000 次 percentile bootstrap。报告包含质量差值的 95%
