@@ -141,7 +141,7 @@ A2A Agent Card；`GET /api/ai/love_app/agents/health` 返回各专业 Agent 的�
 
 可选的 System One 决策层使用 Jev 兼容的 `POST /v1/systemone` 协议，一次并行判断关系、
 育儿、家务、财务、安全五个领域以及是否值得启用多 Agent。安全护栏与执行路由是两个独立动作：
-安全高风险只触发安全处置标记，不再隐式强制完整多 Agent；多 Agent 只在预期协作质量增益足以
+System One 的高风险结果目前只写入安全建议标记，实际处置仍走原有安全路径；多 Agent 只在预期协作质量增益足以
 覆盖成本与延迟时推荐。第一阶段只支持 `SHADOW`：结果、
 概率、模型和调用延迟会写入 `ROUTE` 轨迹，但现有确定性路由与轨迹学习策略仍是唯一权威决策。
 调用超时、服务不可用或响应异常都会 fail-open，不会阻断回答。该功能默认关闭；开启同步影子
@@ -170,6 +170,7 @@ export AGENT_SYSTEM_ONE_BASE_URL=https://api.typesafe.ai
 export AGENT_SYSTEM_ONE_ENDPOINT_PATH=/v1/systemone
 export AGENT_SYSTEM_ONE_API_KEY=...
 export AGENT_SYSTEM_ONE_MODEL=jev-latest
+export AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD=0.20
 # 按运行日官方价格填写；为 0 时报告会标记决策费未核算，避免伪造成本结论。
 export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=...
 ```
@@ -183,6 +184,7 @@ export AGENT_SYSTEM_ONE_BASE_URL=https://openrouter.ai
 export AGENT_SYSTEM_ONE_ENDPOINT_PATH=/api/alpha/decisions
 export AGENT_SYSTEM_ONE_API_KEY="$OPENROUTER_API_KEY"
 export AGENT_SYSTEM_ONE_MODEL='~typesafe/jev-latest'
+export AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD=0.20
 export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 ```
 
@@ -206,7 +208,7 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 决策推理阻塞请求；默认保存全部分歧和 10% 的一致对照样本，并且只保存问题 SHA-256。配置、
 隐私边界和样本接口见
 [`docs/SYSTEM_ONE_DUAL_SHADOW.md`](docs/SYSTEM_ONE_DUAL_SHADOW.md)。
-分歧样本的强制 single/multi 反事实质量标注、预算上限和 holdout 隔离见
+分歧样本的强制 single/multi 反事实质量标注、估算预算停止阈值、人工审批导出和 holdout 隔离见
 [`docs/SYSTEM_ONE_COUNTERFACTUAL_LABELING.md`](docs/SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)。
 
 #### OpenRouter 主模型与向量模型
@@ -426,11 +428,14 @@ Brier score、10-bin ECE、多 Agent precision/recall/平衡准确率、独立�
 误报/漏报，以及 10,000 次配对 Bootstrap 质量 95% CI。
 调用失败按当前路由 fail-open，但计入可用率，不能借回退结果通过发布门禁。
 
-简历数据应使用完整 36 题运行，并同时保留 JSON/Markdown 报告、benchmark SHA-256、模型名
-和运行时间。2 题 smoke 只能验证链路，不能作为效果结论。System One 默认门禁为：样本数
+36 题冻结集用于回归，不足以直接代表真实流量收益。简历中的提升数据还需要新的独立测试集，
+并保留 JSON/Markdown 报告、benchmark SHA-256、模型名、来源版本和运行时间。
+2 题 smoke 只能验证链路，不能作为效果结论。System One 默认门禁为：样本数
 至少 30、可用率至少 99%、路由准确率至少 80% 且不低于当前路由、平衡准确率至少 70%、
 多 Agent 召回率至少 50%、安全漏召回为 0、效用遗憾不增加、质量 95% CI 下界满足 2%
-非劣效界限。相关配置：
+非劣效界限。新版同时要求生成费用完整、效用不劣于最佳固定策略，并对 always-single 和
+always-multi 做质量非劣效检验；utility 使用独立的 v2 非截断成本/延迟惩罚。
+审计后的工程修复与剩余实验工作见 [整改记录](docs/SYSTEM_ONE_AUDIT_REMEDIATION.md)。相关配置：
 
 - `AGENT_EVALUATION_SYSTEM_ONE_SAFETY_THRESHOLD`
 - `AGENT_EVALUATION_SYSTEM_ONE_CALIBRATION_DATASET`

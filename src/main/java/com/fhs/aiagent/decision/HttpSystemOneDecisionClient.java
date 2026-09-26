@@ -13,7 +13,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -75,6 +74,7 @@ public class HttpSystemOneDecisionClient implements SystemOneDecisionClient {
         if (questions == null || questions.isEmpty()) {
             throw new IllegalArgumentException("questions must not be empty");
         }
+        Map<String, String> requestedTypes = requestedTypes(questions);
         Map<String, Object> payload = new LinkedHashMap<>();
         if (!model.isBlank()) {
             payload.put("model", model);
@@ -97,7 +97,7 @@ public class HttpSystemOneDecisionClient implements SystemOneDecisionClient {
                 throw new SystemOneDecisionException(
                         "System One endpoint returned HTTP " + response.statusCode());
             }
-            return parseResponse(response.body());
+            return parseResponse(response.body(), requestedTypes);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new SystemOneDecisionException("System One request interrupted", exception);
@@ -114,18 +114,37 @@ public class HttpSystemOneDecisionClient implements SystemOneDecisionClient {
         }
     }
 
-    private SystemOneResult parseResponse(String body) {
+    private Map<String, String> requestedTypes(Map<String, ?> questions) {
+        Map<String, String> types = new LinkedHashMap<>();
+        questions.forEach((key, question) -> {
+            JsonNode definition = objectMapper.valueToTree(question);
+            JsonNode type = definition == null ? null : definition.get("type");
+            if (key == null || key.isBlank() || type == null
+                    || !type.isTextual() || type.textValue().isBlank()) {
+                throw new IllegalArgumentException("Each System One question must have a key and type");
+            }
+            types.put(key, type.textValue());
+        });
+        return types;
+    }
+
+    private SystemOneResult parseResponse(String body, Map<String, String> requestedTypes) {
         try {
-            JsonNode root = objectMapper.readTree(body);
+            JsonNode root = body == null ? null : objectMapper.readTree(body);
+            if (root == null || !root.isObject()) {
+                throw malformed("System One response must be an object");
+            }
             JsonNode answersNode = root.path("answers");
             if (!answersNode.isObject()) {
-                throw new SystemOneDecisionException("System One response has no answers object");
+                throw malformed("System One response has no answers object");
+            }
+            if (answersNode.size() != requestedTypes.size()) {
+                throw malformed("System One response answer keys do not match the request");
             }
             Map<String, SystemOneAnswer> answers = new LinkedHashMap<>();
-            Iterator<Map.Entry<String, JsonNode>> fields = answersNode.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> field = fields.next();
-                answers.put(field.getKey(), parseAnswer(field.getValue()));
+            for (Map.Entry<String, String> requested : requestedTypes.entrySet()) {
+                answers.put(requested.getKey(), parseAnswer(
+                        answersNode.get(requested.getKey()), requested.getKey(), requested.getValue()));
             }
             JsonNode usage = root.path("usage");
             return new SystemOneResult(
@@ -135,7 +154,8 @@ public class HttpSystemOneDecisionClient implements SystemOneDecisionClient {
                     tokenCount(usage, "output_tokens", "completion_tokens")
             );
         } catch (JsonProcessingException exception) {
-            throw new SystemOneDecisionException("Could not parse System One response", exception);
+            throw new MalformedSystemOneResponseException(
+                    "Could not parse System One response", exception);
         }
     }
 
@@ -147,26 +167,69 @@ public class HttpSystemOneDecisionClient implements SystemOneDecisionClient {
         return value != null && value.isNumber() ? Math.max(0, value.asLong()) : 0;
     }
 
-    private SystemOneAnswer parseAnswer(JsonNode node) {
+    private SystemOneAnswer parseAnswer(JsonNode node, String key, String expectedType) {
+        if (node == null || !node.isObject()) {
+            throw malformed("System One response is missing an answer object for " + key);
+        }
+        JsonNode type = node.get("type");
+        if (type == null || !type.isTextual() || !expectedType.equals(type.textValue())) {
+            throw malformed("System One answer type does not match the request for " + key);
+        }
+        Double noul = number(node, "noul", key);
+        Double score = number(node, "score", key);
+        Double confidence = number(node, "confidence", key);
+        if ("noul".equals(expectedType)) {
+            requireProbability(noul, key + ".noul");
+        } else if ("score".equals(expectedType) && score == null) {
+            throw malformed("System One answer requires a finite score for " + key);
+        }
+        JsonNode choice = node.get("choice");
+        if ("choice".equals(expectedType)
+                && (choice == null || !choice.isTextual() || choice.textValue().isBlank())) {
+            throw malformed("System One answer requires a textual choice for " + key);
+        }
+        if (confidence != null) {
+            requireProbability(confidence, key + ".confidence");
+        }
         Map<String, Double> probabilities = new LinkedHashMap<>();
-        JsonNode probabilitiesNode = node.path("probabilities");
-        if (probabilitiesNode.isObject()) {
-            probabilitiesNode.fields().forEachRemaining(field ->
-                    probabilities.put(field.getKey(), field.getValue().asDouble()));
+        JsonNode probabilitiesNode = node.get("probabilities");
+        if (probabilitiesNode != null && !probabilitiesNode.isNull()) {
+            if (!probabilitiesNode.isObject()) {
+                throw malformed("System One probabilities must be an object for " + key);
+            }
+            probabilitiesNode.fields().forEachRemaining(field -> {
+                Double value = number(probabilitiesNode, field.getKey(), key + ".probabilities");
+                requireProbability(value, key + ".probabilities." + field.getKey());
+                probabilities.put(field.getKey(), value);
+            });
         }
         return new SystemOneAnswer(
-                node.path("type").asText(""),
-                number(node, "noul"),
-                node.path("choice").asText(""),
-                number(node, "score"),
-                number(node, "confidence"),
+                expectedType,
+                noul,
+                choice == null ? "" : choice.asText(""),
+                score,
+                confidence,
                 probabilities
         );
     }
 
-    private Double number(JsonNode node, String field) {
+    private Double number(JsonNode node, String field, String key) {
         JsonNode value = node.get(field);
-        return value != null && value.isNumber() ? value.asDouble() : null;
+        if (value == null || value.isNull()) return null;
+        if (!value.isNumber() || !Double.isFinite(value.asDouble())) {
+            throw malformed("System One answer requires a finite number for " + key + "." + field);
+        }
+        return value.asDouble();
+    }
+
+    private void requireProbability(Double value, String field) {
+        if (value == null || value < 0 || value > 1) {
+            throw malformed("System One answer requires a probability between 0 and 1 for " + field);
+        }
+    }
+
+    private MalformedSystemOneResponseException malformed(String message) {
+        return new MalformedSystemOneResponseException(message);
     }
 
     private static URI endpoint(String baseUrl, String endpointPath) {

@@ -50,9 +50,11 @@ public class LoveAppEvaluationVariantExecutor implements RagEvaluationVariantExe
                 elapsedMs(startedAt),
                 telemetry == null ? 0 : telemetry.totalTokens(),
                 telemetry == null ? 0 : telemetry.estimatedCostCny(),
-                telemetry != null,
+                telemetry != null && !telemetry.usageEstimated()
+                        && telemetry.modelCallCount() > 0,
                 result.trace() == null ? "" : result.trace().executionMode(),
-                ""
+                "",
+                result.trace()
         );
     }
 

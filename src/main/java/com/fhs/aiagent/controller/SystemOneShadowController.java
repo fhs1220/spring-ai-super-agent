@@ -3,6 +3,8 @@ package com.fhs.aiagent.controller;
 import com.fhs.aiagent.evaluation.SystemOneShadowSampleService;
 import com.fhs.aiagent.rag.multiagent.SystemOneShadowComparison;
 import com.fhs.aiagent.rag.multiagent.SystemOneShadowSample;
+import com.fhs.aiagent.rag.multiagent.SystemOneShadowMetrics;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,12 +22,21 @@ public class SystemOneShadowController {
 
     private final SystemOneShadowSampleService service;
     private final SystemOneShadowComparison comparison;
+    private final SystemOneShadowMetrics metrics;
 
+    @Autowired
     public SystemOneShadowController(
             SystemOneShadowSampleService service,
-            SystemOneShadowComparison comparison) {
+            SystemOneShadowComparison comparison,
+            SystemOneShadowMetrics metrics) {
         this.service = service;
         this.comparison = comparison;
+        this.metrics = metrics;
+    }
+
+    public SystemOneShadowController(
+            SystemOneShadowSampleService service, SystemOneShadowComparison comparison) {
+        this(service, comparison, new SystemOneShadowMetrics());
     }
 
     @PostMapping("/observations")
@@ -46,6 +57,11 @@ public class SystemOneShadowController {
     @GetMapping("/summary")
     public SystemOneShadowSampleService.Summary summary() {
         return service.summary();
+    }
+
+    @GetMapping("/metrics")
+    public SystemOneShadowMetrics.Snapshot metrics() {
+        return metrics.snapshot();
     }
 
     public record ObservationRequest(

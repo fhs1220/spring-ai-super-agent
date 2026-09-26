@@ -22,8 +22,9 @@
 - multi-Agent 概率差达到 `0.25`；
 - 任一路 provider 调用失败。
 
-完全一致的请求默认按问题 SHA-256 确定性保留 10%，作为 agreement control，避免后续训练集
-只有困难分歧样本而产生选择偏差。同一个去除首尾空白的问题使用稳定 sample ID，重复观察覆盖旧记录，
+完全一致的请求默认按问题 SHA-256 确定性保留 10%，作为 agreement control，增加容易样本的
+覆盖，但这不能消除分歧富集造成的选择偏差，也不能把该池当作真实流量总体。同一个去除
+首尾空白的问题使用稳定 sample ID，重复观察覆盖旧记录，
 不会靠重复请求放大某类样本。目录最多保留 1,000 条，超过后删除最旧记录。
 
 默认只保存问题 SHA-256，不保存原文。若要把样本送入人工审核或强制 single/multi 反事实标注，
@@ -76,12 +77,23 @@ Content-Type: application/json
 {"question":"...","authoritativeMultiAgent":false,"featureBucket":"MANUAL"}
 
 GET /api/agent-evaluation/system-one-shadow/summary
+GET /api/agent-evaluation/system-one-shadow/metrics
 GET /api/agent-evaluation/system-one-shadow/samples?limit=100&reviewOnly=true
 ```
 
 `observations` 可在不调用回答生成模型的情况下做链路 smoke；线上正常请求会由路由器自动入队。
 `summary` 返回保留量、待审核量、agreement control 数量、可用于标注的原文数量及各类分歧
 计数。`samples` 默认只返回 review pool；设置 `reviewOnly=false` 可同时查看 control。
+
+`metrics` 则统计所有提交和后台 provider 调用，不受样本去重、分歧筛选或 agreement
+未落盘影响。它包含 accepted/capacityDropped/rejected/completed 分母、两路成功/失败/
+malformed 次数、模型变化、固定延迟 buckets、Token、已知估算美元费用和未知费用数。
+零/缺失费用记为 unknown；本地 Laya 的 API 单价不代表 GPU/CPU 总成本为零。
+统计范围为 `PROCESS_LOCAL_RESET_ON_RESTART`，`since` 标记开始时间；这不是持久化全流量
+日志或跨实例聚合。延迟 buckets 为非累计计数。主回答路径不新增指标磁盘写入。
+
+空响应、缺少决策项、非法类型或超出 `[0,1]` 的 noul 会被记为 `MALFORMED_RESPONSE`，
+不能以默认概率 0 伪装成功。一次 provider 异常不妨碍另一路进入指标。
 
 ## 首次真实链路 smoke
 
@@ -107,9 +119,11 @@ multilingual checkpoint 提交一条合成安全场景：
 1. 从分歧样本与 agreement control 分层抽样；
 2. 对每题执行强制 single/multi Agent，按质量、成本、延迟计算效用标签；
 3. 用开发部分训练或校准组合策略；
-4. 保留至少 30–50 条从未参与调参的 holdout；
+4. 保留未参与调参的 holdout，并另建代表真实流量的独立随机样本；样本量按预期效应和
+   置信区间精度制定，30–50 条仅是起步，不足以保证统计把握；
 5. 只有 holdout 同时满足 accuracy ≥80%、balanced accuracy ≥70%、multi-Agent recall ≥50%、
-   安全零漏报、遗憾不增加和质量非劣效，才允许进入灰度阶段。
+   安全零漏报、遗憾不增加、相对固定单/多 Agent 基线质量非劣效和效用不劣，才允许申请灰度。
+   代码门禁的通过不替代代表性检验，也不自动授予上线权限。
 
 Jev 安全结果与 Laya 路由结果不能在当前 36 题冻结集上直接拼接后宣称通过；任何 ensemble 都
 必须作为新候选在新的预注册 holdout 上验证。

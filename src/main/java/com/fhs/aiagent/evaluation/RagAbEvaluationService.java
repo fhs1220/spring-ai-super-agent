@@ -126,7 +126,7 @@ public class RagAbEvaluationService {
         );
         this.systemOneEvaluationService = new SystemOneRoutingEvaluationService(
                 com.fhs.aiagent.rag.multiagent.SystemOneRoutingAdvisor.disabled(),
-                0.05, 0.05, 0.02, 60_000, 0.5, 0.99, 0.8,
+                0.05, 0.05, 1.0, 60_000, 0.5, 0.99, 0.8,
                 0.7, 0.5, 0.02, 30
         );
     }
@@ -641,10 +641,56 @@ public class RagAbEvaluationService {
                         ? report.adaptiveOracleCostRatio()
                         : "N/A (usage unavailable)")
                 .append("\n\n");
-        SystemOneRoutingBenchmarkReport systemOne = report.systemOneRouting();
-        markdown.append("## System One 反事实路由评测\n\n")
+        markdown.append(renderSystemOneMarkdown(report.systemOneRouting()));
+        if (!report.gateFailures().isEmpty()) {
+            markdown.append("## Gate failures\n\n");
+            report.gateFailures().forEach(
+                    failure -> markdown.append("- ").append(failure).append("\n"));
+            markdown.append("\n");
+        }
+        markdown.append("## Largest regressions\n\n")
+                .append("| Case | Delta | Winner |\n")
+                .append("|---|---:|---|\n");
+        report.cases().stream()
+                .sorted(Comparator.comparingDouble(
+                        RagAbReport.CaseComparison::scoreDelta))
+                .limit(10)
+                .forEach(comparison -> markdown
+                        .append("| ").append(comparison.caseId())
+                        .append(" | ").append(comparison.scoreDelta())
+                        .append(" | ").append(comparison.winner())
+                        .append(" |\n"));
+        return markdown.toString();
+    }
+
+    static String renderSystemOneMarkdown(SystemOneRoutingBenchmarkReport systemOne) {
+        StringBuilder markdown = new StringBuilder("## System One 反事实路由评测\n\n");
+        if (systemOne == null) return markdown.append("N/A (legacy report has no System One results)\n\n").toString();
+        boolean currentSchema = SystemOneRoutingBenchmarkReport.SCHEMA_VERSION.equals(systemOne.schemaVersion());
+        markdown
                 .append("- Status/model: `").append(systemOne.status()).append("` / `")
                 .append(systemOne.model()).append("`\n")
+                .append("- Schema / utility version: `").append(systemOne.schemaVersion())
+                .append("` / `").append(systemOne.utilityVersion()).append("`\n")
+                .append("- Utility cost / latency scope: `").append(systemOne.utilityCostScope())
+                .append("` / `").append(systemOne.utilityLatencyScope()).append("`\n")
+                .append("- Utility parameters: ").append(systemOne.utilityPolicy() == null
+                        ? "N/A (legacy)" : systemOne.utilityPolicy()).append("\n")
+                .append("- Invalid counterfactual pairs: ").append(currentSchema
+                        ? systemOne.invalidCounterfactualPairCount() : "N/A (legacy)").append("\n")
+                .append("- Generator path cost comparable: ").append(systemOne.pathCostComparable()).append("\n")
+                .append("- Known generation cost (current → System One, CNY subtotal): ")
+                .append(systemOne.currentPathCostCny()).append(" → ").append(systemOne.systemOnePathCostCny())
+                .append("; ratio: ").append(systemOne.pathCostComparable()
+                        ? systemOne.pathCostRatio() : "N/A (incomplete usage)").append("\n")
+                .append("- Decision API cost (USD estimate): ").append(systemOne.decisionCostUsd())
+                .append("; estimate complete: ").append(currentSchema
+                        ? systemOne.decisionApiCostEstimateComplete() : "N/A (legacy)")
+                .append("; unknown calls: ").append(currentSchema
+                        ? systemOne.decisionApiCostUnknownCount() : "N/A (legacy)").append("\n")
+                .append("- End-to-end cost comparable: ").append(currentSchema
+                        ? systemOne.endToEndCostComparable() : "N/A (legacy)")
+                .append(" (USD decision estimates and CNY generation estimates are not combined)\n")
                 .append("- Availability: ").append(systemOne.availability()).append("\n")
                 .append("- Route accuracy (current → System One): ")
                 .append(systemOne.currentRouteAccuracy()).append(" → ")
@@ -670,39 +716,44 @@ public class RagAbEvaluationService {
                 .append("- Safety false positives / false negatives: ")
                 .append(systemOne.safetyFalsePositives()).append(" / ")
                 .append(systemOne.safetyFalseNegatives()).append("\n")
-                .append("- Paired quality 95% CI: [")
-                .append(systemOne.pairedQualityVsCurrent().lowerConfidenceBound())
-                .append(", ")
-                .append(systemOne.pairedQualityVsCurrent().upperConfidenceBound())
-                .append("]\n")
+                .append("- Paired quality vs current, 95% CI: ")
+                .append(pairedQualityText(systemOne.pairedQualityVsCurrent())).append("\n")
                 .append("- System One release gate: **")
                 .append(systemOne.releaseGatePassed() ? "PASS" : "FAIL")
                 .append("**\n\n");
+        markdown.append("### Fixed-strategy baselines\n\n")
+                .append("| Strategy | Average quality | Average utility | Generation CNY subtotal | Cost complete | System One quality delta 95% CI |\n")
+                .append("|---|---:|---:|---:|---|---|\n");
+        appendFixedBaseline(markdown, "ALWAYS_SINGLE", systemOne.alwaysSingle(), systemOne.pairedQualityVsAlwaysSingle());
+        appendFixedBaseline(markdown, "ALWAYS_MULTI", systemOne.alwaysMulti(), systemOne.pairedQualityVsAlwaysMulti());
+        markdown.append("\n");
         if (!systemOne.gateFailures().isEmpty()) {
             markdown.append("### System One gate failures\n\n");
             systemOne.gateFailures().forEach(failure -> markdown.append("- ")
                     .append(failure).append("\n"));
             markdown.append("\n");
         }
-        if (!report.gateFailures().isEmpty()) {
-            markdown.append("## Gate failures\n\n");
-            report.gateFailures().forEach(
-                    failure -> markdown.append("- ").append(failure).append("\n"));
-            markdown.append("\n");
-        }
-        markdown.append("## Largest regressions\n\n")
-                .append("| Case | Delta | Winner |\n")
-                .append("|---|---:|---|\n");
-        report.cases().stream()
-                .sorted(Comparator.comparingDouble(
-                        RagAbReport.CaseComparison::scoreDelta))
-                .limit(10)
-                .forEach(comparison -> markdown
-                        .append("| ").append(comparison.caseId())
-                        .append(" | ").append(comparison.scoreDelta())
-                        .append(" | ").append(comparison.winner())
-                        .append(" |\n"));
         return markdown.toString();
+    }
+
+    private static void appendFixedBaseline(StringBuilder markdown, String strategy,
+            SystemOneRoutingBenchmarkReport.FixedStrategyBaseline baseline,
+            AlignmentAblationReport.PairedQualityComparison paired) {
+        markdown.append("| ").append(strategy).append(" | ");
+        if (baseline == null) {
+            markdown.append("N/A (legacy) | N/A | N/A | N/A | N/A |\n");
+            return;
+        }
+        markdown.append(baseline.averageQuality()).append(" | ").append(baseline.averageUtility())
+                .append(" | ").append(baseline.pathCostCny()).append(" | ").append(baseline.pathCostComparable())
+                .append(" | ").append(pairedQualityText(paired)).append(" |\n");
+    }
+
+    private static String pairedQualityText(AlignmentAblationReport.PairedQualityComparison paired) {
+        if (paired == null) return "N/A (legacy/unavailable)";
+        if (!paired.comparable()) return "N/A (unavailable)";
+        return "[" + paired.lowerConfidenceBound() + ", " + paired.upperConfidenceBound()
+                + "]; non-inferiority: " + (paired.nonInferiorityPassed() ? "PASS" : "FAIL");
     }
 
     private void throwIfCancelled(BooleanSupplier cancellation) {

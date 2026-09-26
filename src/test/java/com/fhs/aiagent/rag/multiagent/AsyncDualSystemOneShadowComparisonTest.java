@@ -68,13 +68,14 @@ class AsyncDualSystemOneShadowComparisonTest {
         CountDownLatch providersStarted = new CountDownLatch(2);
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         CapturingRepository repository = new CapturingRepository();
+        SystemOneShadowMetrics metrics = new SystemOneShadowMetrics();
         AsyncDualSystemOneShadowComparison comparison =
                 new AsyncDualSystemOneShadowComparison(
                         blockingAdvisor(providersStarted, releaseProviders, 0.1, 0.1),
                         blockingAdvisor(providersStarted, releaseProviders, 0.9, 0.9),
                         repository,
                         true, false, 0.25, 0, 1, executor,
-                        Clock.systemUTC());
+                        Clock.systemUTC(), metrics);
         try {
             assertThat(comparison.submit("first", false, "A").accepted()).isTrue();
             assertThat(providersStarted.await(1, TimeUnit.SECONDS)).isTrue();
@@ -85,12 +86,99 @@ class AsyncDualSystemOneShadowComparisonTest {
             assertThat(saturated.active()).isTrue();
             assertThat(saturated.accepted()).isFalse();
             assertThat(saturated.status()).isEqualTo("SKIPPED_CAPACITY");
+            assertThat(metrics.snapshot().submitted()).isEqualTo(2);
+            assertThat(metrics.snapshot().accepted()).isEqualTo(1);
+            assertThat(metrics.snapshot().capacityDropped()).isEqualTo(1);
+            assertThat(metrics.snapshot().rejected()).isZero();
             releaseProviders.countDown();
             assertThat(repository.saved.await(1, TimeUnit.SECONDS)).isTrue();
         } finally {
             releaseProviders.countDown();
             comparison.close();
         }
+    }
+
+    @Test
+    void countsEveryAgreementEvenWhenRepeatedQuestionIsNeverPersisted() throws Exception {
+        SystemOneRoutingAdvisor advisor = question -> new SystemOneRoutingAdvisor.RoutingAdvice(
+                "SHADOW", "SUCCESS", false, 0.1, false, 0.1, Map.of(),
+                150, "JEV:test", 100, 10, 0.001);
+        CapturingRepository repository = new CapturingRepository();
+        SystemOneShadowMetrics metrics = new SystemOneShadowMetrics();
+        AsyncDualSystemOneShadowComparison comparison = new AsyncDualSystemOneShadowComparison(
+                advisor, advisor, repository, true, false, 0.25, 0, 2,
+                Executors.newVirtualThreadPerTaskExecutor(), Clock.systemUTC(), metrics);
+        try {
+            assertThat(comparison.submit("same question", false, "A").accepted()).isTrue();
+            assertThat(comparison.submit("same question", false, "A").accepted()).isTrue();
+            awaitMetric(() -> metrics.snapshot().unretainedAgreements() == 2);
+
+            SystemOneShadowMetrics.Snapshot snapshot = metrics.snapshot();
+            assertThat(repository.samples).isEmpty();
+            assertThat(snapshot.submitted()).isEqualTo(2);
+            assertThat(snapshot.accepted()).isEqualTo(2);
+            assertThat(snapshot.completedComparisons()).isEqualTo(2);
+            assertThat(snapshot.persistedObservations()).isZero();
+            assertThat(snapshot.primary().completed()).isEqualTo(2);
+            assertThat(snapshot.challenger().success()).isEqualTo(2);
+            assertThat(snapshot.primary().inputTokens()).isEqualTo(200);
+            assertThat(snapshot.primary().knownEstimatedApiCostUsd()).isEqualTo(0.002);
+        } finally {
+            comparison.close();
+        }
+    }
+
+    @Test
+    void countsMalformedAndThrownProviderFailuresWithoutLosingOtherProviderResults() throws Exception {
+        SystemOneRoutingAdvisor malformed = question -> new SystemOneRoutingAdvisor.RoutingAdvice(
+                "SHADOW", "MALFORMED_RESPONSE", false, 0, false, 0, Map.of(),
+                6_000, "LAYA:test", 0, 0, 0);
+        SystemOneRoutingAdvisor throwing = question -> { throw new IllegalStateException("provider failed"); };
+        CapturingRepository repository = new CapturingRepository();
+        SystemOneShadowMetrics metrics = new SystemOneShadowMetrics();
+        AsyncDualSystemOneShadowComparison comparison = new AsyncDualSystemOneShadowComparison(
+                malformed, throwing, repository, true, false, 0.25, 0, 1,
+                Executors.newVirtualThreadPerTaskExecutor(), Clock.systemUTC(), metrics);
+        try {
+            comparison.submit("failure", false, "A");
+            awaitMetric(() -> metrics.snapshot().persistedObservations() == 1);
+
+            SystemOneShadowMetrics.Snapshot snapshot = metrics.snapshot();
+            assertThat(snapshot.completedComparisons()).isEqualTo(1);
+            assertThat(snapshot.primary().failure()).isEqualTo(1);
+            assertThat(snapshot.primary().malformedResponses()).isEqualTo(1);
+            assertThat(snapshot.challenger().failure()).isEqualTo(1);
+            assertThat(snapshot.primary().estimatedApiCostComplete()).isFalse();
+            assertThat(snapshot.primary().unknownCostCount()).isEqualTo(1);
+            assertThat(snapshot.primary().latencyBuckets().getLast().upperBoundInclusiveMs()).isNull();
+            assertThat(snapshot.primary().latencyBuckets().getLast().count()).isEqualTo(1);
+        } finally {
+            comparison.close();
+        }
+    }
+
+    @Test
+    void separatesExecutorRejectionFromCapacityDrops() {
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        executor.shutdown();
+        SystemOneShadowMetrics metrics = new SystemOneShadowMetrics();
+        AsyncDualSystemOneShadowComparison comparison = new AsyncDualSystemOneShadowComparison(
+                SystemOneRoutingAdvisor.disabled(), SystemOneRoutingAdvisor.disabled(),
+                new CapturingRepository(), true, false, 0.25, 0, 1, executor,
+                Clock.systemUTC(), metrics);
+
+        assertThat(comparison.submit("rejected", false, "A").accepted()).isFalse();
+        assertThat(metrics.snapshot().submitted()).isEqualTo(1);
+        assertThat(metrics.snapshot().accepted()).isZero();
+        assertThat(metrics.snapshot().rejected()).isEqualTo(1);
+        assertThat(metrics.snapshot().capacityDropped()).isZero();
+        assertThat(metrics.snapshot().primary().completed()).isZero();
+    }
+
+    private void awaitMetric(java.util.function.BooleanSupplier ready) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (!ready.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(5);
+        assertThat(ready.getAsBoolean()).isTrue();
     }
 
     private SystemOneRoutingAdvisor blockingAdvisor(

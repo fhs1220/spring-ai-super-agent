@@ -114,7 +114,51 @@ class RagAbEvaluationServiceTest {
         assertThat(Files.exists(Path.of(report.reportPath()))).isTrue();
         assertThat(Files.readString(Path.of(report.markdownReportPath())))
                 .contains("四路基准报告", "AGENTIC_SINGLE_AGENT",
-                        "AGENTIC_MULTI_AGENT", "Regression gate: **PASS**");
+                        "AGENTIC_MULTI_AGENT", "Regression gate: **PASS**",
+                        "system-one-routing-benchmark-v2", "system-one-utility-v2-linear",
+                        "GENERATOR_COST_ONLY", "GENERATION_PLUS_SYSTEM_ONE_DECISION",
+                        "Invalid counterfactual pairs: 0", "unknown calls: 2",
+                        "End-to-end cost comparable: false",
+                        "| ALWAYS_SINGLE |", "| ALWAYS_MULTI |", "non-inferiority:");
+    }
+
+    @Test
+    void legacySystemOneMarkdownShowsUnavailableFieldsWithoutInventingV2Claims() throws Exception {
+        SystemOneRoutingBenchmarkReport legacy = new ObjectMapper().readValue(
+                "{\"status\":\"COMPLETE\",\"model\":\"JEV:legacy\"}",
+                SystemOneRoutingBenchmarkReport.class);
+
+        String markdown = RagAbEvaluationService.renderSystemOneMarkdown(legacy);
+
+        assertThat(markdown).contains("legacy-unversioned", "legacy-unspecified",
+                "Invalid counterfactual pairs: N/A (legacy)", "unknown calls: N/A (legacy)",
+                "Paired quality vs current, 95% CI: N/A (legacy/unavailable)",
+                "| ALWAYS_SINGLE | N/A (legacy)", "| ALWAYS_MULTI | N/A (legacy)");
+        assertThat(markdown).doesNotContain("Invalid counterfactual pairs: 0", "unknown calls: 0");
+        assertThat(RagAbEvaluationService.renderSystemOneMarkdown(null))
+                .contains("N/A (legacy report has no System One results)");
+    }
+
+    @Test
+    void markdownDoesNotPublishAnUncomparablePathCostRatio() throws Exception {
+        SystemOneRoutingBenchmarkReport incomplete = new ObjectMapper().readValue("""
+                {"schemaVersion":"system-one-routing-benchmark-v2",
+                 "utilityVersion":"system-one-utility-v2-linear",
+                 "utilityCostScope":"GENERATOR_COST_ONLY",
+                 "utilityLatencyScope":"GENERATION_PLUS_SYSTEM_ONE_DECISION",
+                 "pathCostComparable":false,"pathCostRatio":0.1234,
+                 "invalidCounterfactualPairCount":1,"decisionApiCostUnknownCount":7,
+                 "alwaysSingle":{"strategy":"ALWAYS_SINGLE","averageQuality":0.9,
+                     "averageUtility":0.87,"pathCostCny":1.2,"pathCostComparable":false}}
+                """, SystemOneRoutingBenchmarkReport.class);
+
+        String markdown = RagAbEvaluationService.renderSystemOneMarkdown(incomplete);
+
+        assertThat(markdown).contains("Generator path cost comparable: false",
+                "ratio: N/A (incomplete usage)", "estimate complete: false; unknown calls: 7",
+                "Invalid counterfactual pairs: 1", "End-to-end cost comparable: false",
+                "| ALWAYS_SINGLE | 0.9 | 0.87 | 1.2 | false | N/A (legacy/unavailable) |");
+        assertThat(markdown).doesNotContain("0.1234");
     }
 
     private String candidateAnswer(String caseId) {

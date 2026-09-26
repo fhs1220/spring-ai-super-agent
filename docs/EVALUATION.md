@@ -34,6 +34,22 @@ precision/recall/误报/漏报，以及 10,000 次配对 Bootstrap 的质量差 
 不会隐式改写单/多 Agent 执行选择。决策服务失败时按当前路由 fail-open，但失败仍计入可用率
 门禁；平衡准确率与多 Agent 召回门禁可防止“全部预测为单 Agent”凭多数类准确率误通过。
 
+新版还显式比较 `always-single` 与 `always-multi`：报告固定策略的逐题结果汇总与配对
+Bootstrap 质量差，发布门禁要求生成费用完整、候选平均效用不低于最好的固定策略，且质量对
+两种固定策略均满足非劣界限。仅超过旧路由不再足够。这里的质量仍来自当前基准量表，
+不能把关键词规则分数直接称为真实用户满意度。
+
+无效强制对照（失败、空答案、multi 降级 single）会阻断发布门禁。候选效用计入决策延迟，
+费用项仍只有生成路径 CNY，报告显式标记 `utilityCostScope=GENERATOR_COST_ONLY`；USD
+决策费用另列、未知数量单列，`endToEndCostComparable=false`。不做隐式汇率换算，也不
+把本地 Laya 的零 API 单价当作零算力成本。因此通过这些门禁不是端到端费用优势的证明。
+
+效用版本为 `system-one-utility-v2-linear`，成本/延迟惩罚不截断，默认分别以 1 元、
+60000ms 为尺度（权重各 0.05）。配置在 `agent.evaluation.system-one.utility.*`，
+与线上旧学习策略的 `routing-policy.*` 分开，避免评测升级意外改变线上策略。
+历史无版本报告标为 legacy；冻结回放脚本不会把旧版 clipped oracle 偷换为新版。
+当原报告 `pathCostComparable=false` 时，离线回放的路径费用比返回 `null`，不能用于节省费用声明。
+
 System One 的提示词、阈值或后续校准器只能使用与冻结 36 题无重叠的开发集调整；冻结集只用于
 最终回归。开发集应包含单 Agent hard negatives、多 Agent positives 和独立安全样本，并按效用
 oracle（质量减成本与延迟惩罚）标注。具体流程见
@@ -54,8 +70,9 @@ Token、费用、延迟和数据集 SHA-256。
 [`JEV_LAYA_SHADOW_COMPARISON.md`](JEV_LAYA_SHADOW_COMPARISON.md)。该对照不会自动修改生产路由。
 持续收集两路分歧、agreement control 与后续标注样本的运行方式见
 [`SYSTEM_ONE_DUAL_SHADOW.md`](SYSTEM_ONE_DUAL_SHADOW.md)。
-对 Shadow 样本强制执行 single/multi、盲化质量评审并生成独立 holdout 标签的流程见
+对 Shadow 样本强制执行 single/multi、保留证据并进行人工审批的流程见
 [`SYSTEM_ONE_COUNTERFACTUAL_LABELING.md`](SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)。
+该池的 holdout 仍然是分歧富集分布，不等于代表真实流量的独立测试集。
 
 RLAIF/RLVR 四臂消融报告不是只比较四个均值。它会按 `caseId` 对齐逐样本结果，使用固定
 种子的配对 percentile bootstrap 计算 95% 置信区间，同时给出标准化效应量、精确符号

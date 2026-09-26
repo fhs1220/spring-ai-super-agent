@@ -1,6 +1,7 @@
 package com.fhs.aiagent.rag.multiagent;
 
 import com.fhs.aiagent.decision.SystemOneDecisionClient;
+import com.fhs.aiagent.decision.MalformedSystemOneResponseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,7 +41,7 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
             @Value("${agent.decision.system-one.enabled:false}") boolean enabled,
             @Value("${agent.decision.system-one.mode:SHADOW}") String mode,
             @Value("${agent.decision.system-one.provider:UNSPECIFIED}") String provider,
-            @Value("${agent.decision.system-one.multi-agent-threshold:0.2}")
+            @Value("${agent.decision.system-one.multi-agent-threshold:0.75}")
             double multiAgentThreshold,
             @Value("${agent.decision.system-one.safety-threshold:0.5}")
             double safetyThreshold,
@@ -99,7 +100,8 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
             log.warn("System One shadow routing failed open: {}", exception.getMessage());
             return new RoutingAdvice(
                     mode,
-                    "FAILED",
+                    exception instanceof MalformedSystemOneResponseException
+                            ? "MALFORMED_RESPONSE" : "FAILED",
                     false,
                     0,
                     false,
@@ -145,10 +147,16 @@ public class DefaultSystemOneRoutingAdvisor implements SystemOneRoutingAdvisor {
     }
 
     private double noul(SystemOneDecisionClient.SystemOneResult result, String key) {
+        if (result == null) {
+            throw new MalformedSystemOneResponseException("System One routing response is missing");
+        }
         SystemOneDecisionClient.SystemOneAnswer answer = result.answers().get(key);
-        return answer == null || answer.noul() == null
-                ? 0
-                : Math.max(0, Math.min(1, answer.noul()));
+        if (answer == null || !"noul".equals(answer.type()) || answer.noul() == null
+                || !Double.isFinite(answer.noul()) || answer.noul() < 0 || answer.noul() > 1) {
+            throw new MalformedSystemOneResponseException(
+                    "System One routing response requires a noul probability for " + key);
+        }
+        return answer.noul();
     }
 
     private String normalizeMode(String value) {

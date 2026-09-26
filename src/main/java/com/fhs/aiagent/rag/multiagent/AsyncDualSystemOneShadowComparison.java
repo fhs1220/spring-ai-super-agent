@@ -40,12 +40,14 @@ public class AsyncDualSystemOneShadowComparison implements SystemOneShadowCompar
     private final Semaphore capacity;
     private final ExecutorService executor;
     private final Clock clock;
+    private final SystemOneShadowMetrics metrics;
 
     @Autowired
     public AsyncDualSystemOneShadowComparison(
             ObjectMapper objectMapper,
             SystemOneShadowSampleRepository repository,
-            Environment environment) {
+            Environment environment,
+            SystemOneShadowMetrics metrics) {
         this(
                 advisor(objectMapper, environment, "primary", ProviderSettings.primary(environment)),
                 advisor(objectMapper, environment, "challenger", ProviderSettings.challenger(environment)),
@@ -64,8 +66,14 @@ public class AsyncDualSystemOneShadowComparison implements SystemOneShadowCompar
                         "agent.decision.system-one.comparison.maximum-in-flight",
                         Integer.class, 4),
                 Executors.newVirtualThreadPerTaskExecutor(),
-                Clock.systemUTC()
+                Clock.systemUTC(), metrics
         );
+    }
+
+    public AsyncDualSystemOneShadowComparison(
+            ObjectMapper objectMapper, SystemOneShadowSampleRepository repository,
+            Environment environment) {
+        this(objectMapper, repository, environment, new SystemOneShadowMetrics());
     }
 
     AsyncDualSystemOneShadowComparison(
@@ -79,6 +87,15 @@ public class AsyncDualSystemOneShadowComparison implements SystemOneShadowCompar
             int maximumInFlight,
             ExecutorService executor,
             Clock clock) {
+        this(primary, challenger, repository, enabled, storeQuestion, probabilityGapThreshold,
+                agreementSampleRate, maximumInFlight, executor, clock, new SystemOneShadowMetrics(clock));
+    }
+
+    AsyncDualSystemOneShadowComparison(
+            SystemOneRoutingAdvisor primary, SystemOneRoutingAdvisor challenger,
+            SystemOneShadowSampleRepository repository, boolean enabled, boolean storeQuestion,
+            double probabilityGapThreshold, double agreementSampleRate, int maximumInFlight,
+            ExecutorService executor, Clock clock, SystemOneShadowMetrics metrics) {
         this.primary = java.util.Objects.requireNonNull(primary, "primary");
         this.challenger = java.util.Objects.requireNonNull(challenger, "challenger");
         this.repository = java.util.Objects.requireNonNull(repository, "repository");
@@ -89,20 +106,27 @@ public class AsyncDualSystemOneShadowComparison implements SystemOneShadowCompar
         this.capacity = new Semaphore(Math.max(1, maximumInFlight));
         this.executor = java.util.Objects.requireNonNull(executor, "executor");
         this.clock = java.util.Objects.requireNonNull(clock, "clock");
+        this.metrics = java.util.Objects.requireNonNull(metrics, "metrics");
     }
 
     @Override
     public Submission submit(
             String question, boolean authoritativeMultiAgent, String featureBucket) {
         if (!enabled) return Submission.disabled();
-        if (!capacity.tryAcquire()) return Submission.saturated();
+        metrics.submitted();
+        if (!capacity.tryAcquire()) {
+            metrics.capacityDropped();
+            return Submission.saturated();
+        }
         String normalizedQuestion = question == null ? "" : question.trim();
         String sampleId = "shadow-" + fingerprint(normalizedQuestion).substring(0, 32);
+        metrics.accepted();
         try {
             executor.submit(() -> compareAndPersist(
                     sampleId, normalizedQuestion, authoritativeMultiAgent, featureBucket));
             return Submission.queued(sampleId);
         } catch (RejectedExecutionException exception) {
+            metrics.rejected();
             capacity.release();
             log.warn("System One dual shadow executor rejected sample {}", sampleId);
             return Submission.saturated();
@@ -116,19 +140,42 @@ public class AsyncDualSystemOneShadowComparison implements SystemOneShadowCompar
             String featureBucket) {
         try {
             CompletableFuture<SystemOneRoutingAdvisor.RoutingAdvice> primaryFuture =
-                    CompletableFuture.supplyAsync(() -> primary.advise(question), executor);
+                    CompletableFuture.supplyAsync(() -> observeProvider(primary, question, true), executor);
             CompletableFuture<SystemOneRoutingAdvisor.RoutingAdvice> challengerFuture =
-                    CompletableFuture.supplyAsync(() -> challenger.advise(question), executor);
+                    CompletableFuture.supplyAsync(() -> observeProvider(challenger, question, false), executor);
             SystemOneRoutingAdvisor.RoutingAdvice primaryAdvice = primaryFuture.join();
             SystemOneRoutingAdvisor.RoutingAdvice challengerAdvice = challengerFuture.join();
+            metrics.comparisonCompleted();
             persist(sampleId, question, authoritativeMultiAgent, featureBucket,
                     primaryAdvice, challengerAdvice);
         } catch (RuntimeException exception) {
+            metrics.comparisonFailed();
             log.warn("System One dual shadow comparison failed for sample {}: {}",
                     sampleId, exception.getMessage());
         } finally {
             capacity.release();
         }
+    }
+
+    private SystemOneRoutingAdvisor.RoutingAdvice observeProvider(
+            SystemOneRoutingAdvisor advisor, String question, boolean primaryProvider) {
+        long started = System.nanoTime();
+        SystemOneRoutingAdvisor.RoutingAdvice advice;
+        try {
+            advice = advisor.advise(question);
+            if (advice == null) advice = providerFailure("MALFORMED_RESPONSE", started);
+        } catch (RuntimeException exception) {
+            advice = providerFailure("EXCEPTION", started);
+        }
+        metrics.providerCompleted(primaryProvider, advice);
+        return advice;
+    }
+
+    private SystemOneRoutingAdvisor.RoutingAdvice providerFailure(String status, long started) {
+        return new SystemOneRoutingAdvisor.RoutingAdvice("SHADOW", status,
+                false, 0, false, 0, java.util.Map.of(),
+                java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started),
+                "", 0, 0, 0);
     }
 
     private void persist(
@@ -142,8 +189,12 @@ public class AsyncDualSystemOneShadowComparison implements SystemOneShadowCompar
         String fingerprint = fingerprint(question);
         boolean reviewEligible = !disagreements.isEmpty();
         boolean agreementControl = !reviewEligible && agreementSample(fingerprint);
-        if (!reviewEligible && !agreementControl) return;
-        repository.save(new SystemOneShadowSample(
+        if (!reviewEligible && !agreementControl) {
+            metrics.agreementNotRetained();
+            return;
+        }
+        try {
+            repository.save(new SystemOneShadowSample(
                 sampleId,
                 Instant.now(clock),
                 fingerprint,
@@ -155,7 +206,13 @@ public class AsyncDualSystemOneShadowComparison implements SystemOneShadowCompar
                 disagreements,
                 reviewEligible,
                 reviewEligible ? "DISAGREEMENT" : "AGREEMENT_CONTROL"
-        ));
+            ));
+            metrics.persisted();
+        } catch (RuntimeException exception) {
+            metrics.persistenceFailed();
+            log.warn("System One dual shadow persistence failed for sample {}: {}",
+                    sampleId, exception.getMessage());
+        }
     }
 
     private List<String> disagreements(

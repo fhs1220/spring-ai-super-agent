@@ -34,6 +34,19 @@ public class FileSystemOneCounterfactualLabelRepository
             SystemOneCounterfactualLabel label) {
         validateId(label.sampleId());
         String splitDirectory = validateSplit(label.split());
+        findBySampleId(label.sampleId()).ifPresent(previous -> {
+            if (!previous.split().equals(label.split())) {
+                throw new IllegalStateException("A persisted sample cannot change split");
+            }
+            if (label.reviews().size() < previous.reviews().size()
+                    || !label.reviews().subList(0, previous.reviews().size()).equals(previous.reviews())) {
+                throw new IllegalStateException("Review history is append-only");
+            }
+            if (!previous.reviews().isEmpty() && !java.util.Objects.equals(previous.evidence(), label.evidence())) {
+                throw new IllegalStateException("Reviewed evidence is immutable");
+            }
+            validateEvidence(previous.evidence(), label.evidence());
+        });
         try {
             Path directory = storageDirectory.resolve(splitDirectory);
             Files.createDirectories(directory);
@@ -63,7 +76,10 @@ public class FileSystemOneCounterfactualLabelRepository
     public synchronized List<SystemOneCounterfactualLabel> findAll() {
         if (!Files.isDirectory(storageDirectory)) return List.of();
         try (Stream<Path> paths = Files.walk(storageDirectory, 2)) {
-            return paths.filter(path -> path.getFileName().toString().endsWith(".json"))
+            return paths.filter(Files::isRegularFile)
+                    .filter(path -> path.getParent().equals(storageDirectory.resolve("development"))
+                            || path.getParent().equals(storageDirectory.resolve("holdout")))
+                    .filter(path -> path.getFileName().toString().endsWith(".json"))
                     .map(this::read)
                     .sorted(Comparator.comparing(
                             SystemOneCounterfactualLabel::labeledAt).reversed())
@@ -91,6 +107,37 @@ public class FileSystemOneCounterfactualLabelRepository
         if ("DEVELOPMENT".equals(split)) return "development";
         if ("HOLDOUT".equals(split)) return "holdout";
         throw new IllegalArgumentException("Invalid label split");
+    }
+
+    private void validateEvidence(SystemOneCounterfactualLabel.Evidence previous,
+                                  SystemOneCounterfactualLabel.Evidence next) {
+        if (previous == null) return;
+        if (next == null || !java.util.Objects.equals(previous.question(), next.question())
+                || !java.util.Objects.equals(previous.utilityPolicy(), next.utilityPolicy())
+                || !previous.provenance().equals(next.provenance())
+                || !java.util.Objects.equals(previous.observation(), next.observation())
+                || next.attempts().size() < previous.attempts().size()) {
+            throw new IllegalStateException("Checkpoint identity and attempts are immutable");
+        }
+        for (int i = 0; i < previous.attempts().size(); i++) {
+            var oldAttempt = previous.attempts().get(i);
+            var updated = next.attempts().get(i);
+            if (oldAttempt.equals(updated)) continue;
+            if (i != previous.attempts().size() - 1 || oldAttempt.finishedAt() != null
+                    || !"PENDING".equals(oldAttempt.status()) || updated.finishedAt() == null
+                    || !oldAttempt.attemptId().equals(updated.attemptId())
+                    || !oldAttempt.stage().equals(updated.stage())
+                    || !oldAttempt.startedAt().equals(updated.startedAt())) {
+                throw new IllegalStateException("Completed stage attempts are immutable");
+            }
+        }
+        if ((previous.single() != null && previous.single().succeeded()
+                && !previous.single().equals(next.single()))
+                || (previous.multi() != null && previous.multi().succeeded()
+                && !previous.multi().equals(next.multi()))
+                || (previous.judgment() != null && !previous.judgment().equals(next.judgment()))) {
+            throw new IllegalStateException("Successful stage evidence is immutable");
+        }
     }
 
     private void moveAtomically(Path source, Path target) throws IOException {

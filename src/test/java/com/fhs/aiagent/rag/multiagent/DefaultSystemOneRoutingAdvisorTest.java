@@ -1,11 +1,16 @@
 package com.fhs.aiagent.rag.multiagent;
 
 import com.fhs.aiagent.decision.SystemOneDecisionClient;
+import com.fhs.aiagent.decision.MalformedSystemOneResponseException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -60,6 +65,68 @@ class DefaultSystemOneRoutingAdvisorTest {
         assertThat(advice.recommendedMultiAgent()).isFalse();
         assertThat(advice.recommendedSafetyGuard()).isFalse();
         assertThat(advice.domainProbabilities()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"relationship", "parenting", "household", "finance",
+            "safety", "should_use_multi_agent"})
+    void marksNonHttpResponsesMissingAnyRoutingAnswerAsMalformed(String missingKey) {
+        SystemOneDecisionClient client = (state, questions) -> {
+            Map<String, SystemOneDecisionClient.SystemOneAnswer> answers = completeAnswers();
+            answers.remove(missingKey);
+            return new SystemOneDecisionClient.SystemOneResult("mock-provider", answers);
+        };
+
+        assertMalformedFallback(client);
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidAnswers")
+    void rejectsInvalidTypeOrProbabilityFromNonHttpProviders(
+            SystemOneDecisionClient.SystemOneAnswer invalidAnswer) {
+        SystemOneDecisionClient client = (state, questions) -> {
+            Map<String, SystemOneDecisionClient.SystemOneAnswer> answers = completeAnswers();
+            answers.put("safety", invalidAnswer);
+            return new SystemOneDecisionClient.SystemOneResult("mock-provider", answers);
+        };
+
+        assertMalformedFallback(client);
+    }
+
+    static Stream<SystemOneDecisionClient.SystemOneAnswer> invalidAnswers() {
+        return Stream.of(noul(Double.NaN), noul(Double.POSITIVE_INFINITY),
+                noul(Double.NEGATIVE_INFINITY), noul(-0.1), noul(1.1),
+                new SystemOneDecisionClient.SystemOneAnswer("noul", null, "", null, null, Map.of()),
+                new SystemOneDecisionClient.SystemOneAnswer("score", 0.8, "", null, null, Map.of()));
+    }
+
+    @Test
+    void preservesMalformedStatusFromHttpClientAndNullNonHttpResult() {
+        assertMalformedFallback((state, questions) -> {
+            throw new MalformedSystemOneResponseException("Missing safety answer");
+        });
+        assertMalformedFallback((state, questions) -> null);
+    }
+
+    private void assertMalformedFallback(SystemOneDecisionClient client) {
+        DefaultSystemOneRoutingAdvisor advisor = new DefaultSystemOneRoutingAdvisor(
+                client, true, "SHADOW", "JEV", 0.65);
+
+        SystemOneRoutingAdvisor.RoutingAdvice advice = advisor.advise("test");
+
+        assertThat(advice.status()).isEqualTo("MALFORMED_RESPONSE");
+        assertThat(advice.recommendedMultiAgent()).isFalse();
+        assertThat(advice.recommendedSafetyGuard()).isFalse();
+        assertThat(advice.domainProbabilities()).isEmpty();
+    }
+
+    private Map<String, SystemOneDecisionClient.SystemOneAnswer> completeAnswers() {
+        Map<String, SystemOneDecisionClient.SystemOneAnswer> answers = new LinkedHashMap<>();
+        for (String key : new String[]{"relationship", "parenting", "household", "finance",
+                "safety", "should_use_multi_agent"}) {
+            answers.put(key, noul(0.8));
+        }
+        return answers;
     }
 
     private static SystemOneDecisionClient.SystemOneAnswer noul(double probability) {

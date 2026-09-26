@@ -79,8 +79,8 @@ agent:
       request-timeout-ms: ${AGENT_SYSTEM_ONE_REQUEST_TIMEOUT_MS:1200}
       # Provider 专属阈值：Jev calibration v1 为 0.20；Laya challenger 为 0.75。
       # 冻结 36 题不参与选值；切换 provider 时必须显式覆盖，不能迁移置信度阈值。
-      multi-agent-threshold: ${AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD:0.20}
-      # 安全检测独立触发安全护栏，不再隐式强制完整多 Agent。
+      multi-agent-threshold: ${AGENT_SYSTEM_ONE_MULTI_AGENT_THRESHOLD:0.75}
+      # SHADOW 仅记录安全建议；实际处置继续由现有安全路径负责。
       safety-threshold: ${AGENT_SYSTEM_ONE_SAFETY_THRESHOLD:0.5}
       # 决策 API 输入单价；为 0 时报告不会声称已核算决策模型费用。
       input-price-per-million-usd: ${AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD:0}
@@ -284,9 +284,15 @@ agent:
       minimum-multi-agent-recall: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_MULTI_AGENT_RECALL:0.5}
       non-inferiority-margin: ${AGENT_EVALUATION_SYSTEM_ONE_NON_INFERIORITY_MARGIN:0.02}
       minimum-samples: ${AGENT_EVALUATION_SYSTEM_ONE_MINIMUM_SAMPLES:30}
+      utility:
+        # v2 线性评测效用，不复用线上策略的旧版截平公式；pilot 前冻结这些参数。
+        cost-weight: ${AGENT_EVALUATION_SYSTEM_ONE_UTILITY_COST_WEIGHT:0.05}
+        cost-scale-cny: ${AGENT_EVALUATION_SYSTEM_ONE_UTILITY_COST_SCALE_CNY:1.0}
+        latency-weight: ${AGENT_EVALUATION_SYSTEM_ONE_UTILITY_LATENCY_WEIGHT:0.05}
+        latency-scale-ms: ${AGENT_EVALUATION_SYSTEM_ONE_UTILITY_LATENCY_SCALE_MS:60000}
       labeling:
         storage-directory: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_STORAGE_DIRECTORY:tmp/system-one-labels}
-        # Pilot hard caps. A run may exceed the cost cap by at most its final single/multi pair.
+        # Cases are capped; cost is an estimated stopping threshold, not a provider billing cap.
         maximum-cases: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MAXIMUM_CASES:20}
         maximum-cost-cny: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MAXIMUM_COST_CNY:10}
         # 防止调参时窥视冻结集；只在最终一次验收运行中临时开启。
@@ -295,6 +301,9 @@ agent:
         minimum-utility-gain: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MINIMUM_UTILITY_GAIN:0.01}
         human-review-margin: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_HUMAN_REVIEW_MARGIN:0.03}
         minimum-judge-confidence: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MINIMUM_JUDGE_CONFIDENCE:0.70}
+        judge-timeout-ms: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_JUDGE_TIMEOUT_MS:60000}
+        source-revision: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_SOURCE_REVISION:UNSPECIFIED}
+        corpus-fingerprint: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_CORPUS_FINGERPRINT:UNSPECIFIED}
     # 四臂实验只接受可验证的 64 位 SHA-256 资产/训练指纹；普通本地 smoke 可保持 UNSPECIFIED。
     model-version: ${AGENT_EVALUATION_MODEL_VERSION:${OPENROUTER_CHAT_MODEL:openai/gpt-5.4}}
     model-artifact-fingerprint: ${AGENT_EVALUATION_MODEL_ARTIFACT_FINGERPRINT:UNSPECIFIED}
