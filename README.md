@@ -214,7 +214,9 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 [Pilot 预注册](docs/SYSTEM_ONE_PILOT_PROTOCOL.md) 与
 [试跑报告](docs/SYSTEM_ONE_PILOT_V1_REPORT.md)。这不是独立测试集，也不是 Jev/Laya 路由收益实验。
 根据五题反馈完成的统一答案契约与 Markdown 展示修复见
-[答案契约 v5](docs/ANSWER_CONTRACT_V5.md)；目前只有本地工程回归，没有新的质量收益数据。
+[答案契约 v5](docs/ANSWER_CONTRACT_V5.md)；工程测试通过本身不代表真实模型质量提升。
+后续同五题的付费开发回归见 [v2 报告](docs/SYSTEM_ONE_PILOT_V2_REPORT.md)：四句与六周
+结构有局部改善，仍有套话、安全引用及负担解析问题，不能宣称总体质量或 Jev/Laya 收益。
 
 #### OpenRouter 主模型与向量模型
 

@@ -1,0 +1,904 @@
+{
+  "schemaVersion": "system-one-pilot-v2-summary-v1",
+  "samplingFrame": "BOOTSTRAP_DEVELOPMENT_ONLY",
+  "sourceRevision": "2095f7c1a6a64c3937353603f22389f06fc564a2",
+  "jarSha256": "193e8ed99f663a8bc574de32fb6161f0426846a7617107f436a634ffa93dcc56",
+  "selectedQuestionsFingerprint": "a62d8e0d27967fb24fd25b47779b043b28d60adcd4edd246fb6e38f24230ed9c",
+  "requestedModel": "openai/gpt-5.4",
+  "requestedModelIsPinnedSnapshot": false,
+  "independentHoldout": false,
+  "routerEvaluation": false,
+  "humanApprovedLabels": 0,
+  "ledger": {
+    "labelCount": 5,
+    "knownCostCny": 4.235075999999999,
+    "remainingCny": 5.764924000000001
+  },
+  "rows": [
+    {
+      "sampleId": "pilot-case01",
+      "runId": "system-one-label-d5cf8f78-de72-442d-be05-b2f2cf36e952",
+      "status": "COMPLETED",
+      "paths": {
+        "single": {
+          "latencyMs": 18031,
+          "estimatedCostCny": 0.285228,
+          "answerChars": 364,
+          "executionMode": "SINGLE_AGENT",
+          "modelCallCount": 5,
+          "promptTokens": 9936,
+          "completionTokens": 985,
+          "maxPromptTokens": 2617,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 2079,
+              "success": true,
+              "details": [
+                "知识忠实：通过",
+                "任务完成：未通过",
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "REVISE",
+              "title": "修正",
+              "summary": "已重写最终答案",
+              "durationMs": 4259,
+              "success": true,
+              "details": [
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "保留契约得分更高的初稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：DRAFT",
+                "初稿分：3505959",
+                "修订分：3504140",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.84,
+          "error": ""
+        },
+        "multi": {
+          "latencyMs": 19728,
+          "estimatedCostCny": 0.34884,
+          "answerChars": 450,
+          "executionMode": "ADAPTIVE_MULTI_AGENT",
+          "modelCallCount": 6,
+          "promptTokens": 11418,
+          "completionTokens": 1327,
+          "maxPromptTokens": 2472,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 2431,
+              "success": true,
+              "details": [
+                "知识忠实：通过",
+                "任务完成：未通过",
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "REVISE",
+              "title": "修正",
+              "summary": "已重写最终答案",
+              "durationMs": 3313,
+              "success": true,
+              "details": [
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "保留契约得分更高的初稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：DRAFT",
+                "初稿分：3505461",
+                "修订分：3504042",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.91,
+          "error": ""
+        }
+      },
+      "judgment": {
+        "singleQuality": 0.84,
+        "multiQuality": 0.91,
+        "confidence": 0.87,
+        "rationale": "B更贴合“开场白”且更直接，不找借口表述更明确；A也可用，但夹带自我介绍与“承担影响”略显冗长。",
+        "contractVersion": "system-one-counterfactual-judge-v2",
+        "usage": {
+          "model": "openai/gpt-5.4",
+          "responseId": "gen-1790481565-QHc60J8tDhxQZQDDfBz4",
+          "inputTokens": 1040,
+          "outputTokens": 71,
+          "estimatedCostCny": 0.026388,
+          "measured": true,
+          "promptFingerprint": "57b90304543698226f9a7f81e5030418e3c0149469d9e8ade3c155cd798e3d3f"
+        }
+      },
+      "attempts": [
+        {
+          "attemptId": "702efab1-b9a1-4298-8946-5dd81c64283a",
+          "stage": "AGENTIC_SINGLE_AGENT",
+          "startedAt": "2026-09-27T03:58:47.945275Z",
+          "finishedAt": "2026-09-27T03:59:05.992965Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.285228,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "81626a66-af9a-4e91-8277-e778f3ee8bb9",
+          "stage": "AGENTIC_MULTI_AGENT",
+          "startedAt": "2026-09-27T03:59:06.016363Z",
+          "finishedAt": "2026-09-27T03:59:25.762315Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.34884,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "61862a19-80b7-44f2-b455-858de1b14387",
+          "stage": "JUDGE",
+          "startedAt": "2026-09-27T03:59:25.767724Z",
+          "finishedAt": "2026-09-27T03:59:27.190432Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.026388,
+          "usageMeasured": true,
+          "errorType": ""
+        }
+      ],
+      "humanReviews": 0,
+      "evidenceSha256": "2a44bf6801d88a8e9c201f6cf88838ee2d4412d35474275252a8b1c6e93181f1"
+    },
+    {
+      "sampleId": "pilot-case02",
+      "runId": "system-one-label-687bd9fb-f8df-4495-8acf-47c847e16b3b",
+      "status": "REVIEW_REQUIRED",
+      "paths": {
+        "single": {
+          "latencyMs": 8211,
+          "estimatedCostCny": 0.181854,
+          "answerChars": 284,
+          "executionMode": "SINGLE_AGENT",
+          "modelCallCount": 4,
+          "promptTokens": 6713,
+          "completionTokens": 565,
+          "maxPromptTokens": 2380,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 1937,
+              "success": true,
+              "details": [
+                "知识忠实：通过",
+                "任务完成：未通过",
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "保留契约得分更高的初稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：DRAFT",
+                "初稿分：3507621",
+                "修订分：3507344",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.9,
+          "error": ""
+        },
+        "multi": {
+          "latencyMs": 14249,
+          "estimatedCostCny": 0.399888,
+          "answerChars": 285,
+          "executionMode": "ADAPTIVE_MULTI_AGENT",
+          "modelCallCount": 7,
+          "promptTokens": 12226,
+          "completionTokens": 1665,
+          "maxPromptTokens": 2900,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 1859,
+              "success": true,
+              "details": [
+                "知识忠实：通过",
+                "任务完成：未通过",
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "保留契约得分更高的初稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：DRAFT",
+                "初稿分：3507048",
+                "修订分：3506643",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.94,
+          "error": ""
+        }
+      },
+      "judgment": {
+        "singleQuality": 0.9,
+        "multiQuality": 0.94,
+        "confidence": 0.92,
+        "rationale": "两者都满足“四句、不指责、不要方案”。B更自然直接，完整覆盖孩子/家务/花钱诉求；A也好，但“必要支出、储蓄和娱乐安排”稍扩展原诉求。",
+        "contractVersion": "system-one-counterfactual-judge-v2",
+        "usage": {
+          "model": "openai/gpt-5.4",
+          "responseId": "gen-1790481618-ejwi4Lab6huhtNNczob9",
+          "inputTokens": 833,
+          "outputTokens": 82,
+          "estimatedCostCny": 0.02385,
+          "measured": true,
+          "promptFingerprint": "abb8302e05fe8c9202963ca2b2c78d977390f6977452f02e8fdfa9e0bc7f5629"
+        }
+      },
+      "attempts": [
+        {
+          "attemptId": "8e447fad-547e-4548-94b9-48038c3c373f",
+          "stage": "AGENTIC_SINGLE_AGENT",
+          "startedAt": "2026-09-27T03:59:55.740693Z",
+          "finishedAt": "2026-09-27T04:00:03.952739Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.181854,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "1495f790-7289-4d68-9d38-4ce431dec863",
+          "stage": "AGENTIC_MULTI_AGENT",
+          "startedAt": "2026-09-27T04:00:03.955236Z",
+          "finishedAt": "2026-09-27T04:00:18.206334Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.399888,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "4ec567b7-6256-4d98-b733-ba88033b43a1",
+          "stage": "JUDGE",
+          "startedAt": "2026-09-27T04:00:18.210046Z",
+          "finishedAt": "2026-09-27T04:00:19.823583Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.02385,
+          "usageMeasured": true,
+          "errorType": ""
+        }
+      ],
+      "humanReviews": 0,
+      "evidenceSha256": "2c9d19bf727f9fee2265027a56efc824ffca935692b38d6380e6f719a08ad5d2"
+    },
+    {
+      "sampleId": "pilot-case03",
+      "runId": "system-one-label-c9686205-7cf9-415a-af1d-7dbc87bfefbc",
+      "status": "COMPLETED",
+      "paths": {
+        "single": {
+          "latencyMs": 21588,
+          "estimatedCostCny": 0.314928,
+          "answerChars": 598,
+          "executionMode": "SINGLE_AGENT",
+          "modelCallCount": 5,
+          "promptTokens": 10848,
+          "completionTokens": 1108,
+          "maxPromptTokens": 3139,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 4153,
+              "success": true,
+              "details": [
+                "知识忠实：未通过",
+                "任务完成：未通过",
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "保留契约得分更高的初稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：DRAFT",
+                "初稿分：3505012",
+                "修订分：3504578",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.94,
+          "error": ""
+        },
+        "multi": {
+          "latencyMs": 28567,
+          "estimatedCostCny": 0.412182,
+          "answerChars": 635,
+          "executionMode": "ADAPTIVE_MULTI_AGENT",
+          "modelCallCount": 6,
+          "promptTokens": 12861,
+          "completionTokens": 1673,
+          "maxPromptTokens": 2972,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 4545,
+              "success": true,
+              "details": [
+                "知识忠实：未通过",
+                "任务完成：通过",
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "保留契约得分更高的初稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：DRAFT",
+                "初稿分：3505939",
+                "修订分：3504835",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.88,
+          "error": ""
+        }
+      },
+      "judgment": {
+        "singleQuality": 0.94,
+        "multiQuality": 0.88,
+        "confidence": 0.92,
+        "rationale": "A更强调不回住址、去人多处、立即报警与过夜安排，步骤更完整可执行。B也安全，但加入呼吸冷静和可回复信息，紧迫场景下次要。",
+        "contractVersion": "system-one-counterfactual-judge-v2",
+        "usage": {
+          "model": "openai/gpt-5.4",
+          "responseId": "gen-1790481704-IEWy1IOg23ZXEExiHWo2",
+          "inputTokens": 1323,
+          "outputTokens": 77,
+          "estimatedCostCny": 0.03213,
+          "measured": true,
+          "promptFingerprint": "e2f8f67b158c1f06fabf51fcf8c3ff79371b4a7c2e5ef1d5a24b91fecddac26b"
+        }
+      },
+      "attempts": [
+        {
+          "attemptId": "9e8364d5-2aaf-4b31-82e0-e044017af18a",
+          "stage": "AGENTIC_SINGLE_AGENT",
+          "startedAt": "2026-09-27T04:00:54.516584Z",
+          "finishedAt": "2026-09-27T04:01:16.105387Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.314928,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "6e1e4360-a78a-4ca2-910c-1fd57b6cd955",
+          "stage": "AGENTIC_MULTI_AGENT",
+          "startedAt": "2026-09-27T04:01:16.108962Z",
+          "finishedAt": "2026-09-27T04:01:44.678800Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.412182,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "6c23c975-78dd-4975-b5bd-437adef66a43",
+          "stage": "JUDGE",
+          "startedAt": "2026-09-27T04:01:44.682092Z",
+          "finishedAt": "2026-09-27T04:01:46.557658Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.03213,
+          "usageMeasured": true,
+          "errorType": ""
+        }
+      ],
+      "humanReviews": 0,
+      "evidenceSha256": "1b76072dbc4d8645fd46bf620fa6ef06c89ac420054a727f1433a42cf33263b3"
+    },
+    {
+      "sampleId": "pilot-case04",
+      "runId": "system-one-label-4b9f1c9b-6569-4c81-bd15-2dad7e183e08",
+      "status": "REVIEW_REQUIRED",
+      "paths": {
+        "single": {
+          "latencyMs": 18534,
+          "estimatedCostCny": 0.251766,
+          "answerChars": 1001,
+          "executionMode": "SINGLE_AGENT",
+          "modelCallCount": 4,
+          "promptTokens": 6835,
+          "completionTokens": 1192,
+          "maxPromptTokens": 2812,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "忠实且完成用户任务",
+              "durationMs": 983,
+              "success": true,
+              "details": [
+                "知识忠实：通过",
+                "任务完成：通过",
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.86,
+          "error": ""
+        },
+        "multi": {
+          "latencyMs": 39122,
+          "estimatedCostCny": 0.849546,
+          "answerChars": 883,
+          "executionMode": "ADAPTIVE_MULTI_AGENT",
+          "modelCallCount": 7,
+          "promptTokens": 16915,
+          "completionTokens": 5047,
+          "maxPromptTokens": 4812,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 7226,
+              "success": true,
+              "details": [
+                "知识忠实：未通过",
+                "任务完成：未通过",
+                "引用契约：通过",
+                "逐项契约：通过"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "采用契约得分不低于初稿的修订稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：REVISED",
+                "初稿分：3511175",
+                "修订分：3511342",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.92,
+          "error": ""
+        }
+      },
+      "judgment": {
+        "singleQuality": 0.86,
+        "multiQuality": 0.92,
+        "confidence": 0.89,
+        "rationale": "B更具体可执行：有6周现金流表、替补顺序、联合日程、应急方案与量化检查点。A也完整，但缺少现金流周期化工具与应急细化。",
+        "contractVersion": "system-one-counterfactual-judge-v2",
+        "usage": {
+          "model": "openai/gpt-5.4",
+          "responseId": "gen-1790481787-2zmszoCxmVHxC2IqGe9N",
+          "inputTokens": 1904,
+          "outputTokens": 77,
+          "estimatedCostCny": 0.042588,
+          "measured": true,
+          "promptFingerprint": "a343bd267c150a03ad067dde075d76bc00f3d25c7147ec8c53f9f0b8096cff43"
+        }
+      },
+      "attempts": [
+        {
+          "attemptId": "65a39139-6de5-4eec-920c-03607bc40d03",
+          "stage": "AGENTIC_SINGLE_AGENT",
+          "startedAt": "2026-09-27T04:02:10.170231Z",
+          "finishedAt": "2026-09-27T04:02:28.705582Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.251766,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "98c96d20-0d38-401d-9a39-6b5ff190c17b",
+          "stage": "AGENTIC_MULTI_AGENT",
+          "startedAt": "2026-09-27T04:02:28.707915Z",
+          "finishedAt": "2026-09-27T04:03:07.831734Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.849546,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "9d71e8a4-7224-46d8-8674-08a84ca579c8",
+          "stage": "JUDGE",
+          "startedAt": "2026-09-27T04:03:07.834829Z",
+          "finishedAt": "2026-09-27T04:03:09.407894Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.042588,
+          "usageMeasured": true,
+          "errorType": ""
+        }
+      ],
+      "humanReviews": 0,
+      "evidenceSha256": "05b89f653ab1138f61d096d51aa789b6ad6e04c1231c1552d168dd0610fe6b8e"
+    },
+    {
+      "sampleId": "pilot-case05",
+      "runId": "system-one-label-82686a49-2785-4f09-9813-af886d199660",
+      "status": "COMPLETED",
+      "paths": {
+        "single": {
+          "latencyMs": 29026,
+          "estimatedCostCny": 0.417024,
+          "answerChars": 610,
+          "executionMode": "SINGLE_AGENT",
+          "modelCallCount": 5,
+          "promptTokens": 9392,
+          "completionTokens": 2296,
+          "maxPromptTokens": 2708,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 5966,
+              "success": true,
+              "details": [
+                "知识忠实：通过",
+                "任务完成：未通过",
+                "引用契约：通过",
+                "逐项契约：未通过",
+                "缺失项：提供双方同口径负担对照表（学习、夜间、家务照护）及明确调整条件"
+              ]
+            },
+            {
+              "phase": "REVISE",
+              "title": "修正",
+              "summary": "已重写最终答案",
+              "durationMs": 6730,
+              "success": true,
+              "details": [
+                "引用契约：通过",
+                "逐项契约：未通过",
+                "缺失项：提供双方同口径负担对照表（学习、夜间、家务照护）及明确调整条件"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "采用契约得分不低于初稿的修订稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：REVISED",
+                "初稿分：-8991439",
+                "修订分：-8991437",
+                "逐项契约：未通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.87,
+          "error": ""
+        },
+        "multi": {
+          "latencyMs": 37462,
+          "estimatedCostCny": 0.618048,
+          "answerChars": 493,
+          "executionMode": "ADAPTIVE_MULTI_AGENT",
+          "modelCallCount": 6,
+          "promptTokens": 12844,
+          "completionTokens": 3582,
+          "maxPromptTokens": 4057,
+          "reviewSteps": [
+            {
+              "phase": "REVIEW",
+              "title": "审查",
+              "summary": "发现问题并完成修正",
+              "durationMs": 5179,
+              "success": true,
+              "details": [
+                "知识忠实：未通过",
+                "任务完成：未通过",
+                "引用契约：通过",
+                "逐项契约：未通过",
+                "缺失项：提供双方同口径负担对照表（学习、夜间、家务照护）及明确调整条件"
+              ]
+            },
+            {
+              "phase": "RLVR_SELECT",
+              "title": "RLVR 候选择优",
+              "summary": "采用契约得分不低于初稿的修订稿",
+              "durationMs": 0,
+              "success": true,
+              "details": [
+                "候选：REVISED",
+                "初稿分：-8991005",
+                "修订分：3507163",
+                "逐项契约：通过"
+              ]
+            }
+          ],
+          "judgeQuality": 0.82,
+          "error": ""
+        }
+      },
+      "judgment": {
+        "singleQuality": 0.87,
+        "multiQuality": 0.82,
+        "confidence": 0.89,
+        "rationale": "A覆盖学习、夜护、家务、费用更完整，给出补偿规则与复盘机制；B也可执行，但费用仅原则提及，公平补偿细则略少。",
+        "contractVersion": "system-one-counterfactual-judge-v2",
+        "usage": {
+          "model": "openai/gpt-5.4",
+          "responseId": "gen-1790481884-hOFgIONgpK9cdhEmW6ZH",
+          "inputTokens": 1280,
+          "outputTokens": 72,
+          "estimatedCostCny": 0.030816,
+          "measured": true,
+          "promptFingerprint": "9857118981cb11ab0565bc493902f444bbe93a7add8f8f6aad3f7cb663cbabf6"
+        }
+      },
+      "attempts": [
+        {
+          "attemptId": "570c9156-c6d2-4a6d-a6c0-cf31af59cec4",
+          "stage": "AGENTIC_SINGLE_AGENT",
+          "startedAt": "2026-09-27T04:03:37.799961Z",
+          "finishedAt": "2026-09-27T04:04:06.827353Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.417024,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "de6bda08-41c1-440a-ba3d-1b8e8d28893a",
+          "stage": "AGENTIC_MULTI_AGENT",
+          "startedAt": "2026-09-27T04:04:06.829704Z",
+          "finishedAt": "2026-09-27T04:04:44.294024Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.618048,
+          "usageMeasured": true,
+          "errorType": ""
+        },
+        {
+          "attemptId": "dd66b6c2-a169-4f34-b5fd-b7d6e9d5a646",
+          "stage": "JUDGE",
+          "startedAt": "2026-09-27T04:04:44.296930Z",
+          "finishedAt": "2026-09-27T04:04:45.667021Z",
+          "status": "SUCCEEDED",
+          "estimatedCostCny": 0.030816,
+          "usageMeasured": true,
+          "errorType": ""
+        }
+      ],
+      "humanReviews": 0,
+      "evidenceSha256": "feb0b9224a8137c21fb47fbcf0238dde353e876395b9faf0b88f7331053a7bf4"
+    }
+  ],
+  "runs": [
+    {
+      "runId": "system-one-label-4b9f1c9b-6569-4c81-bd15-2dad7e183e08",
+      "status": "COMPLETED",
+      "completedAt": "2026-09-27T04:03:09.416120Z",
+      "totalCostCny": 1.1439,
+      "costAccountingComplete": true
+    },
+    {
+      "runId": "system-one-label-687bd9fb-f8df-4495-8acf-47c847e16b3b",
+      "status": "COMPLETED",
+      "completedAt": "2026-09-27T04:00:19.828465Z",
+      "totalCostCny": 0.605592,
+      "costAccountingComplete": true
+    },
+    {
+      "runId": "system-one-label-82686a49-2785-4f09-9813-af886d199660",
+      "status": "COMPLETED",
+      "completedAt": "2026-09-27T04:04:45.677669Z",
+      "totalCostCny": 1.065888,
+      "costAccountingComplete": true
+    },
+    {
+      "runId": "system-one-label-c9686205-7cf9-415a-af1d-7dbc87bfefbc",
+      "status": "COMPLETED",
+      "completedAt": "2026-09-27T04:01:46.565959Z",
+      "totalCostCny": 0.75924,
+      "costAccountingComplete": true
+    },
+    {
+      "runId": "system-one-label-d5cf8f78-de72-442d-be05-b2f2cf36e952",
+      "status": "COMPLETED",
+      "completedAt": "2026-09-27T03:59:27.203732Z",
+      "totalCostCny": 0.660456,
+      "costAccountingComplete": true
+    }
+  ],
+  "oldEvidenceHashesMatch": true,
+  "structuralReplay": [
+    {
+      "round": "v1",
+      "sampleId": "pilot-case01",
+      "format": {
+        "exactSentences": null,
+        "weeklyCheckpoints": null,
+        "comparableWorkload": false
+      },
+      "singleMissing": [],
+      "multiMissing": []
+    },
+    {
+      "round": "v1",
+      "sampleId": "pilot-case02",
+      "format": {
+        "exactSentences": 4,
+        "weeklyCheckpoints": null,
+        "comparableWorkload": false
+      },
+      "singleMissing": [
+        "只输出 4 句完整表达，不添加开场介绍、标题或结尾邀请"
+      ],
+      "multiMissing": [
+        "只输出 4 句完整表达，不添加开场介绍、标题或结尾邀请"
+      ]
+    },
+    {
+      "round": "v1",
+      "sampleId": "pilot-case03",
+      "format": {
+        "exactSentences": null,
+        "weeklyCheckpoints": null,
+        "comparableWorkload": false
+      },
+      "singleMissing": [],
+      "multiMissing": []
+    },
+    {
+      "round": "v1",
+      "sampleId": "pilot-case04",
+      "format": {
+        "exactSentences": null,
+        "weeklyCheckpoints": 6,
+        "comparableWorkload": false
+      },
+      "singleMissing": [],
+      "multiMissing": [
+        "按顺序分别列出第1周至第6周，不合并、重复或增加周次",
+        "第1周单独给出行动内容与检查点",
+        "第2周单独给出行动内容与检查点",
+        "第3周单独给出行动内容与检查点",
+        "第4周单独给出行动内容与检查点",
+        "第5周单独给出行动内容与检查点",
+        "第6周单独给出行动内容与检查点"
+      ]
+    },
+    {
+      "round": "v1",
+      "sampleId": "pilot-case05",
+      "format": {
+        "exactSentences": null,
+        "weeklyCheckpoints": null,
+        "comparableWorkload": true
+      },
+      "singleMissing": [
+        "提供双方同口径负担对照表（学习、夜间、家务照护）及明确调整条件"
+      ],
+      "multiMissing": [
+        "提供双方同口径负担对照表（学习、夜间、家务照护）及明确调整条件"
+      ]
+    },
+    {
+      "round": "v2",
+      "sampleId": "pilot-case01",
+      "format": {
+        "exactSentences": null,
+        "weeklyCheckpoints": null,
+        "comparableWorkload": false
+      },
+      "singleMissing": [],
+      "multiMissing": []
+    },
+    {
+      "round": "v2",
+      "sampleId": "pilot-case02",
+      "format": {
+        "exactSentences": 4,
+        "weeklyCheckpoints": null,
+        "comparableWorkload": false
+      },
+      "singleMissing": [],
+      "multiMissing": []
+    },
+    {
+      "round": "v2",
+      "sampleId": "pilot-case03",
+      "format": {
+        "exactSentences": null,
+        "weeklyCheckpoints": null,
+        "comparableWorkload": false
+      },
+      "singleMissing": [],
+      "multiMissing": []
+    },
+    {
+      "round": "v2",
+      "sampleId": "pilot-case04",
+      "format": {
+        "exactSentences": null,
+        "weeklyCheckpoints": 6,
+        "comparableWorkload": false
+      },
+      "singleMissing": [],
+      "multiMissing": []
+    },
+    {
+      "round": "v2",
+      "sampleId": "pilot-case05",
+      "format": {
+        "exactSentences": null,
+        "weeklyCheckpoints": null,
+        "comparableWorkload": true
+      },
+      "singleMissing": [
+        "提供双方同口径负担对照表（学习、夜间、家务照护）及明确调整条件"
+      ],
+      "multiMissing": []
+    }
+  ],
+  "providerUsageWindowDeltaUsd": 0.5237273000000009,
+  "providerUsageWindowIsIsolatedBilling": false,
+  "totals": {
+    "modelCallCount": 60,
+    "promptTokens": 116368,
+    "completionTokens": 19819,
+    "totalTokens": 136187
+  },
+  "queryEmbeddingIncludedInAttemptLedger": false
+}
