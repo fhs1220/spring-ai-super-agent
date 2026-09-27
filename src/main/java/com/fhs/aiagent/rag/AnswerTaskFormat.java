@@ -11,7 +11,17 @@ import java.util.regex.Pattern;
 public record AnswerTaskFormat(
         @JsonAlias("exact_sentences") Integer exactSentences,
         @JsonAlias("weekly_checkpoints") Integer weeklyCheckpoints,
-        @JsonAlias("comparable_workload") Boolean comparableWorkload) {
+        @JsonAlias("comparable_workload") Boolean comparableWorkload,
+        @JsonAlias("no_assistant_boilerplate") Boolean noAssistantBoilerplate) {
+
+    public AnswerTaskFormat(Integer exactSentences, Integer weeklyCheckpoints, Boolean comparableWorkload) {
+        this(exactSentences, weeklyCheckpoints, comparableWorkload, false);
+    }
+
+    private static final Pattern ASSISTANT_INTRO = Pattern.compile(
+            "^(?:当然[。！!，,]?\\s*|好的[。！!，,]?\\s*)?(?:我是|我是一名|作为).{0,70}(?:助手|顾问|咨询|AI|人工智能)");
+    private static final Pattern SERVICE_INVITATION = Pattern.compile(
+            "(?m)^(?:\\s|\\*|#)*(?:如果你愿意|如果需要|如有需要|你愿意的话)[，,：:\\s]*我.{0,12}(?:可以|能够|能).{0,12}(?:帮你|为你)");
 
     private static final String NUMBER = "([1-9][0-9]?|[一二三四五六七八九十两]{1,3})";
     private static final Pattern SENTENCE_REQUEST = Pattern.compile(
@@ -23,7 +33,6 @@ public record AnswerTaskFormat(
     private static final Pattern SENTENCE_END = Pattern.compile("[。！？!?]+|(?<![0-9])\\.(?![0-9])");
     private static final Pattern PREAMBLE = Pattern.compile(
             "^(?:当然|好的|以下|下面|你可以|我是.{0,40}(?:助手|顾问|咨询))");
-    private static final List<String> METRICS = List.of("学习|备考", "夜醒|夜间|夜班", "家务|照护|育儿");
 
     public AnswerTaskFormat {
         bounded(exactSentences, 10, "exactSentences");
@@ -48,17 +57,21 @@ public record AnswerTaskFormat(
         }
         boolean workload = text.contains("双方") && text.contains("负担")
                 && text.contains("可比较");
-        return new AnswerTaskFormat(sentences, weeks, workload);
+        boolean identityRequest = text.matches("(?s).*(?:你是谁|介绍(?:一下)?你自己|你的身份|你的功能).*");
+        return new AnswerTaskFormat(sentences, weeks, workload, !identityRequest);
     }
 
     public AnswerTaskFormat merge(AnswerTaskFormat inferred) {
         return new AnswerTaskFormat(mergeCount(exactSentences, inferred.exactSentences),
                 mergeCount(weeklyCheckpoints, inferred.weeklyCheckpoints),
-                Boolean.TRUE.equals(comparableWorkload) || Boolean.TRUE.equals(inferred.comparableWorkload));
+                Boolean.TRUE.equals(comparableWorkload) || Boolean.TRUE.equals(inferred.comparableWorkload),
+                Boolean.TRUE.equals(noAssistantBoilerplate) || Boolean.TRUE.equals(inferred.noAssistantBoilerplate));
     }
 
     public List<AnswerVerificationContract.RepairRequirement> requirements() {
         var result = new ArrayList<AnswerVerificationContract.RepairRequirement>();
+        if (Boolean.TRUE.equals(noAssistantBoilerplate)) result.add(new AnswerVerificationContract.RepairRequirement(
+                "no-assistant-boilerplate", "删除无关的助手身份介绍和结尾服务邀请，直接完成用户任务"));
         if (exactSentences != null) result.add(new AnswerVerificationContract.RepairRequirement(
                 "format-exact-sentences", "只输出 " + exactSentences + " 句完整表达，不添加开场介绍、标题或结尾邀请"));
         if (weeklyCheckpoints != null) {
@@ -78,6 +91,10 @@ public record AnswerTaskFormat(
         String text = Objects.toString(answer, "").replace("**", "");
         var missing = new ArrayList<String>();
         List<AnswerVerificationContract.RepairRequirement> requirements = requirements();
+        if (Boolean.TRUE.equals(noAssistantBoilerplate)
+                && (ASSISTANT_INTRO.matcher(text.stripLeading()).find() || SERVICE_INVITATION.matcher(text).find())) {
+            add(missing, requirements, "no-assistant-boilerplate");
+        }
         if (exactSentences != null && !hasExactSentences(text)) add(missing, requirements, "format-exact-sentences");
         if (weeklyCheckpoints != null) {
             var headings = WEEK_HEADING.matcher(text).results().toList();
@@ -101,7 +118,7 @@ public record AnswerTaskFormat(
                 if (!found) add(missing, requirements, "format-week-" + week);
             }
         }
-        if (Boolean.TRUE.equals(comparableWorkload) && !hasWorkloadTable(text)) {
+        if (Boolean.TRUE.equals(comparableWorkload) && !WorkloadComparisonCheck.passed(text)) {
             add(missing, requirements, "format-workload-comparison");
         }
         return List.copyOf(missing);
@@ -111,8 +128,9 @@ public record AnswerTaskFormat(
         String text = String.join("\n", requirements().stream().map(r -> "- " + r.requirement()).toList());
         if (exactSentences != null) text += "\n- 每句以句号、问号或感叹号结束；可编号，不额外增加解释。引用放在对应句旁。";
         if (weeklyCheckpoints != null) text += "\n- 每周使用独立的‘第N周：’标题；写明行动，再写‘检查点：具体可核验结果’。";
-        if (Boolean.TRUE.equals(comparableWorkload)) text += "\n- 使用 Markdown 表格：指标 | A/甲/我 | B/乙/伴侣；至少包括学习小时、夜间负担、家务照护小时。"
+        if (Boolean.TRUE.equals(comparableWorkload)) text += "\n- 使用 Markdown 表格：指标 | A/甲/我 | B/乙/伴侣；三项指标建议写作学习小时/周、夜间次数/周、家务照护小时/周。"
                 + "未知数值填‘待填’，不要编造；两人每项采用相同单位、周期，写明差异达到何种条件如何调整。"
+                + "单元格允许数值或待填后附括号说明；不得混用小时与次数、每天与每周，单位未选定时不要宣称已可比较。"
                 + "\n- 仍须遵守用户给出的帮手次数与费用上限；结构检查不能证明公平或可行，需结合已知信息说明假设。";
         return text;
     }
@@ -131,38 +149,6 @@ public record AnswerTaskFormat(
             end = ends.end();
         }
         return count == exactSentences && text.substring(end).isBlank();
-    }
-
-    private static boolean hasWorkloadTable(String answer) {
-        boolean header = false;
-        boolean[] metrics = new boolean[METRICS.size()];
-        for (String line : answer.split("\\R")) {
-            if (!line.strip().startsWith("|")) { header = false; continue; }
-            String[] cells = line.strip().split("\\|", -1);
-            if (cells.length != 5 || !cells[4].isBlank()) continue;
-            if (cells[1].trim().matches("指标|项目|负担指标")
-                    && cells[2].trim().matches("A|甲|我|本人")
-                    && cells[3].trim().matches("B|乙|伴侣|对方")) {
-                header = true;
-                java.util.Arrays.fill(metrics, false);
-                continue;
-            }
-            if (!header || !measuredCell(cells[2]) || !measuredCell(cells[3])) continue;
-            for (int i = 0; i < metrics.length; i++) {
-                if (Pattern.compile(METRICS.get(i)).matcher(cells[1]).find()
-                        && cells[1].matches(".*(?:小时|分钟|时长|次数|晚数|晚|次).*")) {
-                    metrics[i] = true;
-                    break;
-                }
-            }
-            if (metrics[0] && metrics[1] && metrics[2]
-                    && answer.matches("(?s).*(?:如果|若|当|超过|高于|低于).*(?:调整|轮换|补偿|重排).*")) return true;
-        }
-        return false;
-    }
-
-    private static boolean measuredCell(String text) {
-        return text.trim().matches("(?:\\d+(?:\\.\\d+)?|待填|待记录)");
     }
 
     private static boolean substantive(String text) {

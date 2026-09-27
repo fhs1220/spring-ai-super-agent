@@ -89,6 +89,8 @@ public class SystemOneCounterfactualLabelingService {
         identity.put("minimumJudgeConfidence", Double.toString(minimumJudgeConfidence));
         identity.put("developmentPercent", Integer.toString(developmentPercent));
         identity.put("utilityVersion", SystemOneUtilityPolicy.VERSION);
+        identity.put("answerContractVersion", com.fhs.aiagent.rag.AnswerVerificationContract.VERSION);
+        identity.put("reviewGateVersion", CounterfactualReviewGate.VERSION);
         this.provenance = Map.copyOf(identity);
     }
 
@@ -251,6 +253,7 @@ public class SystemOneCounterfactualLabelingService {
         double multiUtility = judgment == null ? 0 : utilityPolicy.utility(multiQuality, multi.estimatedCostCny(), multi.latencyMs());
         double delta = multiUtility - singleUtility;
         boolean review = judgment == null || !evidence.completePair()
+                || !evidence.reviewReasons().isEmpty()
                 || sample.disagreementTypes().contains("SAFETY_ACTION_DISAGREEMENT")
                 || judgment.confidence() < minimumJudgeConfidence
                 || Math.abs(delta - minimumUtilityGain) < humanReviewMargin

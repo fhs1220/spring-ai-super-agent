@@ -119,6 +119,11 @@ public record SystemOneCounterfactualLabel(
                     && multi.answer() != null && !multi.answer().isBlank()
                     && !multi.fellBackToSingle();
         }
+
+        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public List<String> reviewReasons() {
+            return CounterfactualReviewGate.reasons(this);
+        }
     }
 
     public record Outcome(

@@ -30,7 +30,7 @@ public record AnswerVerificationContract(
         @JsonAlias("task_format") AnswerTaskFormat taskFormat
 ) {
 
-    public static final String VERSION = "answer-verification-contract-v5";
+    public static final String VERSION = "answer-verification-contract-v6";
 
     public static final String STRUCTURE_NORMALIZER_VERSION =
             "deterministic-answer-structure-v1";
@@ -247,7 +247,9 @@ public record AnswerVerificationContract(
                 ? "（无额外结构化约束）"
                 : String.join("\n", checks.stream().map("- "::concat).toList());
         return checklist + "\n" + taskFormat.promptChecklist() + "\n- 含“|”的概念契约表示任选其一，"
-                + "答案只写自然表达，不得照抄竖线备选串";
+                + "答案只写自然表达，不得照抄竖线备选串"
+                + "\n- 引用必须支持所附的具体主张；不得以通用关系沟通材料冒充具体安全处置的依据。"
+                + "证据不足时明确边界，不为凑引用把无关来源贴在建议后。编号有效不等于语义支持。";
     }
 
     /**

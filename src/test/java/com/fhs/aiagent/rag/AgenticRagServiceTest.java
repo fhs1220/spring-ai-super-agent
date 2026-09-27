@@ -34,6 +34,37 @@ import static org.mockito.Mockito.when;
 class AgenticRagServiceTest {
 
     @Test
+    void failedFinalContractIsTypedEvenWhenReviewerClaimsSuccessAndRepairKeepsBoilerplate() {
+        ChatModel model = mock(ChatModel.class);
+        VectorStore vectors = mock(VectorStore.class);
+        List<String> repairPrompts = new ArrayList<>();
+        String answer = "我是关系沟通助手。" + "先认真倾听彼此的需要再表达自己的感受。".repeat(10) + "[来源 1]";
+        when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
+            String prompt = ((Prompt) invocation.getArgument(0)).getContents();
+            if (prompt.contains("检索规划器")) return response("{\"subQueries\":[\"沟通\"]}");
+            if (prompt.contains("检索质量评估器")) return response("{\"sufficient\":true,\"followUpQueries\":[]}");
+            if (prompt.contains("答案质量审查器")) return response("{\"grounded\":true,\"taskCompleted\":true}");
+            if (prompt.contains("答案修正器")) {
+                repairPrompts.add(prompt);
+                return response(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
+                        new StructuredContractRepair(answer, List.of(), List.of(), "")));
+            }
+            if (prompt.contains("答案生成步骤")) return response(answer);
+            throw new AssertionError("Unexpected model call");
+        });
+        when(vectors.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(new Document("doc", "倾听并表达感受", Map.of())));
+        var memory = MessageWindowChatMemory.builder().chatMemoryRepository(new InMemoryChatMemoryRepository()).build();
+        var service = new AgenticRagService(ChatClient.builder(model).build(), vectors, memory,
+                new InMemoryAgentTrajectoryRepository(), new AgentRewardCalculator());
+        var result = service.doAgenticRagWithTrace("请给出沟通建议。", "failed-contract", "角色提示", AgentProgressListener.NONE,
+                AgenticRagService.RunOptions.evaluation(MultiAgentRoutingMode.FORCE_SINGLE));
+        assertThat(repairPrompts).isNotEmpty().allSatisfy(p -> assertThat(p)
+                .contains("no-assistant-boilerplate", "删除无关的助手身份介绍", "编号有效不等于语义支持"));
+        assertThat(result.trace().finalAnswerContract().passed()).isFalse();
+        assertThat(result.trace().finalAnswerContract().missingRequirements()).contains("删除无关的助手身份介绍和结尾服务邀请，直接完成用户任务");
+    }
+
+    @Test
     void bothForcedPathsAndReviewReceiveTheSameExplicitTaskContract() {
         for (var mode : List.of(MultiAgentRoutingMode.FORCE_SINGLE, MultiAgentRoutingMode.FORCE_MULTI)) {
             ChatModel model = mock(ChatModel.class);
@@ -65,7 +96,9 @@ class AgenticRagServiceTest {
             assertThat(prompts.stream().filter(p -> p.contains("答案生成步骤") || p.contains("专业分析 Agent")
                     || p.contains("综合 Agent") || p.contains("答案质量审查器")).toList())
                     .hasSizeGreaterThanOrEqualTo(2).allSatisfy(p -> assertThat(p)
-                            .contains("长度：1~500 字符", "共同面对", "只输出 4 句"));
+                            .contains("长度：1~500 字符", "共同面对", "只输出 4 句", "删除无关的助手身份介绍"));
+            assertThat(result.trace().finalAnswerContract().passed()).isTrue();
+            assertThat(result.trace().finalAnswerContract().version()).isEqualTo(AnswerVerificationContract.VERSION);
             assertThat(repository.findAll()).isEmpty();
             assertThat(memory.get("contract-path-test")).isEmpty();
         }
@@ -759,7 +792,7 @@ class AgenticRagServiceTest {
                 .findFirst().orElseThrow().input())
                 .containsEntry(
                         "selectorVersion",
-                        "deterministic-rlvr-selector-v7");
+                        "deterministic-rlvr-selector-v8");
         ArgumentCaptor<Prompt> prompts =
                 ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel, times(5)).call(prompts.capture());

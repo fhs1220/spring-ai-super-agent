@@ -19,6 +19,46 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SystemOneCounterfactualLabelingServiceTest {
 
+    @ParameterizedTest
+    @ValueSource(strings = {"FAILED", "UNKNOWN", "INCONSISTENT"})
+    void finalContractFailureOrUnknownCannotBecomeCompletedDespiteHighJudge(String state) throws Exception {
+        var service = service((variant, evaluationCase, chatId) -> {
+            String mode = variant == RagEvaluationVariant.AGENTIC_SINGLE_AGENT ? "SINGLE_AGENT" : "ADAPTIVE_MULTI_AGENT";
+            var check = variant == RagEvaluationVariant.AGENTIC_MULTI_AGENT
+                    ? new com.fhs.aiagent.rl.model.AnswerContractResult("test-v6", true, List.of())
+                    : state.equals("UNKNOWN") ? null : new com.fhs.aiagent.rl.model.AnswerContractResult(
+                            "test-v6", state.equals("INCONSISTENT"), List.of("缺少负担对照"));
+            // Localized text deliberately lies. Only the typed final check is authoritative.
+            var trace = new AgentTrace(100, mode, List.of(new AgentTraceStep("REVIEW", "审查", "通过", 1, true,
+                    List.of("逐项契约：通过"))), List.of(), null, check);
+            return new RagVariantExecution(variant, "answer", 100, 100, 0.01, true, mode, "", trace);
+        }, (q, f, s, m) -> judgment(), new InMemoryRepository());
+        var label = service.label(sample("contract-" + state, "普通沟通问题", List.of()), "run");
+        assertThat(label.status()).isEqualTo("REVIEW_REQUIRED");
+        assertThat(label.humanReviewRequired()).isTrue();
+        assertThat(label.expectedMultiAgent()).isNull();
+        assertThat(label.costAccountingComplete()).isTrue();
+        assertThat(label.evidence().attempts()).hasSize(3);
+        assertThat(label.evidence().reviewReasons()).containsExactly(
+                "FINAL_CONTRACT_" + (state.equals("UNKNOWN") ? "UNKNOWN" : "FAILED") + "_SINGLE");
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+        String json = mapper.writeValueAsString(label);
+        assertThat(json).contains("reviewReasons", "finalAnswerContract");
+        assertThat(mapper.readValue(json, SystemOneCounterfactualLabel.class)).isEqualTo(label);
+    }
+
+    @Test
+    void safetyQuestionRequiresSourceReviewWithoutRouterDisagreement() {
+        var service = service((variant, evaluationCase, chatId) -> execution(variant, "answer", 100, 0.01,
+                        variant == RagEvaluationVariant.AGENTIC_SINGLE_AGENT ? "SINGLE_AGENT" : "ADAPTIVE_MULTI_AGENT"),
+                (q, f, s, m) -> judgment(), new InMemoryRepository());
+        var label = service.label(sample("safety-source", "前任今晚尾随我，怎么办？", List.of()), "run");
+        assertThat(label.status()).isEqualTo("REVIEW_REQUIRED");
+        assertThat(label.expectedMultiAgent()).isNull();
+        assertThat(label.evidence().reviewReasons()).containsExactly("SAFETY_AND_SOURCE_SUPPORT_REVIEW_REQUIRED");
+        assertThat(label.evidence().provenance()).containsEntry("reviewGateVersion", CounterfactualReviewGate.VERSION);
+    }
+
     @Test
     void forcesBothVariantsAndLabelsMultiAgentWhenUtilityImproves() {
         List<RagEvaluationVariant> variants = new ArrayList<>();
@@ -401,7 +441,8 @@ class SystemOneCounterfactualLabelingServiceTest {
             RagEvaluationVariant variant, String answer, long latency,
             double cost, String mode) {
         return new RagVariantExecution(variant, answer, latency, 100,
-                cost, true, mode, "");
+                cost, true, mode, "", new AgentTrace(latency, mode, List.of(), List.of(), null,
+                new com.fhs.aiagent.rl.model.AnswerContractResult("test-contract", true, List.of())));
     }
 
     private SystemOneShadowSample sample(

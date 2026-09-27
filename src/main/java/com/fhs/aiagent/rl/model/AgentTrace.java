@@ -10,6 +10,11 @@ public record AgentTrace(
         String executionMode,
         List<AgentTraceStep> steps,
         List<RagCitation> citations,
-        AgentRunMetrics telemetry
+        AgentRunMetrics telemetry,
+        AnswerContractResult finalAnswerContract
 ) {
+    public AgentTrace(long totalDurationMs, String executionMode, List<AgentTraceStep> steps,
+                      List<RagCitation> citations, AgentRunMetrics telemetry) {
+        this(totalDurationMs, executionMode, steps, citations, telemetry, null);
+    }
 }

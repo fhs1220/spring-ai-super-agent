@@ -75,6 +75,12 @@ export interface AgentTrace {
   steps: AgentTraceStep[]
   citations: RagCitation[]
   telemetry?: AgentRunMetrics
+  // Absent on historical traces; absence must not be interpreted as success.
+  finalAnswerContract?: {
+    version: string
+    passed: boolean
+    missingRequirements: string[]
+  } | null
 }
 
 export interface AgenticRagResult {

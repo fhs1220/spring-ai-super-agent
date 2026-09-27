@@ -217,6 +217,8 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 [答案契约 v5](docs/ANSWER_CONTRACT_V5.md)；工程测试通过本身不代表真实模型质量提升。
 后续同五题的付费开发回归见 [v2 报告](docs/SYSTEM_ONE_PILOT_V2_REPORT.md)：四句与六周
 结构有局部改善，仍有套话、安全引用及负担解析问题，不能宣称总体质量或 Jev/Laya 收益。
+其后本地修复见 [答案契约 v6 与待审门禁](docs/ANSWER_CONTRACT_V6.md)：统一去套话、
+支持带注释的同口径负担表，并将最终契约失败/未知及识别到的安全风险显式转入待审。
 
 #### OpenRouter 主模型与向量模型
 

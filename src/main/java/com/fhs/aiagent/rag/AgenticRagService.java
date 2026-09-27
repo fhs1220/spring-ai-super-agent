@@ -673,7 +673,8 @@ public class AgenticRagService {
                     finalAnswer,
                     trajectory.trajectoryId(),
                     reward,
-                    buildTrace(trajectory, contextDocs.values(), finalAnswer)
+                    buildTrace(trajectory, contextDocs.values(), finalAnswer,
+                            verificationContract.check(finalAnswer, context))
             );
         } catch (AgentRunCancelledException exception) {
             if (runOptions.persistTrajectory()) {
@@ -1234,7 +1235,7 @@ public class AgenticRagService {
                 true,
                 Map.of(
                         "candidateCount", 2,
-                        "selectorVersion", "deterministic-rlvr-selector-v7",
+                        "selectorVersion", "deterministic-rlvr-selector-v8",
                         "verificationContractVersion",
                         AnswerVerificationContract.VERSION,
                         "structureNormalizerVersion",
@@ -1812,7 +1813,8 @@ public class AgenticRagService {
 
     private AgentTrace buildTrace(AgentTrajectory trajectory,
                                   Iterable<Document> documents,
-                                  String finalAnswer) {
+                                  String finalAnswer,
+                                  AnswerVerificationContract.ContractCheck finalCheck) {
         List<AgentTraceStep> traceSteps = trajectory.steps().stream()
                 .map(this::toTraceStep)
                 .toList();
@@ -1852,7 +1854,9 @@ public class AgenticRagService {
                 executionMode,
                 traceSteps,
                 List.copyOf(citations),
-                trajectory.telemetry()
+                trajectory.telemetry(),
+                new com.fhs.aiagent.rl.model.AnswerContractResult(AnswerVerificationContract.VERSION,
+                        finalCheck.passed(), finalCheck.missingRequirements())
         );
     }
 
