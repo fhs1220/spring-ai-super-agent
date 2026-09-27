@@ -73,8 +73,13 @@ public class SystemOneLabelReviewService {
                 .toList();
         try {
             String hash = SpringCounterfactualQualityJudge.fingerprint(objectMapper.writeValueAsString(samples));
+            List<String> frames = samples.stream()
+                    .map(sample -> sample.provenance().getOrDefault("samplingFrame", "UNKNOWN_NOT_POPULATION"))
+                    .distinct().toList();
+            String samplingFrame = frames.isEmpty() ? "EMPTY"
+                    : frames.size() == 1 ? frames.getFirst() : "MIXED_NOT_POPULATION";
             return new TrainingDataset("system-one-reviewed-development-v1",
-                    "DISAGREEMENT_ENRICHED_NOT_POPULATION", hash, samples);
+                    samplingFrame, hash, samples);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Could not fingerprint training export", exception);
         }

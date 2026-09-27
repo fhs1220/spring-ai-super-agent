@@ -18,6 +18,8 @@ import static com.fhs.aiagent.evaluation.SystemOneCounterfactualLabel.*;
 /** Checkpoint before and after every billable call; unknown outcomes never retry automatically. */
 @Service
 public class SystemOneCounterfactualLabelingService {
+    static final String DEFAULT_SAMPLING_FRAME = "DISAGREEMENT_ENRICHED_NOT_POPULATION";
+    static final String BOOTSTRAP_SAMPLING_FRAME = "BOOTSTRAP_DEVELOPMENT_ONLY";
     private final RagEvaluationVariantExecutor variantExecutor;
     private final CounterfactualQualityJudge qualityJudge;
     private final SystemOneCounterfactualLabelRepository repository;
@@ -48,7 +50,10 @@ public class SystemOneCounterfactualLabelingService {
                                 "agent.rag.observability.input-price-per-million-tokens-cny", Double.class, 0.0)),
                         "outputPriceCnyPerMillionTokens", Double.toString(env.getProperty(
                                 "agent.rag.observability.output-price-per-million-tokens-cny", Double.class, 0.0)),
-                        "samplingFrame", "DISAGREEMENT_ENRICHED_NOT_POPULATION",
+                        "samplingFrame", env.getProperty("agent.evaluation.system-one.labeling.sampling-frame",
+                                DEFAULT_SAMPLING_FRAME),
+                        "sourceDatasetFingerprint", env.getProperty(
+                                "agent.evaluation.system-one.labeling.source-dataset-fingerprint", "UNSPECIFIED"),
                         "judgeContract", SpringCounterfactualQualityJudge.CONTRACT_VERSION));
     }
 
@@ -59,7 +64,7 @@ public class SystemOneCounterfactualLabelingService {
             int developmentPercent) {
         this(executor, judge, repository, costWeight, latencyWeight, costScaleCny, latencyScaleMs,
                 minimumUtilityGain, humanReviewMargin, minimumJudgeConfidence, developmentPercent,
-                Map.of("samplingFrame", "DISAGREEMENT_ENRICHED_NOT_POPULATION"));
+                Map.of("samplingFrame", DEFAULT_SAMPLING_FRAME));
     }
 
     private SystemOneCounterfactualLabelingService(RagEvaluationVariantExecutor executor,
@@ -90,13 +95,25 @@ public class SystemOneCounterfactualLabelingService {
     public synchronized SystemOneCounterfactualLabel label(SystemOneShadowSample sample, String runId) {
         validateConfiguration();
         Objects.requireNonNull(sample, "sample");
+        validateSampleSource(sample);
         var previous = repository.findBySampleId(sample.sampleId()).orElse(null);
-        if (previous != null && List.of("COMPLETED", "REVIEW_REQUIRED", "APPROVED", "REJECTED",
-                "UNKNOWN_OUTCOME").contains(previous.status())) return previous;
-        String split = previous == null ? split(sample.questionFingerprint()) : previous.split();
         Evidence evidence = previous == null ? null : previous.evidence();
         // Same-question shadow observations may be overwritten; resume the original frozen source.
         if (evidence != null && evidence.observation() != null) sample = evidence.observation();
+        validateSampleSource(sample);
+        if (evidence != null && (!Objects.equals(provenance.get("samplingFrame"),
+                evidence.provenance().getOrDefault("samplingFrame", DEFAULT_SAMPLING_FRAME))
+                || !Objects.equals(provenance.getOrDefault("sourceDatasetFingerprint", "UNSPECIFIED"),
+                evidence.provenance().getOrDefault("sourceDatasetFingerprint", "UNSPECIFIED")))) {
+            throw new IllegalStateException("Checkpoint sampling source changed; use a new experiment storage directory");
+        }
+        if (bootstrapDevelopmentOnly() && previous != null
+                && (evidence == null || !"DEVELOPMENT".equals(previous.split()))) {
+            throw new IllegalStateException("Bootstrap requires development-only source evidence");
+        }
+        if (previous != null && List.of("COMPLETED", "REVIEW_REQUIRED", "APPROVED", "REJECTED",
+                "UNKNOWN_OUTCOME").contains(previous.status())) return previous;
+        String split = previous == null ? split(sample.questionFingerprint()) : previous.split();
         if (previous != null && (evidence == null || evidence.attempts().stream().anyMatch(a -> !a.costKnown()))) {
             return save(sample, runId, split, "UNKNOWN_OUTCOME", evidence,
                     "Prior call outcome/cost is unknown; automatic retry is blocked");
@@ -182,6 +199,25 @@ public class SystemOneCounterfactualLabelingService {
             throw new IllegalStateException("Labeling requires SPRING_AI_RETRY_MAX_ATTEMPTS=1; "
                     + "opaque SDK retries cannot be accounted by the attempt ledger");
         }
+        String frame = provenance.get("samplingFrame");
+        if (!DEFAULT_SAMPLING_FRAME.equals(frame) && !BOOTSTRAP_SAMPLING_FRAME.equals(frame)) {
+            throw new IllegalStateException("Unsupported labeling sampling-frame");
+        }
+        if (bootstrapDevelopmentOnly() && !provenance.getOrDefault("sourceDatasetFingerprint", "")
+                .matches("[0-9a-fA-F]{64}")) {
+            throw new IllegalStateException("Bootstrap requires a valid source-dataset-fingerprint SHA-256");
+        }
+    }
+
+    private boolean bootstrapDevelopmentOnly() {
+        return BOOTSTRAP_SAMPLING_FRAME.equals(provenance.get("samplingFrame"));
+    }
+
+    private void validateSampleSource(SystemOneShadowSample sample) {
+        boolean bootstrapSample = BOOTSTRAP_SAMPLING_FRAME.equals(sample.sampledReason());
+        if (bootstrapDevelopmentOnly() != bootstrapSample) {
+            throw new IllegalArgumentException("Observation sampledReason does not match labeling sampling-frame");
+        }
     }
 
     private Evidence begin(Evidence e, String stage) {
@@ -235,6 +271,7 @@ public class SystemOneCounterfactualLabelingService {
     }
 
     private String split(String fingerprint) {
+        if (bootstrapDevelopmentOnly()) return "DEVELOPMENT";
         int bucket;
         try { bucket = Integer.remainderUnsigned(Integer.parseUnsignedInt(fingerprint.substring(0, 8), 16), 100); }
         catch (RuntimeException exception) { bucket = Math.floorMod(Objects.toString(fingerprint, "").hashCode(), 100); }

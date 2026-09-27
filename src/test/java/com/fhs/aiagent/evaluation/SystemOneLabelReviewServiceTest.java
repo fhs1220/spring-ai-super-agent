@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fhs.aiagent.rag.multiagent.SystemOneShadowSample;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -82,6 +83,24 @@ class SystemOneLabelReviewServiceTest {
         assertThat(repository.findAll()).hasSize(1);
     }
 
+    @Test
+    void exportDerivesBootstrapAndMixedSamplingFramesFromApprovedEvidence() {
+        var repository = repository();
+        var reviews = new SystemOneLabelReviewService(repository, mapper, false);
+        assertThat(reviews.exportDevelopment().samplingFrame()).isEqualTo("EMPTY");
+        var bootstrap = create(repository, "bootstrap-export", "f".repeat(64), true);
+        assertThat(bootstrap.split()).isEqualTo("DEVELOPMENT");
+        reviews.review(bootstrap.sampleId(), request(0, true));
+        assertThat(reviews.exportDevelopment().samplingFrame()).isEqualTo("BOOTSTRAP_DEVELOPMENT_ONLY");
+        assertThat(reviews.exportDevelopment().samples().getFirst().provenance())
+                .containsEntry("sourceDatasetFingerprint", "b".repeat(64));
+
+        var shadow = create(repository, "shadow-export", "a".repeat(64));
+        reviews.review(shadow.sampleId(), request(0, true));
+        assertThat(reviews.exportDevelopment().samplingFrame()).isEqualTo("MIXED_NOT_POPULATION");
+        assertThat(reviews.exportDevelopment().samples()).hasSize(2);
+    }
+
     private FileSystemOneCounterfactualLabelRepository repository() {
         return new FileSystemOneCounterfactualLabelRepository(mapper, directory.toString());
     }
@@ -93,16 +112,27 @@ class SystemOneLabelReviewServiceTest {
 
     private SystemOneCounterfactualLabel create(SystemOneCounterfactualLabelRepository repository,
             String id, String fingerprint) {
-        var service = new SystemOneCounterfactualLabelingService((variant, evaluationCase, chatId) ->
+        return create(repository, id, fingerprint, false);
+    }
+
+    private SystemOneCounterfactualLabel create(SystemOneCounterfactualLabelRepository repository,
+            String id, String fingerprint, boolean bootstrap) {
+        RagEvaluationVariantExecutor executor = (variant, evaluationCase, chatId) ->
                 new RagVariantExecution(variant,
                         variant == RagEvaluationVariant.AGENTIC_SINGLE_AGENT ? "single answer" : "multi answer",
                         100, 100, 0.1, true,
-                        variant == RagEvaluationVariant.AGENTIC_SINGLE_AGENT ? "SINGLE_AGENT" : "ADAPTIVE_MULTI_AGENT", ""),
-                (q, f, single, multi) -> new CounterfactualQualityJudge.PairJudgment(0.6, 0.9, 0.99,
+                        variant == RagEvaluationVariant.AGENTIC_SINGLE_AGENT ? "SINGLE_AGENT" : "ADAPTIVE_MULTI_AGENT", "");
+        CounterfactualQualityJudge judge = (q, f, single, multi) -> new CounterfactualQualityJudge.PairJudgment(0.6, 0.9, 0.99,
                         "multi meets the requirements", "judge-v2",
-                        new CounterfactualQualityJudge.JudgeUsage("test-model", "response", 100, 10, 0.01, true, "hash")),
-                repository, 0.05, 0.05, 1, 60000, 0.01, 0.03, 0.7, 70);
+                        new CounterfactualQualityJudge.JudgeUsage("test-model", "response", 100, 10, 0.01, true, "hash"));
+        var environment = new MockEnvironment().withProperty("spring.ai.retry.max-attempts", "1")
+                .withProperty("agent.evaluation.system-one.labeling.sampling-frame", "BOOTSTRAP_DEVELOPMENT_ONLY")
+                .withProperty("agent.evaluation.system-one.labeling.source-dataset-fingerprint", "b".repeat(64));
+        var service = bootstrap
+                ? new SystemOneCounterfactualLabelingService(executor, judge, repository, environment)
+                : new SystemOneCounterfactualLabelingService(executor, judge, repository,
+                        0.05, 0.05, 1, 60000, 0.01, 0.03, 0.7, 70);
         return service.label(new SystemOneShadowSample(id, Instant.now(), fingerprint, "question", "TEST",
-                false, null, null, List.of(), false, "TEST"), "run");
+                false, null, null, List.of(), false, bootstrap ? "BOOTSTRAP_DEVELOPMENT_ONLY" : "TEST"), "run");
     }
 }

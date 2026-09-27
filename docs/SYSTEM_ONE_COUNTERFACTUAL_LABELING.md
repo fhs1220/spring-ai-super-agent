@@ -106,6 +106,13 @@ export AGENT_EVALUATION_SYSTEM_ONE_LABELING_CORPUS_FINGERPRINT="<corpus SHA-256>
 源码/语料指纹默认允许 `UNSPECIFIED` 以便本地 smoke，但这种报告不能作为正式实验的来源证明。
 Judge 超时可用 `AGENT_EVALUATION_SYSTEM_ONE_LABELING_JUDGE_TIMEOUT_MS` 覆盖，默认 60000。
 
+复用已有开发题的小样本 pilot 必须设置
+`AGENT_EVALUATION_SYSTEM_ONE_LABELING_SAMPLING_FRAME=BOOTSTRAP_DEVELOPMENT_ONLY`，并以
+`AGENT_EVALUATION_SYSTEM_ONE_LABELING_SOURCE_DATASET_FINGERPRINT` 提供源数据集的 64 位 SHA-256。
+此模式只接受 `sampledReason=BOOTSTRAP_DEVELOPMENT_ONLY` 的观察，全部标为 `DEVELOPMENT`，
+不产生 holdout 或真实流量收益证据；默认模式也拒绝这类样本。每个实验使用独立存储目录。
+审批后的导出从实际样本来源推导 sampling frame，混合来源标为 `MIXED_NOT_POPULATION`。
+
 ```http
 POST /api/agent-evaluation/system-one-labeling/runs
 Content-Type: application/json

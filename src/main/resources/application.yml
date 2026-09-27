@@ -292,6 +292,9 @@ agent:
         latency-scale-ms: ${AGENT_EVALUATION_SYSTEM_ONE_UTILITY_LATENCY_SCALE_MS:60000}
       labeling:
         storage-directory: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_STORAGE_DIRECTORY:tmp/system-one-labels}
+        sampling-frame: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_SAMPLING_FRAME:DISAGREEMENT_ENRICHED_NOT_POPULATION}
+        # 复用现有开发题做 bootstrap 时必须冻结源数据集 SHA-256，全部保持 DEVELOPMENT。
+        source-dataset-fingerprint: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_SOURCE_DATASET_FINGERPRINT:UNSPECIFIED}
         # Cases are capped; cost is an estimated stopping threshold, not a provider billing cap.
         maximum-cases: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MAXIMUM_CASES:20}
         maximum-cost-cny: ${AGENT_EVALUATION_SYSTEM_ONE_LABELING_MAXIMUM_COST_CNY:10}

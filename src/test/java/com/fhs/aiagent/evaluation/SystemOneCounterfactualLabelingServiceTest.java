@@ -293,6 +293,83 @@ class SystemOneCounterfactualLabelingServiceTest {
         assertThat(judgeCalls).hasValue(0);
     }
 
+    @Test
+    void bootstrapDevelopmentQuestionsNeverBecomeHoldoutAndFreezeDatasetSource() {
+        var repository = new InMemoryRepository();
+        var service = new SystemOneCounterfactualLabelingService(
+                (variant, evaluationCase, chatId) -> execution(variant, "answer", 100, 0.1,
+                        variant == RagEvaluationVariant.AGENTIC_SINGLE_AGENT ? "SINGLE_AGENT" : "ADAPTIVE_MULTI_AGENT"),
+                (q, f, s, m) -> judgment(), repository, bootstrapEnvironment());
+
+        var sample = bootstrapSample("bootstrap-source", "f".repeat(64));
+        var label = service.label(sample, "run");
+
+        assertThat(label.split()).isEqualTo("DEVELOPMENT");
+        assertThat(label.evidence().provenance())
+                .containsEntry("samplingFrame", "BOOTSTRAP_DEVELOPMENT_ONLY")
+                .containsEntry("sourceDatasetFingerprint", "b".repeat(64));
+        var differentDataset = bootstrapEnvironment().withProperty(
+                "agent.evaluation.system-one.labeling.source-dataset-fingerprint", "c".repeat(64));
+        var restored = new SystemOneCounterfactualLabelingService(executorThatMustNotRun(),
+                (q, f, s, m) -> { throw new AssertionError("Changed source must not call Judge"); },
+                repository, differentDataset);
+        assertThatThrownBy(() -> restored.label(sample, "next-run"))
+                .hasMessageContaining("Checkpoint sampling source changed");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UNSPECIFIED", "", "not-a-sha256"})
+    void bootstrapRequiresValidDatasetFingerprintBeforeAnyCall(String fingerprint) {
+        var repository = new InMemoryRepository();
+        var environment = bootstrapEnvironment().withProperty(
+                "agent.evaluation.system-one.labeling.source-dataset-fingerprint", fingerprint);
+        var service = new SystemOneCounterfactualLabelingService(executorThatMustNotRun(),
+                (q, f, s, m) -> { throw new AssertionError("Invalid source must not call Judge"); },
+                repository, environment);
+
+        assertThatThrownBy(() -> service.label(bootstrapSample("invalid-source", "f".repeat(64)), "run"))
+                .hasMessageContaining("valid source-dataset-fingerprint SHA-256");
+        assertThat(repository.findAll()).isEmpty();
+    }
+
+    @Test
+    void bootstrapAndShadowSampleMarkersCannotBeMixedByMisconfiguration() {
+        var repository = new InMemoryRepository();
+        CounterfactualQualityJudge judge = (q, f, s, m) -> { throw new AssertionError("Judge must not run"); };
+        var bootstrap = new SystemOneCounterfactualLabelingService(executorThatMustNotRun(), judge,
+                repository, bootstrapEnvironment());
+        var shadow = new SystemOneCounterfactualLabelingService(executorThatMustNotRun(), judge,
+                repository, pricedEnvironment());
+
+        assertThatThrownBy(() -> bootstrap.label(sample("shadow", "question", List.of()), "run"))
+                .hasMessageContaining("sampledReason does not match");
+        assertThatThrownBy(() -> shadow.label(bootstrapSample("bootstrap", "f".repeat(64)), "run"))
+                .hasMessageContaining("sampledReason does not match");
+        assertThat(repository.findAll()).isEmpty();
+    }
+
+    @Test
+    void rejectsUnsupportedSamplingFrameBeforeStartingCalls() {
+        var service = new SystemOneCounterfactualLabelingService(executorThatMustNotRun(),
+                (q, f, s, m) -> { throw new AssertionError("Judge must not run"); },
+                new InMemoryRepository(), pricedEnvironment().withProperty(
+                        "agent.evaluation.system-one.labeling.sampling-frame", "RANDOM_TRAFFIC"));
+
+        assertThatThrownBy(service::validateConfiguration).hasMessageContaining("Unsupported labeling sampling-frame");
+    }
+
+    private MockEnvironment bootstrapEnvironment() {
+        return pricedEnvironment().withProperty("agent.evaluation.system-one.labeling.sampling-frame",
+                        "BOOTSTRAP_DEVELOPMENT_ONLY")
+                .withProperty("agent.evaluation.system-one.labeling.source-dataset-fingerprint", "b".repeat(64));
+    }
+
+    private SystemOneShadowSample bootstrapSample(String id, String fingerprint) {
+        return new SystemOneShadowSample(id, Instant.parse("2026-09-26T00:00:00Z"), fingerprint,
+                "existing development question", "BOOTSTRAP", false, null, null,
+                List.of(), false, "BOOTSTRAP_DEVELOPMENT_ONLY");
+    }
+
     private MockEnvironment pricedEnvironment() {
         return new MockEnvironment().withProperty("spring.ai.retry.max-attempts", "1")
                 .withProperty("agent.rag.observability.input-price-per-million-tokens-cny", "2")
