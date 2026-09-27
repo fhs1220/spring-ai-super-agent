@@ -33,7 +33,12 @@ public record MultiAgentDecision(
         Map<String, Double> systemOneDomainProbabilities,
         long systemOneLatencyMs,
         String systemOneModel,
-        String systemOneSampleId
+        String systemOneSampleId,
+        String systemOneDeploymentMode,
+        String systemOneReleaseVersion,
+        boolean systemOneCanarySelected,
+        boolean systemOneApplied,
+        String systemOneApplicationStatus
 ) {
 
     public MultiAgentDecision {
@@ -49,5 +54,8 @@ public record MultiAgentDecision(
         systemOneLatencyMs = Math.max(0, systemOneLatencyMs);
         systemOneModel = systemOneModel == null ? "" : systemOneModel;
         systemOneSampleId = systemOneSampleId == null ? "" : systemOneSampleId;
+        systemOneDeploymentMode = systemOneDeploymentMode == null ? "OFF" : systemOneDeploymentMode;
+        systemOneReleaseVersion = systemOneReleaseVersion == null ? "" : systemOneReleaseVersion;
+        systemOneApplicationStatus = systemOneApplicationStatus == null ? "NOT_SELECTED" : systemOneApplicationStatus;
     }
 }

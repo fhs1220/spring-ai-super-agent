@@ -419,7 +419,17 @@ public class AgenticRagService {
                             Map.entry("systemOneModel",
                                     multiAgentDecision.systemOneModel()),
                             Map.entry("systemOneSampleId",
-                                    multiAgentDecision.systemOneSampleId())
+                                    multiAgentDecision.systemOneSampleId()),
+                            Map.entry("systemOneDeploymentMode",
+                                    multiAgentDecision.systemOneDeploymentMode()),
+                            Map.entry("systemOneReleaseVersion",
+                                    multiAgentDecision.systemOneReleaseVersion()),
+                            Map.entry("systemOneCanarySelected",
+                                    multiAgentDecision.systemOneCanarySelected()),
+                            Map.entry("systemOneApplied",
+                                    multiAgentDecision.systemOneApplied()),
+                            Map.entry("systemOneApplicationStatus",
+                                    multiAgentDecision.systemOneApplicationStatus())
                             )
             );
             emit(listener, "ROUTE", "COMPLETED", "自适应路由",

@@ -76,6 +76,8 @@ public class AdaptiveMultiAgentOrchestrator {
 
     private SystemOneShadowComparison systemOneShadowComparison;
 
+    private SystemOneRoutingDeployment systemOneRoutingDeployment;
+
     @Autowired
     public AdaptiveMultiAgentOrchestrator(
             ChatModel dashscopeChatModel,
@@ -90,7 +92,8 @@ public class AdaptiveMultiAgentOrchestrator {
             long circuitBreakerCooldownSeconds,
             TrajectoryAwareRoutingPolicy routingPolicy,
             SystemOneRoutingAdvisor systemOneRoutingAdvisor,
-            SystemOneShadowComparison systemOneShadowComparison) {
+            SystemOneShadowComparison systemOneShadowComparison,
+            SystemOneRoutingDeployment systemOneRoutingDeployment) {
         this(
                 ChatClient.builder(dashscopeChatModel).build(),
                 enabled,
@@ -107,6 +110,8 @@ public class AdaptiveMultiAgentOrchestrator {
                 systemOneRoutingAdvisor, "systemOneRoutingAdvisor");
         this.systemOneShadowComparison = java.util.Objects.requireNonNull(
                 systemOneShadowComparison, "systemOneShadowComparison");
+        this.systemOneRoutingDeployment = java.util.Objects.requireNonNull(
+                systemOneRoutingDeployment, "systemOneRoutingDeployment");
     }
 
     public AdaptiveMultiAgentOrchestrator(ChatClient chatClient,
@@ -149,6 +154,7 @@ public class AdaptiveMultiAgentOrchestrator {
         this.specialists = createSpecialists(chatClient);
         this.systemOneRoutingAdvisor = SystemOneRoutingAdvisor.disabled();
         this.systemOneShadowComparison = SystemOneShadowComparison.disabled();
+        this.systemOneRoutingDeployment = SystemOneRoutingDeployment.off();
     }
 
     public MultiAgentDecision route(String question) {
@@ -221,7 +227,12 @@ public class AdaptiveMultiAgentOrchestrator {
                             Map.of(),
                             0,
                             "",
-                            ""
+                            "",
+                            "OFF",
+                            "",
+                            false,
+                            false,
+                            "SKIPPED_EVALUATION_OVERRIDE"
             );
         }
         TrajectoryAwareRoutingPolicy.RoutingPolicyDecision policyDecision =
@@ -249,18 +260,43 @@ public class AdaptiveMultiAgentOrchestrator {
                                 question
                         ));
         boolean finalMultiAgent = enabled && policyDecision.multiAgent();
+        boolean liveCandidateSelected = enabled && systemOneRoutingDeployment.selects(question);
         SystemOneShadowComparison.Submission shadowSubmission =
                 systemOneShadowComparison.submit(
                         question, finalMultiAgent, featureBucket);
-        SystemOneRoutingAdvisor.RoutingAdvice systemOneAdvice =
-                shadowSubmission.active()
-                        ? queuedShadowAdvice(shadowSubmission)
-                        : systemOneRoutingAdvisor.advise(question);
-        List<AgentDomain> selected = finalMultiAgent ? selectDomains(domains) : List.of();
+        SystemOneRoutingAdvisor.RoutingAdvice systemOneAdvice;
+        if (shadowSubmission.active()) {
+            systemOneAdvice = queuedShadowAdvice(shadowSubmission);
+        } else if (liveCandidateSelected || systemOneRoutingDeployment.mode()
+                == SystemOneRoutingDeployment.Mode.OFF
+                || systemOneRoutingDeployment.mode() == SystemOneRoutingDeployment.Mode.SHADOW) {
+            systemOneAdvice = safeSystemOneAdvice(question);
+        } else {
+            systemOneAdvice = SystemOneRoutingAdvisor.RoutingAdvice.disabled();
+        }
+        List<AgentDomain> baselineSelected = finalMultiAgent ? selectDomains(domains) : List.of();
+        SystemOneRoutingDeployment.Decision systemOneDecision;
+        if (!enabled) {
+            systemOneDecision = new SystemOneRoutingDeployment.Decision(
+                    false, false, false, List.of(), "MULTI_AGENT_DISABLED");
+        } else if (shadowSubmission.active()) {
+            systemOneDecision = new SystemOneRoutingDeployment.Decision(
+                    false, false, finalMultiAgent, baselineSelected, "DUAL_SHADOW_FALLBACK");
+        } else {
+            systemOneDecision = systemOneRoutingDeployment.decide(
+                    question, systemOneAdvice, finalMultiAgent, baselineSelected,
+                    domains.contains(AgentDomain.SAFETY), maxAgents);
+        }
+        boolean appliedMultiAgent = enabled && systemOneDecision.multiAgent();
+        List<AgentDomain> selected = appliedMultiAgent ? systemOneDecision.domains() : List.of();
         String reason = deterministicReason + "；" + policyDecision.reason();
+        if (systemOneDecision.applied()) {
+            reason += "；System One 候选版本 " + systemOneRoutingDeployment.releaseVersion()
+                    + " 接管 Single/Multi 决策";
+        }
         return new MultiAgentDecision(
-                finalMultiAgent ? MULTI_MODE : SINGLE_MODE,
-                finalMultiAgent,
+                appliedMultiAgent ? MULTI_MODE : SINGLE_MODE,
+                appliedMultiAgent,
                 round(complexity),
                 reason,
                 selected,
@@ -285,7 +321,12 @@ public class AdaptiveMultiAgentOrchestrator {
                 systemOneDomainProbabilities(systemOneAdvice),
                 systemOneAdvice.latencyMs(),
                 systemOneAdvice.model(),
-                shadowSubmission.sampleId()
+                shadowSubmission.sampleId(),
+                systemOneRoutingDeployment.mode().name(),
+                systemOneRoutingDeployment.releaseVersion(),
+                systemOneDecision.canarySelected(),
+                systemOneDecision.applied(),
+                systemOneDecision.status()
         );
     }
 
@@ -297,6 +338,11 @@ public class AdaptiveMultiAgentOrchestrator {
     void setSystemOneShadowComparison(SystemOneShadowComparison systemOneShadowComparison) {
         this.systemOneShadowComparison = java.util.Objects.requireNonNull(
                 systemOneShadowComparison, "systemOneShadowComparison");
+    }
+
+    void setSystemOneRoutingDeployment(SystemOneRoutingDeployment systemOneRoutingDeployment) {
+        this.systemOneRoutingDeployment = java.util.Objects.requireNonNull(
+                systemOneRoutingDeployment, "systemOneRoutingDeployment");
     }
 
     private SystemOneRoutingAdvisor.RoutingAdvice queuedShadowAdvice(
@@ -315,6 +361,16 @@ public class AdaptiveMultiAgentOrchestrator {
                 0,
                 0
         );
+    }
+
+    private SystemOneRoutingAdvisor.RoutingAdvice safeSystemOneAdvice(String question) {
+        try {
+            return systemOneRoutingAdvisor.advise(question);
+        } catch (RuntimeException exception) {
+            return new SystemOneRoutingAdvisor.RoutingAdvice(
+                    "SHADOW", "FAILED", false, 0, false, 0,
+                    Map.of(), 0, "", 0, 0, 0);
+        }
     }
 
     private Map<String, Double> systemOneDomainProbabilities(

@@ -84,6 +84,13 @@ agent:
       safety-threshold: ${AGENT_SYSTEM_ONE_SAFETY_THRESHOLD:0.5}
       # 决策 API 输入单价；为 0 时报告不会声称已核算决策模型费用。
       input-price-per-million-usd: ${AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD:0}
+      deployment:
+        # 与轨迹策略的 SHADOW/CANARY/ACTIVE 独立；没有发布清单时保持 OFF。
+        mode: ${AGENT_SYSTEM_ONE_DEPLOYMENT_MODE:OFF}
+        canary-percent: ${AGENT_SYSTEM_ONE_DEPLOYMENT_CANARY_PERCENT:0}
+        release-version: ${AGENT_SYSTEM_ONE_DEPLOYMENT_RELEASE_VERSION:}
+        expected-model: ${AGENT_SYSTEM_ONE_DEPLOYMENT_EXPECTED_MODEL:}
+        manifest-path: ${AGENT_SYSTEM_ONE_DEPLOYMENT_MANIFEST_PATH:}
       comparison:
         # 后台并行调用两路 provider；启用后在线路由不再同步等待上面的单路 advisor。
         enabled: ${AGENT_SYSTEM_ONE_COMPARISON_ENABLED:false}
