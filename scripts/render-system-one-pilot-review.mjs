@@ -5,9 +5,10 @@ import { lstat, open, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pilotExperiment } from './pilot-experiment.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const EXPERIMENT = join(ROOT, 'tmp/system-one-bootstrap-pilot-v1');
+const EXPERIMENT = pilotExperiment(ROOT);
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const SHA256 = /^[a-f0-9]{64}$/;
 const FRAME = 'BOOTSTRAP_DEVELOPMENT_ONLY';

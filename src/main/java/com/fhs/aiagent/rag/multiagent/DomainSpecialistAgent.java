@@ -49,7 +49,10 @@ final class DomainSpecialistAgent {
                 3. 建议必须具体、可执行，并标出实际使用的来源编号；
                 4. 信息不足时写入 uncertainty，不要用追问替代可安全给出的建议；
                 5. 输出结构化结果，findings 和 recommendations 各不超过 5 项。
-                """.formatted(domainInstruction);
+                最终回答必须满足以下契约。你仍输出上述 JSON 贡献格式，而非直接生成最终答案；
+                只提交本专业相关的必要信息，避免为不相关领域扩写，供后续综合阶段在总长度内合并：
+                %s
+                """.formatted(domainInstruction, request.verificationContract().promptChecklist());
         String user = """
                 历史会话：
                 %s

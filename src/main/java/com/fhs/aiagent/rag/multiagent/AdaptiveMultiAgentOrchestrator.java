@@ -650,7 +650,10 @@ public class AdaptiveMultiAgentOrchestrator {
                 5. 使用知识库内容时在句末保留正确的 [来源 n]，不得编造编号；
                 6. 不要向用户暴露内部 Agent 名称、置信度、奖励或编排过程。
                 7. 引用只使用 [来源 n] 格式，不要再写“参考来源 n”等重复文字。
-                """;
+                8. 从第一稿就遵守以下最终答案契约，不能等到审查时再截短；压缩时保留所有要求的周次、检查点和对照项。
+                不输出无关的产品介绍或服务邀请；这些格式要求优先于通用角色开场习惯。
+                %s
+                """.formatted(request.verificationContract().promptChecklist());
         String user = """
                 历史会话：
                 %s

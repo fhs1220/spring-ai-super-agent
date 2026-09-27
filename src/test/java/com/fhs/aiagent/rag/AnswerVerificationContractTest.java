@@ -12,7 +12,7 @@ class AnswerVerificationContractTest {
     @Test
     void versionsTheSemanticContractAndStructureNormalizer() {
         assertThat(AnswerVerificationContract.VERSION)
-                .isEqualTo("answer-verification-contract-v4");
+                .isEqualTo("answer-verification-contract-v5");
         assertThat(AnswerVerificationContract.STRUCTURE_NORMALIZER_VERSION)
                 .isEqualTo("deterministic-answer-structure-v1");
     }

@@ -213,6 +213,8 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 固定五题开发集的试跑范围、费用边界与盲评规则见
 [Pilot 预注册](docs/SYSTEM_ONE_PILOT_PROTOCOL.md) 与
 [试跑报告](docs/SYSTEM_ONE_PILOT_V1_REPORT.md)。这不是独立测试集，也不是 Jev/Laya 路由收益实验。
+根据五题反馈完成的统一答案契约与 Markdown 展示修复见
+[答案契约 v5](docs/ANSWER_CONTRACT_V5.md)；目前只有本地工程回归，没有新的质量收益数据。
 
 #### OpenRouter 主模型与向量模型
 

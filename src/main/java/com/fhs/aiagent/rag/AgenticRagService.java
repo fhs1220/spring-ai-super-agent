@@ -572,7 +572,7 @@ public class AgenticRagService {
                         specialistsStartedAt);
                 MultiAgentAnswer multiAgentAnswer = multiAgentOrchestrator.execute(
                         multiAgentDecision,
-                        new AgentRequest(question, conversationHistory, context, systemPrompt),
+                        new AgentRequest(question, conversationHistory, context, systemPrompt, verificationContract),
                         telemetry,
                         listener
                 );
@@ -598,7 +598,8 @@ public class AgenticRagService {
                                 "contributions", contributionSummaries(contributions)
                         )
                 );
-                if (multiAgentAnswer.synthesisDurationMs() > 0) {
+                // A mocked or fast synthesis can take less than one millisecond.
+                if (successfulAgents > 0) {
                     recorder.recordWithDuration(
                             AgentStepType.SYNTHESIZE,
                             multiAgentAnswer.synthesisDurationMs(),
@@ -858,6 +859,7 @@ public class AgenticRagService {
                    结论，也应删除套话、重复解释和不影响任务完成的背景内容。
                 8. 必须逐项执行下面的结构化答案契约，不能只满足其中一部分：
                 %s
+                不输出无关的产品介绍或服务邀请；这些格式要求优先于通用角色开场习惯。
                 """.formatted(
                 minimumAnswerChars,
                 maximumAnswerChars,
@@ -1232,7 +1234,7 @@ public class AgenticRagService {
                 true,
                 Map.of(
                         "candidateCount", 2,
-                        "selectorVersion", "deterministic-rlvr-selector-v6",
+                        "selectorVersion", "deterministic-rlvr-selector-v7",
                         "verificationContractVersion",
                         AnswerVerificationContract.VERSION,
                         "structureNormalizerVersion",
@@ -1402,6 +1404,7 @@ public class AgenticRagService {
                 必须逐项核对下面的结构化答案契约；任何一项缺失时 taskCompleted 必须为
                 false，且 revisedAnswer 必须补齐缺失项：
                 %s
+                压缩答案时不得删掉用户要求的句子、周次、逐周检查点或双方对照项。
                 """.formatted(
                 minimumAnswerChars,
                 maximumAnswerChars,
@@ -1589,10 +1592,15 @@ public class AgenticRagService {
                 verificationContract.check(answer, context);
         int score = contractCheck.passed() ? 20 : 0;
         score -= 5 * contractCheck.missingRequirements().size();
+        // Retaining requested structure takes priority over shortening an invalid draft.
+        // Invalid candidates remain failures; this score is not semantic approval.
+        score -= 100 * verificationContract.taskFormat().missingRequirements(answer).size();
         if (satisfiesCitationContract(answer, context)) {
             score += 4;
         }
-        if (satisfiesAnswerLengthContract(answer, question)) {
+        int chars = answer.codePointCount(0, answer.length());
+        if ((verificationContract.minimumAnswerChars() == null || chars >= verificationContract.minimumAnswerChars())
+                && (verificationContract.maximumAnswerChars() == null || chars <= verificationContract.maximumAnswerChars())) {
             score += 3;
         }
         String normalizedQuestion = question == null ? "" : question;

@@ -7,9 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { dirname, resolve, join, relative, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { StringDecoder } from 'node:string_decoder';
+import { pilotExperiment } from './pilot-experiment.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const EXPERIMENT = join(ROOT, 'tmp/system-one-bootstrap-pilot-v1');
+const EXPERIMENT = pilotExperiment(ROOT);
 const PROPERTIES = join(EXPERIMENT, 'application-pilot.properties');
 const INTENTS = join(EXPERIMENT, 'intents');
 const LOCAL_API = 'http://127.0.0.1:8124/api/agent-evaluation/system-one-labeling/runs';

@@ -26,10 +26,11 @@ public record AnswerVerificationContract(
         @JsonAlias("citation_required") Boolean citationRequired,
         @JsonAlias("no_follow_up") Boolean noFollowUp,
         @JsonAlias("must_mark_assumptions") Boolean mustMarkAssumptions,
-        @JsonAlias("minimum_action_items") Integer minimumActionItems
+        @JsonAlias("minimum_action_items") Integer minimumActionItems,
+        @JsonAlias("task_format") AnswerTaskFormat taskFormat
 ) {
 
-    public static final String VERSION = "answer-verification-contract-v4";
+    public static final String VERSION = "answer-verification-contract-v5";
 
     public static final String STRUCTURE_NORMALIZER_VERSION =
             "deterministic-answer-structure-v1";
@@ -75,6 +76,7 @@ public record AnswerVerificationContract(
             "假设", "基于目前", "基于现有", "信息不足");
 
     public AnswerVerificationContract {
+        taskFormat = taskFormat == null ? new AnswerTaskFormat(null, null, false) : taskFormat;
         requiredConcepts = sanitize(requiredConcepts);
         forbiddenPhrases = sanitize(forbiddenPhrases);
         minimumAnswerChars = bounded(minimumAnswerChars, 0, 8_000);
@@ -88,8 +90,17 @@ public record AnswerVerificationContract(
         }
     }
 
+    /** Source compatibility for historical callers and frozen v4 fixtures. */
+    public AnswerVerificationContract(List<String> requiredConcepts, List<String> forbiddenPhrases,
+            Integer minimumAnswerChars, Integer maximumAnswerChars, Boolean citationRequired,
+            Boolean noFollowUp, Boolean mustMarkAssumptions, Integer minimumActionItems) {
+        this(requiredConcepts, forbiddenPhrases, minimumAnswerChars, maximumAnswerChars,
+                citationRequired, noFollowUp, mustMarkAssumptions, minimumActionItems, null);
+    }
+
     public static AnswerVerificationContract inferred(String question) {
         String normalized = Objects.toString(question, "");
+        AnswerTaskFormat format = AnswerTaskFormat.inferred(normalized);
         List<String> concepts = new ArrayList<>();
         if (normalized.contains("十五分钟") || normalized.contains("15分钟")) {
             concepts.add("15分钟|十五分钟");
@@ -124,12 +135,13 @@ public record AnswerVerificationContract(
         return new AnswerVerificationContract(
                 concepts,
                 forbidden,
-                AgenticRagService.minimumAnswerChars(normalized),
+                format.exactSentences() == null ? AgenticRagService.minimumAnswerChars(normalized) : 1,
                 AgenticRagService.maximumAnswerChars(normalized),
                 null,
-                noFollowUp,
+                noFollowUp || format.exactSentences() != null,
                 markAssumptions,
-                actionItems
+                format.exactSentences() == null ? actionItems : 0,
+                format
         );
     }
 
@@ -157,7 +169,8 @@ public record AnswerVerificationContract(
                 Math.max(
                         minimumActionItems == null ? 0 : minimumActionItems,
                         inferred.minimumActionItems == null
-                                ? 0 : inferred.minimumActionItems)
+                                ? 0 : inferred.minimumActionItems),
+                taskFormat.merge(inferred.taskFormat)
         );
     }
 
@@ -204,6 +217,7 @@ public record AnswerVerificationContract(
                 && ASSUMPTION_MARKERS.stream().noneMatch(candidate::contains)) {
             missing.add("明确标注合理假设或信息边界");
         }
+        missing.addAll(taskFormat.missingRequirements(candidate));
         return new ContractCheck(missing.isEmpty(), List.copyOf(missing));
     }
 
@@ -232,7 +246,7 @@ public record AnswerVerificationContract(
         String checklist = checks.isEmpty()
                 ? "（无额外结构化约束）"
                 : String.join("\n", checks.stream().map("- "::concat).toList());
-        return checklist + "\n- 含“|”的契约表示任选其一，"
+        return checklist + "\n" + taskFormat.promptChecklist() + "\n- 含“|”的概念契约表示任选其一，"
                 + "答案只写自然表达，不得照抄竖线备选串";
     }
 
@@ -284,6 +298,7 @@ public record AnswerVerificationContract(
                     "assumptions",
                     "明确标注合理假设或信息边界"));
         }
+        requirements.addAll(taskFormat.requirements());
         return List.copyOf(requirements);
     }
 

@@ -27,6 +27,28 @@ import static org.mockito.Mockito.when;
 class AdaptiveMultiAgentOrchestratorTest {
 
     @Test
+    void sendsTheSameExplicitContractToSpecialistsAndSynthesis() {
+        ChatModel model = mock(ChatModel.class);
+        List<String> prompts = new CopyOnWriteArrayList<>();
+        when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
+            String text = ((Prompt) invocation.getArgument(0)).getContents();
+            prompts.add(text);
+            return response(text.contains("综合 Agent") ? "候选答案" : contribution("先协商分工"));
+        });
+        var orchestrator = new AdaptiveMultiAgentOrchestrator(ChatClient.builder(model).build(), true, 2, 3);
+        String question = "请制定未来六周育儿和家务计划，并标出每周检查点。";
+        var contract = new com.fhs.aiagent.rag.AnswerVerificationContract(
+                List.of("特殊覆盖点"), List.of(), 10, 800, false, true, false, 0).mergeInferred(question);
+        var request = new AgentRequest(question, "", "", "角色提示", contract);
+        orchestrator.execute(orchestrator.route(question, MultiAgentRoutingMode.FORCE_MULTI), request,
+                new AgentTelemetryCollector("test-model", 0, 0));
+        assertThat(prompts).hasSizeGreaterThanOrEqualTo(2).allSatisfy(prompt ->
+                assertThat(prompt).contains("长度：10~800 字符", "特殊覆盖点", "第6周单独给出行动内容与检查点"));
+        assertThat(prompts.stream().filter(p -> p.contains("综合 Agent")).findFirst().orElseThrow())
+                .contains("从第一稿就遵守", "不输出无关的产品介绍");
+    }
+
+    @Test
     void queuesDualShadowWithoutCallingSynchronousAdvisor() {
         ChatModel chatModel = mock(ChatModel.class);
         AdaptiveMultiAgentOrchestrator orchestrator = new AdaptiveMultiAgentOrchestrator(

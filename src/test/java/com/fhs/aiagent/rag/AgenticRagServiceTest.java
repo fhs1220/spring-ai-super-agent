@@ -34,6 +34,44 @@ import static org.mockito.Mockito.when;
 class AgenticRagServiceTest {
 
     @Test
+    void bothForcedPathsAndReviewReceiveTheSameExplicitTaskContract() {
+        for (var mode : List.of(MultiAgentRoutingMode.FORCE_SINGLE, MultiAgentRoutingMode.FORCE_MULTI)) {
+            ChatModel model = mock(ChatModel.class);
+            VectorStore vectors = mock(VectorStore.class);
+            List<String> prompts = new java.util.concurrent.CopyOnWriteArrayList<>();
+            String answer = "我希望我们一起聊聊孩子。\n我最近因家务有些疲惫。\n我想理解彼此的消费想法。\n我在意的是共同面对问题。[来源 1]";
+            when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
+                String prompt = ((Prompt) invocation.getArgument(0)).getContents();
+                prompts.add(prompt);
+                if (prompt.contains("检索规划器")) return response("{\"subQueries\":[\"沟通\"]}");
+                if (prompt.contains("检索质量评估器")) return response("{\"sufficient\":true,\"missingInfo\":\"\",\"followUpQueries\":[]}");
+                if (prompt.contains("专业分析 Agent")) return response("{\"findings\":[\"沟通需要表达感受\"],\"recommendations\":[\"先表达自己的需要\"],\"citedSources\":[1],\"uncertainty\":\"\",\"confidence\":0.8}");
+                if (prompt.contains("答案质量审查器")) return response("{\"grounded\":true,\"taskCompleted\":true,\"revisedAnswer\":null}");
+                if (prompt.contains("答案生成步骤") || prompt.contains("综合 Agent")) return response(answer);
+                throw new AssertionError("Unexpected extra model stage");
+            });
+            when(vectors.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(new Document("doc", "共同面对问题并表达感受。", Map.of())));
+            var memory = MessageWindowChatMemory.builder().chatMemoryRepository(new InMemoryChatMemoryRepository()).build();
+            var repository = new InMemoryAgentTrajectoryRepository();
+            var service = new AgenticRagService(ChatClient.builder(model).build(), vectors, memory, repository, new AgentRewardCalculator());
+            var contract = new AnswerVerificationContract(List.of("共同面对"), List.of(), 1, 500, true, true, false, 0);
+            var result = service.doAgenticRagWithTrace("请把孩子、家务和消费诉求整理成四句表达。", "contract-path-test", "通用角色提示",
+                    AgentProgressListener.NONE, new AgenticRagService.RunOptions(mode, false, false, contract));
+            assertThat(result.answer()).isEqualTo(answer);
+            assertThat(result.trace().steps()).extracting(step -> step.phase()).doesNotContain("REVISE");
+            if (mode == MultiAgentRoutingMode.FORCE_MULTI) {
+                assertThat(result.trace().steps()).extracting(step -> step.phase()).contains("SYNTHESIZE").doesNotContain("GENERATE");
+            }
+            assertThat(prompts.stream().filter(p -> p.contains("答案生成步骤") || p.contains("专业分析 Agent")
+                    || p.contains("综合 Agent") || p.contains("答案质量审查器")).toList())
+                    .hasSizeGreaterThanOrEqualTo(2).allSatisfy(p -> assertThat(p)
+                            .contains("长度：1~500 字符", "共同面对", "只输出 4 句"));
+            assertThat(repository.findAll()).isEmpty();
+            assertThat(memory.get("contract-path-test")).isEmpty();
+        }
+    }
+
+    @Test
     void evaluationRunDoesNotPolluteConversationOrTrainingTrajectories() {
         ChatModel chatModel = mock(ChatModel.class);
         VectorStore vectorStore = mock(VectorStore.class);
@@ -721,7 +759,7 @@ class AgenticRagServiceTest {
                 .findFirst().orElseThrow().input())
                 .containsEntry(
                         "selectorVersion",
-                        "deterministic-rlvr-selector-v6");
+                        "deterministic-rlvr-selector-v7");
         ArgumentCaptor<Prompt> prompts =
                 ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel, times(5)).call(prompts.capture());

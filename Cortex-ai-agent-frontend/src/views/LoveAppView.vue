@@ -2,6 +2,7 @@
 import { nextTick, onMounted, reactive, ref, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import AiAvatar from '../components/AiAvatar.vue'
+import AssistantMarkdown from '../components/AssistantMarkdown.vue'
 import AgentRlPanel from '../components/AgentRlPanel.vue'
 import {
   cancelAgenticRag,
@@ -320,7 +321,7 @@ function back() {
                 class="bubble-content"
                 :class="{ error: message.error, cancelled: message.cancelled }"
               >
-                <template v-if="message.content">{{ message.content }}</template>
+                <AssistantMarkdown v-if="message.content" :content="message.content" />
                 <span v-else class="thinking">
                   {{ latestProgress(message) }}
                   <i></i><i></i><i></i>

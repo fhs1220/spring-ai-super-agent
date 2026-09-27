@@ -3,10 +3,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { pilotExperiment } from './pilot-experiment.mjs';
 
 // Local, deterministic experiment preparation only. No network or model calls.
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const root = path.join(repo, 'tmp/system-one-bootstrap-pilot-v1');
+const root = pilotExperiment(repo);
 const sha = data => crypto.createHash('sha256').update(data).digest('hex');
 if (fs.existsSync(root)) throw new Error('Experiment already exists; never overwrite its frozen inputs');
 execFileSync('git', ['diff', '--quiet', 'HEAD', '--', 'src', 'scripts', 'docs'], { cwd: repo });
@@ -102,6 +103,7 @@ const properties = {
 const jar = path.join(repo, 'target/fhs-ai-agent-0.0.1-SNAPSHOT.jar');
 const manifest = {
   schemaVersion: 'system-one-bootstrap-pilot-v1', createdAt: capturedAt,
+  experimentId: path.basename(root),
   samplingFrame: 'BOOTSTRAP_DEVELOPMENT_ONLY', sourceRevision,
   sourceDatasetFingerprint: sourceFingerprint,
   selectedQuestionsFingerprint: sha(JSON.stringify(samples.map(s => ({ id: s.sampleId, question: s.question })))),
