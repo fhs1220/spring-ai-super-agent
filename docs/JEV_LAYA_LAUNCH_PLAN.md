@@ -4,7 +4,7 @@
 
 目标是让经过独立验证的 System One 候选策略决定 Single/Multi 执行模式，并在出现失败、质量回退或安全风险时回到现有路由。安全处置保持独立护栏。候选可以是 Jev、Laya 或预先定义的组合；每个候选都需要单独验证。
 
-截至 2026-09-27，Jev/Laya 只有 Shadow 建议权；`AdaptiveMultiAgentOrchestrator.route()` 在读取建议前已确定最终路由。现有 `routing-policy` 的 SHADOW/CANARY/ACTIVE 控制的是历史轨迹策略，不是 System One。36 题冻结回放中，Jev 准确率 75.00%，Laya 69.44%，均未达到当前 80% 门槛；Laya 的开发集安全召回为 0/4。五题真实生成 pilot 没有调用 Jev/Laya，也没有人工批准的标签。v6 答案契约尚无新的真实生成效果报告。因此当前状态为 **不允许正式接管**。
+截至 2026-09-27，Jev/Laya 只有 Shadow 建议权；`AdaptiveMultiAgentOrchestrator.route()` 在读取建议前已确定最终路由。现有 `routing-policy` 的 SHADOW/CANARY/ACTIVE 控制的是历史轨迹策略，不是 System One。36 题冻结回放中，Jev 准确率 75.00%，Laya 69.44%，均未达到当前 80% 门槛；Laya 的开发集安全召回为 0/4。五题 v3 真实生成预检已完成，但没有调用 Jev/Laya，也没有人工批准的标签；它发现的 v6 契约漏口已在 v7 修复，尚无新版本的真实生成结果。因此当前状态为 **不允许正式接管**。
 
 ## 阶段 1：冻结候选和评测协议
 
@@ -37,6 +37,6 @@
 
 ## 下一项具体工作
 
-先按 [v3 预检协议](SYSTEM_ONE_PILOT_V3_PROTOCOL.md) 对已知五题验证 v6 答案契约及标注账本；通过后准备 20 条新的开发样本并执行流程 pilot，再实施阶段 3 的默认关闭接管链路。阶段 2 的独立结果决定最终选 Jev、Laya 还是组合；不能因为目前回放里某一列较好就预先指定赢家。
+已按 [v3 预检协议](SYSTEM_ONE_PILOT_V3_PROTOCOL.md) 完成已知五题，发现并修复一处尾部邀请检测漏口，详见 [v3 报告](SYSTEM_ONE_PILOT_V3_REPORT.md) 与 [v7 契约](ANSWER_CONTRACT_V7.md)。下一步准备 20 条新的开发样本并执行流程 pilot，再实施阶段 3 的默认关闭接管链路。阶段 2 的独立结果决定最终选 Jev、Laya 还是组合；不能因为目前回放里某一列较好就预先指定赢家。
 
 参考：[影子对照](JEV_LAYA_SHADOW_COMPARISON.md)、[评测门禁](EVALUATION.md)、[反事实标注](SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)、[双路 Shadow](SYSTEM_ONE_DUAL_SHADOW.md)、[审计记录](SYSTEM_ONE_AUDIT_REMEDIATION.md)。

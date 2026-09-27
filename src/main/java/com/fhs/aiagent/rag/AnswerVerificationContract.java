@@ -30,7 +30,7 @@ public record AnswerVerificationContract(
         @JsonAlias("task_format") AnswerTaskFormat taskFormat
 ) {
 
-    public static final String VERSION = "answer-verification-contract-v6";
+    public static final String VERSION = "answer-verification-contract-v7";
 
     public static final String STRUCTURE_NORMALIZER_VERSION =
             "deterministic-answer-structure-v1";

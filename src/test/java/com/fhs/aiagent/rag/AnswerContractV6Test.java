@@ -19,6 +19,8 @@ class AnswerContractV6Test {
         assertThat(c.repairRequirementIds(missing)).contains("no-assistant-boilerplate");
         assertThat(c.promptChecklist()).contains("删除无关的助手身份介绍");
         assertThat(c.taskFormat().missingRequirements("如果你愿意，我也可以继续帮你写一版。")).isNotEmpty();
+        assertThat(c.taskFormat().missingRequirements("如果你愿意，下一条我可以直接帮你写一段求助短信。"))
+                .isNotEmpty();
         assertThat(c.taskFormat().missingRequirements("“如果你愿意，我想听听你的感受。”")).isEmpty();
         assertThat(AnswerVerificationContract.inferred("你是谁？介绍一下你自己。")
                 .taskFormat().missingRequirements("我是关系沟通助手。")).isEmpty();

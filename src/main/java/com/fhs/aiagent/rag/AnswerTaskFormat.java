@@ -21,7 +21,7 @@ public record AnswerTaskFormat(
     private static final Pattern ASSISTANT_INTRO = Pattern.compile(
             "^(?:当然[。！!，,]?\\s*|好的[。！!，,]?\\s*)?(?:我是|我是一名|作为).{0,70}(?:助手|顾问|咨询|AI|人工智能)");
     private static final Pattern SERVICE_INVITATION = Pattern.compile(
-            "(?m)^(?:\\s|\\*|#)*(?:如果你愿意|如果需要|如有需要|你愿意的话)[，,：:\\s]*我.{0,12}(?:可以|能够|能).{0,12}(?:帮你|为你)");
+            "(?m)^(?:\\s|\\*|#)*(?:如果你愿意|如果需要|如有需要|你愿意的话)[，,：:\\s]*(?:下一条|接下来|之后|后续|稍后)?[，,：:\\s]*我.{0,12}(?:可以|能够|能).{0,12}(?:帮你|为你)");
 
     private static final String NUMBER = "([1-9][0-9]?|[一二三四五六七八九十两]{1,3})";
     private static final Pattern SENTENCE_REQUEST = Pattern.compile(
