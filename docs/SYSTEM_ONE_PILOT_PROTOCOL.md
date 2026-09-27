@@ -55,3 +55,8 @@
 manifest/配置/样本，不发网络请求；已有实验目录时拒绝覆盖。随后使用
 `node scripts/system-one-pilot.mjs account-before`、`serve`、`submit-one`、`status`、
 `account-after`。每次 `submit-one` 前须查看上一题结果；不确定提交意图禁止自动重试。
+
+全部结束或触发停止条件后，运行 `node scripts/render-system-one-pilot-review.mjs`。
+生成器只读本次 manifest、冻结五题 samples 和 development labels，核对问题集合指纹、
+逐题身份与源码 revision；输出 `human-review.md` 和单独的揭盲映射，任何已有文件都拒绝覆盖。
+先完成人工评分再查看映射；该命令不会提交审批、导出训练数据或调用模型。

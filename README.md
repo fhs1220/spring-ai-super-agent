@@ -210,6 +210,9 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 [`docs/SYSTEM_ONE_DUAL_SHADOW.md`](docs/SYSTEM_ONE_DUAL_SHADOW.md)。
 分歧样本的强制 single/multi 反事实质量标注、估算预算停止阈值、人工审批导出和 holdout 隔离见
 [`docs/SYSTEM_ONE_COUNTERFACTUAL_LABELING.md`](docs/SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)。
+固定五题开发集的试跑范围、费用边界与盲评规则见
+[Pilot 预注册](docs/SYSTEM_ONE_PILOT_PROTOCOL.md) 与
+[试跑报告](docs/SYSTEM_ONE_PILOT_V1_REPORT.md)。这不是独立测试集，也不是 Jev/Laya 路由收益实验。
 
 #### OpenRouter 主模型与向量模型
 
