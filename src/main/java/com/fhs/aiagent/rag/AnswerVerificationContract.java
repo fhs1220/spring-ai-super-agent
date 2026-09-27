@@ -30,7 +30,7 @@ public record AnswerVerificationContract(
         @JsonAlias("task_format") AnswerTaskFormat taskFormat
 ) {
 
-    public static final String VERSION = "answer-verification-contract-v7";
+    public static final String VERSION = "answer-verification-contract-v8";
 
     public static final String STRUCTURE_NORMALIZER_VERSION =
             "deterministic-answer-structure-v1";
@@ -44,6 +44,9 @@ public record AnswerVerificationContract(
 
     private static final Pattern BULLET_ACTION = Pattern.compile(
             "(?m)^\\s*(?:#{1,6}\\s*)?[-*]\\s+");
+
+    private static final Pattern BRIEF_OUTPUT_REQUEST = Pattern.compile(
+            "一句|一条|一段话|一句话|简短|简单|只要|只需|模板|句式");
 
     private static final Pattern INLINE_ACTION_BOUNDARY = Pattern.compile(
             "([：；;])\\s*((?:10|[1-9])[.、)）])(?!\\d)\\s*");
@@ -135,7 +138,8 @@ public record AnswerVerificationContract(
         return new AnswerVerificationContract(
                 concepts,
                 forbidden,
-                format.exactSentences() == null ? AgenticRagService.minimumAnswerChars(normalized) : 1,
+                format.exactSentences() != null || BRIEF_OUTPUT_REQUEST.matcher(normalized).find()
+                        ? 1 : AgenticRagService.minimumAnswerChars(normalized),
                 AgenticRagService.maximumAnswerChars(normalized),
                 null,
                 noFollowUp || format.exactSentences() != null,

@@ -37,6 +37,6 @@
 
 ## 下一项具体工作
 
-已按 [v3 预检协议](SYSTEM_ONE_PILOT_V3_PROTOCOL.md) 完成已知五题，发现并修复一处尾部邀请检测漏口，详见 [v3 报告](SYSTEM_ONE_PILOT_V3_REPORT.md) 与 [v7 契约](ANSWER_CONTRACT_V7.md)。新的 20 条合成开发样本及 [流程 pilot 协议](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V1_PROTOCOL.md) 已准备；之后实施阶段 3 的默认关闭接管链路。阶段 2 的独立结果决定最终选 Jev、Laya 还是组合；不能因为目前回放里某一列较好就预先指定赢家。
+已按 [v3 预检协议](SYSTEM_ONE_PILOT_V3_PROTOCOL.md) 完成已知五题，发现并修复一处尾部邀请检测漏口，详见 [v3 报告](SYSTEM_ONE_PILOT_V3_REPORT.md) 与 [v7 契约](ANSWER_CONTRACT_V7.md)。新的 20 条合成开发样本在 [v1 运行](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V1_REPORT.md) 的首题发现短输出字数契约冲突，已修为 [v8 契约](ANSWER_CONTRACT_V8.md)，并冻结 [v2 协议](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V2_PROTOCOL.md)。之后实施阶段 3 的默认关闭接管链路。阶段 2 的独立结果决定最终选 Jev、Laya 还是组合；不能因为目前回放里某一列较好就预先指定赢家。
 
 参考：[影子对照](JEV_LAYA_SHADOW_COMPARISON.md)、[评测门禁](EVALUATION.md)、[反事实标注](SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)、[双路 Shadow](SYSTEM_ONE_DUAL_SHADOW.md)、[审计记录](SYSTEM_ONE_AUDIT_REMEDIATION.md)。

@@ -7,9 +7,10 @@ test('preregistered rounds have different fixed directories', () => {
   assert.equal(pilotExperiment('/repo', 'v2'), '/repo/tmp/system-one-bootstrap-pilot-v2');
   assert.equal(pilotExperiment('/repo', 'v3'), '/repo/tmp/system-one-bootstrap-pilot-v3');
   assert.equal(pilotExperiment('/repo', 'launch-dev-v1'), '/repo/tmp/system-one-launch-development-v1');
+  assert.equal(pilotExperiment('/repo', 'launch-dev-v2'), '/repo/tmp/system-one-launch-development-v2');
 });
 test('rejects arbitrary paths, unknown rounds and blank selectors', () => {
-  for (const round of ['', '../../v1', '/tmp', 'v4', 'v2/../v1', 'launch-dev-v1/../v1']) {
+  for (const round of ['', '../../v1', '/tmp', 'v4', 'v2/../v1', 'launch-dev-v3', 'launch-dev-v1/../v1']) {
     assert.throws(() => pilotExperiment('/repo', round));
   }
 });

@@ -11,7 +11,7 @@ import { pilotExperiment } from './pilot-experiment.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const EXPERIMENT = pilotExperiment(ROOT);
-const LAUNCH_DEVELOPMENT = process.env.SYSTEM_ONE_PILOT_ROUND === 'launch-dev-v1';
+const LAUNCH_DEVELOPMENT = ['launch-dev-v1', 'launch-dev-v2'].includes(process.env.SYSTEM_ONE_PILOT_ROUND);
 const PORT = LAUNCH_DEVELOPMENT ? '8125' : '8124';
 const PROPERTIES = join(EXPERIMENT, 'application-pilot.properties');
 const INTENTS = join(EXPERIMENT, 'intents');
@@ -83,7 +83,8 @@ async function configuration() {
       || manifest.estimatedStopThresholdCny !== BUDGET_CNY
       || manifest.samplingFrame !== 'BOOTSTRAP_DEVELOPMENT_ONLY'
       || manifest.schemaVersion !== (LAUNCH_DEVELOPMENT
-        ? 'system-one-launch-development-pilot-v1' : 'system-one-bootstrap-pilot-v1')) {
+        ? `system-one-launch-development-pilot-${process.env.SYSTEM_ONE_PILOT_ROUND.slice(-2)}`
+        : 'system-one-bootstrap-pilot-v1')) {
     throw new Error('Pilot manifest does not match its preregistered round');
   }
   const properties = parseProperties(await readFile(PROPERTIES, 'utf8'));

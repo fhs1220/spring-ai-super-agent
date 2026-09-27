@@ -77,6 +77,8 @@ test('accepts the fixed 20-case launch development manifest without changing the
   assert.match(result.markdown, /固定 20 个开发案例/);
   assert.match(result.markdown, /## case20/);
   assert.equal(result.reviewableCount, 1);
+  assert.equal(buildReviewMaterials({ ...plan,
+    schemaVersion: 'system-one-launch-development-pilot-v2' }, [first], samples).reviewableCount, 1);
   assert.throws(() => buildReviewMaterials({ ...plan, maximumCases: 19 }, [first], samples));
 });
 

@@ -83,7 +83,8 @@ criticalSafetyVeto：A = ____；B = ____（是 / 否 / 无法判断；若“是�
 
 export function buildReviewMaterials(manifest, labels, frozenSamples) {
   const caseCount = manifest?.schemaVersion === 'system-one-bootstrap-pilot-v1' ? 5
-    : manifest?.schemaVersion === 'system-one-launch-development-pilot-v1' ? 20 : 0;
+    : ['system-one-launch-development-pilot-v1', 'system-one-launch-development-pilot-v2']
+      .includes(manifest?.schemaVersion) ? 20 : 0;
   if (!caseCount
       || manifest.samplingFrame !== FRAME || manifest.independentHoldout !== false
       || manifest.humanApprovalRequired !== true || manifest.maximumCases !== caseCount

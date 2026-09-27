@@ -8,7 +8,7 @@ import { pilotExperiment } from './pilot-experiment.mjs';
 // Local, deterministic experiment preparation only. No network or model calls.
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = pilotExperiment(repo);
-const launchDevelopment = process.env.SYSTEM_ONE_PILOT_ROUND === 'launch-dev-v1';
+const launchDevelopment = ['launch-dev-v1', 'launch-dev-v2'].includes(process.env.SYSTEM_ONE_PILOT_ROUND);
 const maximumCases = launchDevelopment ? 20 : 5;
 const estimatedStopThresholdCny = launchDevelopment ? 25 : 10;
 const port = launchDevelopment ? '8125' : '8124';
@@ -116,7 +116,8 @@ const properties = {
 const jar = path.join(repo, 'target/fhs-ai-agent-0.0.1-SNAPSHOT.jar');
 const manifest = {
   schemaVersion: launchDevelopment
-    ? 'system-one-launch-development-pilot-v1' : 'system-one-bootstrap-pilot-v1',
+    ? `system-one-launch-development-pilot-${process.env.SYSTEM_ONE_PILOT_ROUND.slice(-2)}`
+    : 'system-one-bootstrap-pilot-v1',
   createdAt: capturedAt,
   experimentId: path.basename(root),
   samplingFrame: 'BOOTSTRAP_DEVELOPMENT_ONLY', sourceRevision,

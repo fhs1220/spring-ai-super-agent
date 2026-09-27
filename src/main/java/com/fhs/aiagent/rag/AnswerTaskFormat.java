@@ -25,7 +25,7 @@ public record AnswerTaskFormat(
 
     private static final String NUMBER = "([1-9][0-9]?|[一二三四五六七八九十两]{1,3})";
     private static final Pattern SENTENCE_REQUEST = Pattern.compile(
-            "(?:整理成|写成|只要|只用|用|给我|提供|输出|生成)\\s*" + NUMBER + "句");
+            "(?:整理成|压缩成|写成|写|只要|只用|用|给我|提供|输出|生成)\\s*" + NUMBER + "句");
     private static final Pattern WEEK_REQUEST = Pattern.compile("(?<![0-9一二三四五六七八九十两])" + NUMBER + "(?:个)?周");
     private static final Pattern WEEK_HEADING = Pattern.compile(
             "(?m)^\\s*(?:#{1,6}\\s*)?(?:\\|\\s*)?第" + NUMBER + "周\\s*(?:[：:|]|$)");
