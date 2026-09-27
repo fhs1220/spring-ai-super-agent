@@ -57,6 +57,29 @@ test('blind output matches Judge parity and never reveals mapping or old expecta
   assert.equal(result.reviewableCount, 1);
 });
 
+test('accepts the fixed 20-case launch development manifest without changing the five-case path', () => {
+  const samples = Array.from({ length: 20 }, (_, index) => ({
+    sampleId: `launch-case${String(index + 1).padStart(2, '0')}`,
+    question: `Launch question ${index + 1}`,
+    questionFingerprint: sha256(`Launch question ${index + 1}`),
+    sampledReason: 'BOOTSTRAP_DEVELOPMENT_ONLY',
+  }));
+  const plan = { ...manifest(), schemaVersion: 'system-one-launch-development-pilot-v1',
+    maximumCases: 20,
+    sourceMapping: samples.map((sample, index) => ({ sampleId: sample.sampleId, sourceId: `dev${String(index + 1).padStart(2, '0')}` })),
+    selectedQuestionsFingerprint: sha256(JSON.stringify(samples.map(sample => ({ id: sample.sampleId, question: sample.question })))),
+  };
+  const first = label();
+  first.sampleId = samples[0].sampleId;
+  first.evidence.question = samples[0].question;
+  first.questionFingerprint = samples[0].questionFingerprint;
+  const result = buildReviewMaterials(plan, [first], samples);
+  assert.match(result.markdown, /固定 20 个开发案例/);
+  assert.match(result.markdown, /## case20/);
+  assert.equal(result.reviewableCount, 1);
+  assert.throws(() => buildReviewMaterials({ ...plan, maximumCases: 19 }, [first], samples));
+});
+
 test('rejects holdout, foreign-source, duplicate, empty and altered-question inputs', () => {
   assert.throws(() => buildReviewMaterials(manifest(), []), /No development/);
   for (const change of [

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Five-case supervised pilot. No automatic POST retries and no direct model calls.
+// Preregistered local development pilots. No automatic POST retries or direct model calls.
 import { readFile, writeFile, readdir, mkdir, open, rename, unlink, stat } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -11,11 +11,13 @@ import { pilotExperiment } from './pilot-experiment.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const EXPERIMENT = pilotExperiment(ROOT);
+const LAUNCH_DEVELOPMENT = process.env.SYSTEM_ONE_PILOT_ROUND === 'launch-dev-v1';
+const PORT = LAUNCH_DEVELOPMENT ? '8125' : '8124';
 const PROPERTIES = join(EXPERIMENT, 'application-pilot.properties');
 const INTENTS = join(EXPERIMENT, 'intents');
-const LOCAL_API = 'http://127.0.0.1:8124/api/agent-evaluation/system-one-labeling/runs';
-const BUDGET_CNY = 10;
-const MAX_LABELS = 5;
+const LOCAL_API = `http://127.0.0.1:${PORT}/api/agent-evaluation/system-one-labeling/runs`;
+const BUDGET_CNY = LAUNCH_DEVELOPMENT ? 25 : 10;
+const MAX_LABELS = LAUNCH_DEVELOPMENT ? 20 : 5;
 const RUN_ID = /^system-one-label-[a-f0-9-]{36}$/;
 
 export function parseProperties(text) {
@@ -76,11 +78,22 @@ async function jsonFiles(directory) {
 }
 
 async function configuration() {
+  const manifest = JSON.parse(await readFile(join(EXPERIMENT, 'manifest.json'), 'utf8'));
+  if (manifest.maximumCases !== MAX_LABELS
+      || manifest.estimatedStopThresholdCny !== BUDGET_CNY
+      || manifest.samplingFrame !== 'BOOTSTRAP_DEVELOPMENT_ONLY'
+      || manifest.schemaVersion !== (LAUNCH_DEVELOPMENT
+        ? 'system-one-launch-development-pilot-v1' : 'system-one-bootstrap-pilot-v1')) {
+    throw new Error('Pilot manifest does not match its preregistered round');
+  }
   const properties = parseProperties(await readFile(PROPERTIES, 'utf8'));
-  if (properties.get('server.port') !== '8124' || properties.get('server.address') !== '127.0.0.1') {
-    throw new Error('Pilot server must explicitly bind 127.0.0.1:8124');
+  if (properties.get('server.port') !== PORT || properties.get('server.address') !== '127.0.0.1') {
+    throw new Error(`Pilot server must explicitly bind 127.0.0.1:${PORT}`);
   }
   const configured = properties.get('agent.evaluation.system-one.labeling.storage-directory');
+  if (properties.get('agent.evaluation.system-one.labeling.maximum-cost-cny') !== String(BUDGET_CNY)) {
+    throw new Error('Pilot properties do not match the frozen spending threshold');
+  }
   if (!configured || configured.includes('${')) throw new Error('Pilot label storage must be an explicit path');
   const labels = resolve(ROOT, configured);
   const offset = relative(EXPERIMENT, labels);
@@ -169,7 +182,7 @@ async function submitOne() {
       throw new Error('Pending/uncertain submit intent exists; reconcile manually before any new POST');
     }
     const ledger = await readLedger(labels);
-    if (ledger.labelCount >= MAX_LABELS) throw new Error('Five-label pilot limit reached');
+    if (ledger.labelCount >= MAX_LABELS) throw new Error('Preregistered pilot label limit reached');
     if (ledger.remainingCny <= 0) throw new Error('Pilot budget exhausted');
     // Check all accepted run IDs even when server persistence has not yet appeared locally.
     for (const intent of intents) {

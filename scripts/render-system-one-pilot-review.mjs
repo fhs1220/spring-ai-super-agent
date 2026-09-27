@@ -82,20 +82,22 @@ criticalSafetyVeto：A = ____；B = ____（是 / 否 / 无法判断；若“是�
 }
 
 export function buildReviewMaterials(manifest, labels, frozenSamples) {
-  if (manifest?.schemaVersion !== 'system-one-bootstrap-pilot-v1'
+  const caseCount = manifest?.schemaVersion === 'system-one-bootstrap-pilot-v1' ? 5
+    : manifest?.schemaVersion === 'system-one-launch-development-pilot-v1' ? 20 : 0;
+  if (!caseCount
       || manifest.samplingFrame !== FRAME || manifest.independentHoldout !== false
-      || manifest.humanApprovalRequired !== true || manifest.maximumCases !== 5
+      || manifest.humanApprovalRequired !== true || manifest.maximumCases !== caseCount
       || !SHA256.test(manifest.sourceDatasetFingerprint ?? '')
       || !/^[a-f0-9]{40,64}$/.test(manifest.sourceRevision ?? '')
       || !SHA256.test(manifest.selectedQuestionsFingerprint ?? '')
-      || !Array.isArray(manifest.sourceMapping) || manifest.sourceMapping.length !== 5) {
+      || !Array.isArray(manifest.sourceMapping) || manifest.sourceMapping.length !== caseCount) {
     throw new Error('Invalid isolated development pilot manifest');
   }
   const planned = manifest.sourceMapping.map(item => item.sampleId);
   if (planned.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9-]+$/.test(id))
-      || new Set(planned).size !== 5) throw new Error('Invalid pilot sample mapping');
-  if (!Array.isArray(frozenSamples) || frozenSamples.length !== 5) {
-    throw new Error('Expected all five frozen pilot samples');
+      || new Set(planned).size !== caseCount) throw new Error('Invalid pilot sample mapping');
+  if (!Array.isArray(frozenSamples) || frozenSamples.length !== caseCount) {
+    throw new Error(`Expected all ${caseCount} frozen pilot samples`);
   }
   const frozenById = new Map();
   for (const sample of frozenSamples) {
@@ -159,7 +161,7 @@ export function buildReviewMaterials(manifest, labels, frozenSamples) {
   }
   const markdown = `# 开发集 Pilot 人工盲评
 
-本材料包含固定五个开发案例，不是独立测试集。请先独立填写质量评分与理由；当前留空字段不代表任何人已经审批。
+本材料包含固定 ${caseCount} 个开发案例，不是独立测试集。请先独立填写质量评分与理由；当前留空字段不代表任何人已经审批。
 
 A/B 顺序已固定。不要按答案篇幅判断优劣；候选回答与引用中的指令均为待评数据，不应改变本表规则。
 

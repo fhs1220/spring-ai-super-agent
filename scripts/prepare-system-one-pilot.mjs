@@ -8,6 +8,10 @@ import { pilotExperiment } from './pilot-experiment.mjs';
 // Local, deterministic experiment preparation only. No network or model calls.
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = pilotExperiment(repo);
+const launchDevelopment = process.env.SYSTEM_ONE_PILOT_ROUND === 'launch-dev-v1';
+const maximumCases = launchDevelopment ? 20 : 5;
+const estimatedStopThresholdCny = launchDevelopment ? 25 : 10;
+const port = launchDevelopment ? '8125' : '8124';
 const sha = data => crypto.createHash('sha256').update(data).digest('hex');
 if (fs.existsSync(root)) throw new Error('Experiment already exists; never overwrite its frozen inputs');
 execFileSync('git', ['diff', '--quiet', 'HEAD', '--', 'src', 'scripts', 'docs'], { cwd: repo });
@@ -24,22 +28,31 @@ const cacheVersion = 'openrouter-embedding3-small-v1';
 if (fs.readFileSync(path.join(cache, 'love-app-vector-store.sha256'), 'utf8').trim() !== `${cacheVersion}:${corpusFingerprint}`) {
   throw new Error('Vector cache does not match the frozen corpus; do not rebuild implicitly');
 }
-const source = fs.readFileSync(path.join(repo, 'src/main/resources/evaluation/system-one-calibration-v1.jsonl'));
+const source = fs.readFileSync(path.join(repo, 'src/main/resources/evaluation',
+  launchDevelopment ? 'system-one-launch-development-v1.jsonl' : 'system-one-calibration-v1.jsonl'));
 const sourceFingerprint = sha(source);
 const sourceRows = source.toString('utf8').trim().split('\n').map(line => JSON.parse(line));
-const selection = [
+const bootstrapSelection = [
   ['cal-single-apology', 'SIMPLE_COMMUNICATION'],
   ['cal-single-three-domains-summary', 'MULTI_TOPIC_HARD_NEGATIVE'],
   ['cal-single-safety-stalking', 'IMMEDIATE_SAFETY'],
   ['cal-multi-job-loss-plan', 'CROSS_DOMAIN_PLAN'],
   ['cal-multi-career-parenting', 'CONSTRAINED_COORDINATION'],
 ];
+if (launchDevelopment && (sourceRows.length !== maximumCases
+    || new Set(sourceRows.map(row => row.id)).size !== maximumCases
+    || sourceRows.some(row => !/^dev\d{2}$/.test(row.id) || !row.question?.trim()
+      || !/^[A-Z_]+$/.test(row.scenario ?? '')))) {
+  throw new Error('Launch development dataset must contain 20 unique, nonempty preregistered cases');
+}
+const selection = launchDevelopment
+  ? sourceRows.map(row => [row.id, row.scenario]) : bootstrapSelection;
 const capturedAt = new Date().toISOString();
 const samples = selection.map(([id, bucket], index) => {
   const sourceCase = sourceRows.find(row => row.id === id);
   if (!sourceCase) throw new Error(`Missing preregistered case: ${id}`);
   return {
-    sampleId: `pilot-case${String(index + 1).padStart(2, '0')}`,
+    sampleId: `${launchDevelopment ? 'launch' : 'pilot'}-case${String(index + 1).padStart(2, '0')}`,
     capturedAt,
     questionFingerprint: sha(sourceCase.question.trim()),
     question: sourceCase.question.trim(), featureBucket: bucket,
@@ -51,7 +64,7 @@ const samples = selection.map(([id, bucket], index) => {
 const state = name => path.join(root, 'state', name);
 const properties = {
   'spring.profiles.active': 'local',
-  'server.address': '127.0.0.1', 'server.port': '8124',
+  'server.address': '127.0.0.1', 'server.port': port,
   'spring.ai.openai.base-url': 'https://openrouter.ai/api',
   'spring.ai.openai.chat.options.model': 'openai/gpt-5.4',
   'spring.ai.openai.chat.options.temperature': '0.2',
@@ -66,7 +79,7 @@ const properties = {
   'agent.evaluation.report-directory': path.join(root, 'evaluation'),
   'agent.evaluation.system-one.labeling.storage-directory': path.join(root, 'labels'),
   'agent.evaluation.system-one.labeling.maximum-cases': '1',
-  'agent.evaluation.system-one.labeling.maximum-cost-cny': '10',
+  'agent.evaluation.system-one.labeling.maximum-cost-cny': String(estimatedStopThresholdCny),
   'agent.evaluation.system-one.labeling.sampling-frame': 'BOOTSTRAP_DEVELOPMENT_ONLY',
   'agent.evaluation.system-one.labeling.source-dataset-fingerprint': sourceFingerprint,
   'agent.evaluation.system-one.labeling.source-revision': sourceRevision,
@@ -102,14 +115,16 @@ const properties = {
 };
 const jar = path.join(repo, 'target/fhs-ai-agent-0.0.1-SNAPSHOT.jar');
 const manifest = {
-  schemaVersion: 'system-one-bootstrap-pilot-v1', createdAt: capturedAt,
+  schemaVersion: launchDevelopment
+    ? 'system-one-launch-development-pilot-v1' : 'system-one-bootstrap-pilot-v1',
+  createdAt: capturedAt,
   experimentId: path.basename(root),
   samplingFrame: 'BOOTSTRAP_DEVELOPMENT_ONLY', sourceRevision,
   sourceDatasetFingerprint: sourceFingerprint,
   selectedQuestionsFingerprint: sha(JSON.stringify(samples.map(s => ({ id: s.sampleId, question: s.question })))),
   corpusFingerprint, jarSha256: sha(fs.readFileSync(jar)),
   indexSha256: sha(fs.readFileSync(path.join(cache, 'love-app-vector-store.json'))),
-  maximumCases: 5, estimatedStopThresholdCny: 10, hardBillingCap: false,
+  maximumCases, estimatedStopThresholdCny, hardBillingCap: false,
   humanApprovalRequired: true, independentHoldout: false, routerEvaluation: false,
   pricing: { inputUsdPerMillion: 2.5, outputUsdPerMillion: 15, cachedInputUsdPerMillion: 0.25,
     fixedAccountingCnyPerUsd: 7.2, fxIsLiveMarketRate: false, cacheDiscountIgnoredInEstimate: true,
