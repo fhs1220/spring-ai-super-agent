@@ -37,6 +37,6 @@
 
 ## 下一项具体工作
 
-已按 [v3 预检协议](SYSTEM_ONE_PILOT_V3_PROTOCOL.md) 完成已知五题，发现并修复尾部邀请检测漏口，详见 [v3 报告](SYSTEM_ONE_PILOT_V3_REPORT.md) 与 [v7 契约](ANSWER_CONTRACT_V7.md)。20 条合成开发题的 [v1 运行](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V1_REPORT.md) 在首题发现短输出字数冲突，已修为 [v8 契约](ANSWER_CONTRACT_V8.md)；[v2 运行](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V2_REPORT.md) 做到 18/20 后发现安全待审分流漏判，已修为 [待审门禁 v2](COUNTERFACTUAL_REVIEW_GATE_V2.md)。默认关闭的[在线接管预备实现](SYSTEM_ONE_DEPLOYMENT_PREPARATION.md)已加入，但没有满足独立评测、持久化监控和自动回滚要求。下一步取得能代表真实使用的问题及人审证据，再评测 Jev/Laya；不能因为目前回放里某一列较好就预先指定赢家。
+已按 [v3 预检协议](SYSTEM_ONE_PILOT_V3_PROTOCOL.md) 完成已知五题，发现并修复尾部邀请检测漏口，详见 [v3 报告](SYSTEM_ONE_PILOT_V3_REPORT.md) 与 [v7 契约](ANSWER_CONTRACT_V7.md)。20 条合成开发题的 [v1 运行](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V1_REPORT.md) 在首题发现短输出字数冲突，已修为 [v8 契约](ANSWER_CONTRACT_V8.md)；[v2 运行](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V2_REPORT.md) 做到 18/20 后发现安全待审分流漏判，已修为 [待审门禁 v2](COUNTERFACTUAL_REVIEW_GATE_V2.md)。默认关闭的[在线接管预备实现](SYSTEM_ONE_DEPLOYMENT_PREPARATION.md)已加入，包括持久化灰度决策账本和因候选不可用而自动暂停；但没有满足独立评测、在线答案质量/安全监测和灰度演练要求。下一步取得能代表真实使用的问题及人审证据，再评测 Jev/Laya；不能因为目前回放里某一列较好就预先指定赢家。
 
 参考：[影子对照](JEV_LAYA_SHADOW_COMPARISON.md)、[评测门禁](EVALUATION.md)、[反事实标注](SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)、[双路 Shadow](SYSTEM_ONE_DUAL_SHADOW.md)、[审计记录](SYSTEM_ONE_AUDIT_REMEDIATION.md)。

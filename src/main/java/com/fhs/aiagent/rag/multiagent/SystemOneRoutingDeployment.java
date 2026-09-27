@@ -24,6 +24,7 @@ public final class SystemOneRoutingDeployment {
     private final int canaryPercent;
     private final String releaseVersion;
     private final String expectedModel;
+    private final SystemOneRolloutGuard rolloutGuard;
 
     public enum Mode { OFF, SHADOW, CANARY, ACTIVE }
 
@@ -38,24 +39,46 @@ public final class SystemOneRoutingDeployment {
             @Value("${agent.decision.system-one.enabled:false}") boolean advisorEnabled,
             @Value("${agent.decision.system-one.mode:SHADOW}") String advisorMode,
             @Value("${agent.decision.system-one.comparison.enabled:false}") boolean comparisonEnabled,
-            @Value("${agent.rag.multi-agent.enabled:true}") boolean multiAgentEnabled) {
+            @Value("${agent.rag.multi-agent.enabled:true}") boolean multiAgentEnabled,
+            @Value("${agent.decision.system-one.deployment.storage-directory:tmp/system-one-rollout}")
+            String storageDirectory,
+            @Value("${agent.decision.system-one.deployment.max-consecutive-failures:3}")
+            int maxConsecutiveFailures,
+            @Value("${agent.decision.system-one.deployment.minimum-selected-for-rate:20}")
+            int minimumSelectedForRate,
+            @Value("${agent.decision.system-one.deployment.max-failure-rate:0.10}")
+            double maxFailureRate) {
         this(Mode.valueOf(mode.trim().toUpperCase(Locale.ROOT)), canaryPercent,
                 releaseVersion, expectedModel, manifestPath, threshold, advisorEnabled,
-                advisorMode, comparisonEnabled, multiAgentEnabled);
+                advisorMode, comparisonEnabled, multiAgentEnabled,
+                liveGuard(mode, storageDirectory, releaseVersion, maxConsecutiveFailures,
+                        minimumSelectedForRate, maxFailureRate));
     }
 
     SystemOneRoutingDeployment(Mode mode, int canaryPercent, String releaseVersion,
                                String expectedModel, String manifestPath, double threshold,
                                boolean advisorEnabled) {
         this(mode, canaryPercent, releaseVersion, expectedModel, manifestPath,
-                threshold, advisorEnabled, "SHADOW", false, true);
+                threshold, advisorEnabled, "SHADOW", false, true,
+                SystemOneRolloutGuard.disabled());
     }
 
     SystemOneRoutingDeployment(Mode mode, int canaryPercent, String releaseVersion,
                                String expectedModel, String manifestPath, double threshold,
                                boolean advisorEnabled, String advisorMode,
                                boolean comparisonEnabled, boolean multiAgentEnabled) {
+        this(mode, canaryPercent, releaseVersion, expectedModel, manifestPath,
+                threshold, advisorEnabled, advisorMode, comparisonEnabled,
+                multiAgentEnabled, SystemOneRolloutGuard.disabled());
+    }
+
+    SystemOneRoutingDeployment(Mode mode, int canaryPercent, String releaseVersion,
+                               String expectedModel, String manifestPath, double threshold,
+                               boolean advisorEnabled, String advisorMode,
+                               boolean comparisonEnabled, boolean multiAgentEnabled,
+                               SystemOneRolloutGuard rolloutGuard) {
         this.mode = java.util.Objects.requireNonNull(mode, "mode");
+        this.rolloutGuard = java.util.Objects.requireNonNull(rolloutGuard, "rolloutGuard");
         if (canaryPercent < 0 || canaryPercent > 100) {
             throw new IllegalArgumentException("System One canary percent must be 0..100");
         }
@@ -85,10 +108,29 @@ public final class SystemOneRoutingDeployment {
     Decision decide(String question, SystemOneRoutingAdvisor.RoutingAdvice advice,
                     boolean baselineMulti, List<AgentDomain> baselineDomains,
                     boolean knownSafety, int maxAgents) {
+        if (rolloutGuard.isPaused()) {
+            return new Decision(false, false, baselineMulti, baselineDomains, "AUTO_PAUSED");
+        }
         boolean selected = selected(question);
         if (!selected) {
-            return new Decision(false, false, baselineMulti, baselineDomains, "NOT_SELECTED");
+            return rolloutGuard.record(mode, false, "CONTROL", "", 0)
+                    ? new Decision(false, false, baselineMulti, baselineDomains, "NOT_SELECTED")
+                    : new Decision(false, false, baselineMulti, baselineDomains,
+                            "OBSERVABILITY_FALLBACK");
         }
+        Decision proposed = propose(advice, baselineMulti, baselineDomains, knownSafety, maxAgents);
+        boolean recorded = rolloutGuard.record(mode, true, proposed.status(),
+                advice == null ? "" : advice.model(), advice == null ? 0 : advice.latencyMs());
+        if (!recorded) {
+            return new Decision(true, false, baselineMulti, baselineDomains,
+                    rolloutGuard.isPaused() ? "AUTO_PAUSED" : "OBSERVABILITY_FALLBACK");
+        }
+        return proposed;
+    }
+
+    private Decision propose(SystemOneRoutingAdvisor.RoutingAdvice advice,
+                             boolean baselineMulti, List<AgentDomain> baselineDomains,
+                             boolean knownSafety, int maxAgents) {
         if (knownSafety || (advice != null && (advice.recommendedSafetyGuard()
                 || advice.safetyProbability() >= 0.5))) {
             return new Decision(true, false, baselineMulti, baselineDomains, "SAFETY_FALLBACK");
@@ -119,7 +161,18 @@ public final class SystemOneRoutingDeployment {
 
     Mode mode() { return mode; }
     String releaseVersion() { return releaseVersion; }
-    boolean selects(String question) { return selected(question); }
+    boolean selects(String question) { return !rolloutGuard.isPaused() && selected(question); }
+
+    private static SystemOneRolloutGuard liveGuard(String mode, String directory,
+                                                   String releaseVersion, int consecutiveLimit,
+                                                   int minimumSelected, double failureRateLimit) {
+        Mode resolved = Mode.valueOf(mode.trim().toUpperCase(Locale.ROOT));
+        if (resolved != Mode.CANARY && resolved != Mode.ACTIVE) {
+            return SystemOneRolloutGuard.disabled();
+        }
+        return new SystemOneRolloutGuard(Path.of(directory), releaseVersion,
+                consecutiveLimit, minimumSelected, failureRateLimit);
+    }
 
     private boolean selected(String question) {
         if (mode == Mode.ACTIVE) return true;

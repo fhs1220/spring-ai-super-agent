@@ -9,6 +9,7 @@
 - `ACTIVE`：所有自适应请求进入候选判断。`FORCE_SINGLE` / `FORCE_MULTI` 始终绕过候选。
 - 若识别到安全风险、候选调用失败、响应模型版本不符，或 Multi 建议不足两个概率 ≥0.5 的非安全专家领域，保留原路由。候选仅决定 Single/Multi 和可执行专家组合；答案安全审查仍是独立环节。
 - 每次决策在路由 trace 记录 `systemOneDeploymentMode`、`systemOneReleaseVersion`、`systemOneCanarySelected`、`systemOneApplied`、`systemOneApplicationStatus`。这些字段不能和轨迹策略的 `policyApplied` 混用。
+- CANARY/ACTIVE 还会把分母、入组数、失败数、连续失败数及安全回退数持久化到 `storage-directory`，并逐次追加不含问题原文的 JSONL 账本。不同进程通过文件锁协调；写入处于未完成状态、状态文件损坏或存储不可用时会停止候选接管。
 
 ## 启用前的门禁文件
 
@@ -31,6 +32,8 @@
 
 启动时会核对版本、模型、阈值、报告哈希、`releaseGatePassed=true`、空 `gateFailures` 和至少 30 个样本。清单中的“独立测试集已批准”是人工签署声明，不是程序能自行证明的事实；运营者仍需核查原始抽样、盲评和成本证据。`jev-latest` 一类别名也不能证明供应商 checkpoint 不变，真正上线前应取得可固定的模型版本。
 
+灰度账本配置默认指向 `tmp/system-one-rollout`，但 CANARY/ACTIVE **必须**用 `AGENT_SYSTEM_ONE_DEPLOYMENT_STORAGE_DIRECTORY` 指定绝对路径，并保证该目录由所有实例共享且持久化；否则启动会被拒绝。默认在同一版本连续 3 次候选失败，或至少 20 次入组后失败率超过 10% 时自动暂停；环境变量 `AGENT_SYSTEM_ONE_DEPLOYMENT_MAX_CONSECUTIVE_FAILURES`、`AGENT_SYSTEM_ONE_DEPLOYMENT_MINIMUM_SELECTED_FOR_RATE`、`AGENT_SYSTEM_ONE_DEPLOYMENT_MAX_FAILURE_RATE` 可在批准前预注册阈值。失败包括决策调用/模型不匹配和不可执行的专家组合；安全回退另行计数，不作为 API 故障。暂停状态会跨重启保持，后续请求使用原路由。不要通过删除账本来重启同一候选；应先调查事件、产生新的审批和版本。该机制仅是**决策可用性守卫**，不是答案质量或安全性监测。
+
 ## 尚未满足的上线条件
 
-当前没有经过独立真实场景测试和人审批准的报告，因此不能生成有效门禁清单。新代码覆盖的是接管机制和单进程 trace，**不包括**跨进程指标存储、在线质量监测、自动回滚、灰度演练或 ACTIVE 晋升审批。回滚操作是将 `AGENT_SYSTEM_ONE_DEPLOYMENT_MODE` 改回 `OFF` 并重启服务；正式灰度前应增加自动停机阈值和持久化观测，不能将此机制代码视为已经上线。
+当前没有经过独立真实场景测试和人审批准的报告，因此不能生成有效门禁清单。新代码覆盖接管机制、持久化决策账本和因候选不可用而自动暂停，**不包括**答案质量/安全在线监测、灰度演练或 ACTIVE 晋升审批。手动回滚是将 `AGENT_SYSTEM_ONE_DEPLOYMENT_MODE` 改回 `OFF` 并重启服务。正式灰度前还需定义答案质量与安全风险的独立停止规则、监控告警和人工值守，不能将可用性自动暂停等同于完整发布保障。

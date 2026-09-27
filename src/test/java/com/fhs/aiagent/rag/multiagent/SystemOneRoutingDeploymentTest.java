@@ -147,6 +147,31 @@ class SystemOneRoutingDeploymentTest {
         assertThat(decision.systemOneApplicationStatus()).isEqualTo("ADVICE_FALLBACK");
     }
 
+    @Test
+    void operationalStopPreventsFurtherCandidateCalls() throws Exception {
+        ChatModel model = mock(ChatModel.class);
+        var orchestrator = new AdaptiveMultiAgentOrchestrator(
+                ChatClient.builder(model).build(), true, 2, 3);
+        var guard = new SystemOneRolloutGuard(temporaryDirectory.resolve("rollout"),
+                "release-1", 2, 20, 0.10);
+        orchestrator.setSystemOneRoutingDeployment(new SystemOneRoutingDeployment(
+                SystemOneRoutingDeployment.Mode.ACTIVE, 0, "release-1", MODEL,
+                manifest(true).toString(), 0.2, true, "SHADOW", false, true, guard));
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        orchestrator.setSystemOneRoutingAdvisor(ignored -> {
+            calls.incrementAndGet();
+            throw new IllegalStateException("provider unavailable");
+        });
+
+        assertThat(orchestrator.route("问题一").systemOneApplicationStatus())
+                .isEqualTo("ADVICE_FALLBACK");
+        assertThat(orchestrator.route("问题二").systemOneApplicationStatus())
+                .isEqualTo("AUTO_PAUSED");
+        assertThat(orchestrator.route("问题三").systemOneApplicationStatus())
+                .isEqualTo("AUTO_PAUSED");
+        assertThat(calls).hasValue(2);
+    }
+
     private SystemOneRoutingDeployment deployment(SystemOneRoutingDeployment.Mode mode,
                                                    int percent, boolean approved) throws Exception {
         return new SystemOneRoutingDeployment(mode, percent, "release-1", MODEL,

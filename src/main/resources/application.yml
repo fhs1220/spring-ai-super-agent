@@ -91,6 +91,10 @@ agent:
         release-version: ${AGENT_SYSTEM_ONE_DEPLOYMENT_RELEASE_VERSION:}
         expected-model: ${AGENT_SYSTEM_ONE_DEPLOYMENT_EXPECTED_MODEL:}
         manifest-path: ${AGENT_SYSTEM_ONE_DEPLOYMENT_MANIFEST_PATH:}
+        storage-directory: ${AGENT_SYSTEM_ONE_DEPLOYMENT_STORAGE_DIRECTORY:tmp/system-one-rollout}
+        max-consecutive-failures: ${AGENT_SYSTEM_ONE_DEPLOYMENT_MAX_CONSECUTIVE_FAILURES:3}
+        minimum-selected-for-rate: ${AGENT_SYSTEM_ONE_DEPLOYMENT_MINIMUM_SELECTED_FOR_RATE:20}
+        max-failure-rate: ${AGENT_SYSTEM_ONE_DEPLOYMENT_MAX_FAILURE_RATE:0.10}
       comparison:
         # 后台并行调用两路 provider；启用后在线路由不再同步等待上面的单路 advisor。
         enabled: ${AGENT_SYSTEM_ONE_COMPARISON_ENABLED:false}
