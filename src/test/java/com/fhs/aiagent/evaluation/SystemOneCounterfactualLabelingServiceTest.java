@@ -60,6 +60,21 @@ class SystemOneCounterfactualLabelingServiceTest {
     }
 
     @Test
+    void followingIntoBuildingRequiresSafetyReviewEvenWithoutTheWordStalking() {
+        var service = service((variant, evaluationCase, chatId) -> execution(variant, "answer", 100, 0.01,
+                        variant == RagEvaluationVariant.AGENTIC_SINGLE_AGENT ? "SINGLE_AGENT" : "ADAPTIVE_MULTI_AGENT"),
+                (q, f, s, m) -> judgment(), new InMemoryRepository());
+        var label = service.label(sample("following-building",
+                "有人连续几晚在我下班路上等我，还试图跟着进楼。我现在在便利店里。",
+                List.of()), "run");
+
+        assertThat(label.status()).isEqualTo("REVIEW_REQUIRED");
+        assertThat(label.expectedMultiAgent()).isNull();
+        assertThat(label.evidence().reviewReasons()).contains("SAFETY_AND_SOURCE_SUPPORT_REVIEW_REQUIRED");
+        assertThat(label.evidence().provenance()).containsEntry("reviewGateVersion", CounterfactualReviewGate.VERSION);
+    }
+
+    @Test
     void forcesBothVariantsAndLabelsMultiAgentWhenUtilityImproves() {
         List<RagEvaluationVariant> variants = new ArrayList<>();
         RagEvaluationVariantExecutor executor = (variant, evaluationCase, chatId) -> {

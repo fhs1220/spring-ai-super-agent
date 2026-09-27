@@ -219,6 +219,13 @@ export AGENT_SYSTEM_ONE_INPUT_PRICE_PER_MILLION_USD=0.042
 结构有局部改善，仍有套话、安全引用及负担解析问题，不能宣称总体质量或 Jev/Laya 收益。
 其后本地修复见 [答案契约 v6 与待审门禁](docs/ANSWER_CONTRACT_V6.md)：统一去套话、
 支持带注释的同口径负担表，并将最终契约失败/未知及识别到的安全风险显式转入待审。
+上线任务的当前状态与分阶段门禁见 [Jev/Laya 上线计划](docs/JEV_LAYA_LAUNCH_PLAN.md)。
+后续 [五题 v3 预检](docs/SYSTEM_ONE_PILOT_V3_REPORT.md) 发现尾部邀请漏检，
+[20 题开发流程 v1](docs/SYSTEM_ONE_LAUNCH_DEVELOPMENT_V1_REPORT.md) 首题发现短输出字数冲突，
+[开发流程 v2](docs/SYSTEM_ONE_LAUNCH_DEVELOPMENT_V2_REPORT.md) 在 18/20 题后发现安全同义表达漏审。
+这些问题分别由 [契约 v7](docs/ANSWER_CONTRACT_V7.md)、[契约 v8](docs/ANSWER_CONTRACT_V8.md)
+和 [待审门禁 v2](docs/COUNTERFACTUAL_REVIEW_GATE_V2.md) 修复；旧实验保持原结论。
+目前仍无独立真实流量效果和人工批准的路由标签，Jev/Laya 继续只有影子建议权。
 
 #### OpenRouter 主模型与向量模型
 

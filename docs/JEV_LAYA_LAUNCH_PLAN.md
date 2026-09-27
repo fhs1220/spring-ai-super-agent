@@ -37,6 +37,6 @@
 
 ## 下一项具体工作
 
-已按 [v3 预检协议](SYSTEM_ONE_PILOT_V3_PROTOCOL.md) 完成已知五题，发现并修复一处尾部邀请检测漏口，详见 [v3 报告](SYSTEM_ONE_PILOT_V3_REPORT.md) 与 [v7 契约](ANSWER_CONTRACT_V7.md)。新的 20 条合成开发样本在 [v1 运行](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V1_REPORT.md) 的首题发现短输出字数契约冲突，已修为 [v8 契约](ANSWER_CONTRACT_V8.md)，并冻结 [v2 协议](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V2_PROTOCOL.md)。之后实施阶段 3 的默认关闭接管链路。阶段 2 的独立结果决定最终选 Jev、Laya 还是组合；不能因为目前回放里某一列较好就预先指定赢家。
+已按 [v3 预检协议](SYSTEM_ONE_PILOT_V3_PROTOCOL.md) 完成已知五题，发现并修复尾部邀请检测漏口，详见 [v3 报告](SYSTEM_ONE_PILOT_V3_REPORT.md) 与 [v7 契约](ANSWER_CONTRACT_V7.md)。20 条合成开发题的 [v1 运行](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V1_REPORT.md) 在首题发现短输出字数冲突，已修为 [v8 契约](ANSWER_CONTRACT_V8.md)；[v2 运行](SYSTEM_ONE_LAUNCH_DEVELOPMENT_V2_REPORT.md) 做到 18/20 后发现安全待审分流漏判，已修为 [待审门禁 v2](COUNTERFACTUAL_REVIEW_GATE_V2.md)。下一步取得能代表真实使用的问题及人审证据，再评测 Jev/Laya；通过门禁后实施默认关闭的在线接管链路。不能因为目前回放里某一列较好就预先指定赢家。
 
 参考：[影子对照](JEV_LAYA_SHADOW_COMPARISON.md)、[评测门禁](EVALUATION.md)、[反事实标注](SYSTEM_ONE_COUNTERFACTUAL_LABELING.md)、[双路 Shadow](SYSTEM_ONE_DUAL_SHADOW.md)、[审计记录](SYSTEM_ONE_AUDIT_REMEDIATION.md)。
